@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { FileIcon, FolderIcon, FileJson, FileType } from 'lucide-react'
+import { FileIcon, FolderIcon } from 'lucide-react'
 
 import {
   Collapsible,

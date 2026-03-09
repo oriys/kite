@@ -51,7 +51,6 @@ import { FileTree } from '@/components/ui/file-tree'
 import { Feedback } from '@/components/ui/feedback'
 import { JsonViewer } from '@/components/ui/json-viewer'
 import { Steps, Step } from '@/components/ui/steps'
-import { TableOfContents } from '@/components/ui/toc'
 import { ZoomImage } from '@/components/ui/zoom-image'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {

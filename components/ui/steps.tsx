@@ -9,7 +9,7 @@ export function Steps({
   return (
     <div
       className={cn(
-        'mb-12 ml-4 border-l border-border pl-8 [counter-reset:step]',
+        'relative space-y-8 pl-14 before:absolute before:bottom-3 before:left-5 before:top-3 before:w-px before:bg-border [counter-reset:step]',
         className
       )}
       {...props}
@@ -23,13 +23,13 @@ export function Step({
   children,
   ...props
 }: React.ComponentProps<'div'> & { title: string }) {
-    return (
-        <div className={cn('relative mt-8 first:mt-0 [counter-increment:step]', className)} {...props}>
-            <div className="absolute -left-8 -top-1 flex h-8 w-8 items-center justify-center rounded-full border bg-background text-sm font-bold shadow-sm ring-4 ring-background">
-                <span className="before:content-[counter(step)]" />
-            </div>
-            <h3 className="mb-2 text-base font-semibold tracking-tight">{title}</h3>
-            <div className="text-sm text-muted-foreground">{children}</div>
-        </div>
-    )
+  return (
+    <div className={cn('relative [counter-increment:step]', className)} {...props}>
+      <div className="absolute left-[-3.5rem] top-0 flex h-10 w-10 items-center justify-center rounded-full border border-border/80 bg-background text-sm font-semibold text-foreground shadow-sm ring-4 ring-background">
+        <span className="before:content-[counter(step)]" />
+      </div>
+      <h3 className="mb-2 pt-0.5 text-base font-semibold tracking-tight text-foreground">{title}</h3>
+      <div className="text-sm leading-7 text-muted-foreground">{children}</div>
+    </div>
+  )
 }

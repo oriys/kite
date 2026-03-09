@@ -1,6 +1,5 @@
 'use client'
 
-import * as React from 'react'
 import Image, { ImageProps } from 'next/image'
 import { ZoomIn } from 'lucide-react'
 
