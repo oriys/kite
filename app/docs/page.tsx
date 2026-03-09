@@ -28,21 +28,22 @@ const statuses: (DocStatus | 'all')[] = ['all', 'draft', 'review', 'published', 
 export default function DocsPage() {
   const router = useRouter()
   const [filter, setFilter] = React.useState<DocStatus | 'all'>('all')
-  const { items, loading, create, remove } = useDocuments(
-    filter === 'all' ? undefined : filter,
-  )
+  const { items, loading, create, remove } = useDocuments()
   const [newTitle, setNewTitle] = React.useState('')
   const [dialogOpen, setDialogOpen] = React.useState(false)
 
-  // Count per status (always from full list)
-  const allDocs = useDocuments()
+  const filteredItems = React.useMemo(
+    () => (filter === 'all' ? items : items.filter((doc) => doc.status === filter)),
+    [filter, items],
+  )
+
   const counts = React.useMemo(() => {
-    const c: Record<string, number> = { all: allDocs.items.length }
+    const c: Record<string, number> = { all: items.length }
     for (const s of Object.keys(STATUS_CONFIG)) {
-      c[s] = allDocs.items.filter((d) => d.status === s).length
+      c[s] = items.filter((d) => d.status === s).length
     }
     return c
-  }, [allDocs.items])
+  }, [items])
 
   const handleCreate = () => {
     const title = newTitle.trim() || 'Untitled'
@@ -126,7 +127,7 @@ export default function DocsPage() {
           <div className="size-5 motion-safe:animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
         </div>
       ) : (
-        <DocList documents={items} onDelete={remove} />
+        <DocList documents={filteredItems} onDelete={remove} />
       )}
     </div>
   )

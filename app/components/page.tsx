@@ -44,6 +44,15 @@ import {
   WebhookDeliveryList,
   WebhookEventCard,
 } from '@/components/ui/api-docs'
+import { BackToTop } from '@/components/ui/back-to-top'
+import { Callout } from '@/components/ui/callout'
+import { CodeBlock } from '@/components/ui/code-block'
+import { FileTree } from '@/components/ui/file-tree'
+import { Feedback } from '@/components/ui/feedback'
+import { JsonViewer } from '@/components/ui/json-viewer'
+import { Steps, Step } from '@/components/ui/steps'
+import { TableOfContents } from '@/components/ui/toc'
+import { ZoomImage } from '@/components/ui/zoom-image'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Breadcrumb,
@@ -156,6 +165,7 @@ const sections = [
   { id: 'data', label: 'Data', note: 'lists and tables' },
   { id: 'writing', label: 'Writing', note: 'docs and callouts' },
   { id: 'states', label: 'States', note: 'feedback and empty cases' },
+  { id: 'enhanced-docs', label: 'Enhanced Docs', note: 'rich components' },
 ] as const
 
 const metrics = [
@@ -1793,8 +1803,151 @@ export default function Page() {
                 </Card>
               </div>
             </section>
+
+            <section
+              id="enhanced-docs"
+              className="space-y-5 editorial-reveal"
+              style={reveal(510)}
+            >
+              <SectionHeading
+                eyebrow="Enhanced Docs"
+                title="Rich components for technical writing."
+                description="Specialized components for callouts, file trees, image zooming, and JSON data exploration."
+              />
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Callouts</CardTitle>
+                    <CardDescription>
+                      Semantic highlights for important information.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Callout title="Note" type="default">
+                      Standard information that should stand out from body text.
+                    </Callout>
+                    <Callout title="Pro Tip" type="tip">
+                      Helpful suggestions to improve the user experience.
+                    </Callout>
+                    <Callout title="Warning" type="warning">
+                      Critical information that requires user attention.
+                    </Callout>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>File Tree</CardTitle>
+                    <CardDescription>
+                      Visualize directory structures and file organization.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <FileTree
+                      data={[
+                        {
+                          id: '1',
+                          name: 'app',
+                          type: 'folder',
+                          children: [
+                            { id: '2', name: 'page.tsx', type: 'file' },
+                            { id: '3', name: 'layout.tsx', type: 'file' },
+                          ],
+                        },
+                        {
+                          id: '4',
+                          name: 'components',
+                          type: 'folder',
+                          children: [
+                            { id: '5', name: 'ui', type: 'folder', children: [{ id: '6', name: 'button.tsx', type: 'file' }] },
+                          ],
+                        },
+                        { id: '7', name: 'package.json', type: 'file' },
+                      ]}
+                    />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Steps</CardTitle>
+                    <CardDescription>
+                      Sequenced instructions for tutorials and guides.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Steps>
+                      <Step title="Install dependencies">
+                        Run <code className="bg-muted px-1 py-0.5 rounded">npm install</code> to get started.
+                      </Step>
+                      <Step title="Configure environment">
+                        Copy .env.example to .env.local and fill in secrets.
+                      </Step>
+                      <Step title="Run development server">
+                        Start the local dev server with <code className="bg-muted px-1 py-0.5 rounded">npm run dev</code>.
+                      </Step>
+                    </Steps>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>JSON Viewer & Code</CardTitle>
+                    <CardDescription>
+                      Interactive data exploration and copy-ready code blocks.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <JsonViewer
+                      data={{
+                        user: { id: 1, name: 'Alice', role: 'admin' },
+                        settings: { theme: 'dark', notifications: true },
+                        tags: ['react', 'nextjs', 'ui']
+                      }}
+                      maxHeight={200}
+                    />
+                    <CodeBlock
+                      language="bash"
+                      code="npm install @radix-ui/react-slot"
+                      copy={true}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="mt-8 grid gap-4 md:grid-cols-2">
+                 <Card>
+                    <CardHeader>
+                       <CardTitle>Zoom Image</CardTitle>
+                       <CardDescription>Click to expand into a lightbox view.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                       <ZoomImage
+                          src="/placeholder.svg"
+                          alt="Placeholder chart"
+                          caption="Detailed view of the system architecture"
+                          width={600}
+                          height={300}
+                          className="w-full"
+                       />
+                    </CardContent>
+                 </Card>
+
+                 <Card>
+                    <CardHeader>
+                       <CardTitle>Feedback</CardTitle>
+                       <CardDescription>Simple sentiment collection.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex items-center justify-center h-[140px]">
+                       <Feedback />
+                    </CardContent>
+                 </Card>
+              </div>
+            </section>
           </main>
         </div>
+        <BackToTop />
       </div>
     </div>
   )

@@ -79,69 +79,70 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
         const wc = docStore.wordCount(doc.content)
 
         return (
-          <Link key={doc.id} href={getDocEditorHref(doc.id)} className="group">
-            <Card className="h-full transition-shadow hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_24px_60px_-32px_rgba(15,23,42,0.25)]">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-sm font-medium leading-5 line-clamp-2 group-hover:text-accent-foreground transition-colors">
-                    {doc.title || 'Untitled'}
-                  </CardTitle>
-                  <StatusBadge
-                    label={config.label}
-                    tone={config.tone as StatusTone}
-                    className="shrink-0"
-                  />
-                </div>
-                <CardDescription className="line-clamp-2 text-xs leading-5">
-                  {excerpt(doc.content) || 'Empty document'}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <div className="flex items-center gap-3">
+          <div key={doc.id} className="group">
+            <Card className="relative h-full transition-shadow hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_24px_60px_-32px_rgba(15,23,42,0.25)]">
+              <Link
+                href={getDocEditorHref(doc.id)}
+                className="block h-full rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-sm font-medium leading-5 line-clamp-2 transition-colors group-hover:text-accent-foreground">
+                      {doc.title || 'Untitled'}
+                    </CardTitle>
+                    <StatusBadge
+                      label={config.label}
+                      tone={config.tone as StatusTone}
+                      className="shrink-0"
+                    />
+                  </div>
+                  <CardDescription className="line-clamp-2 text-xs leading-5">
+                    {excerpt(doc.content) || 'Empty document'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 pr-14">
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="size-3" />
                       {formatDate(doc.updatedAt)}
                     </span>
                     <span>{wc.toLocaleString()} words</span>
                   </div>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="size-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => e.preventDefault()}
-                        aria-label={`Delete ${doc.title}`}
+                </CardContent>
+              </Link>
+              <div className="absolute bottom-6 right-6 z-10">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="size-6 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                      aria-label={`Delete ${doc.title}`}
+                    >
+                      <Trash2 className="size-3 text-muted-foreground" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete document</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Permanently delete &ldquo;{doc.title}&rdquo;? This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={() => onDelete(doc.id)}
                       >
-                        <Trash2 className="size-3 text-muted-foreground" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent onClick={(e) => e.preventDefault()}>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete document</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Permanently delete &ldquo;{doc.title}&rdquo;? This cannot be undone.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            onDelete(doc.id)
-                          }}
-                        >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </CardContent>
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </Card>
-          </Link>
+          </div>
         )
       })}
     </div>

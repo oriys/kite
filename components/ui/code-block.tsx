@@ -2,12 +2,14 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { CopyButton } from '@/components/ui/copy-button'
 
 type Language = 'json' | 'bash' | 'javascript' | 'typescript' | 'jsx' | 'tsx' | 'graphql' | 'text'
 
 interface CodeBlockProps extends React.ComponentProps<'pre'> {
   code: string
   language?: Language | string
+  copy?: boolean
 }
 
 const tokenPatterns: Record<string, Array<{ pattern: RegExp; className: string }>> = {
@@ -96,22 +98,29 @@ function highlightCode(code: string, language: string): React.ReactNode[] {
   return result
 }
 
-function CodeBlock({ code, language = 'text', className, ...props }: CodeBlockProps) {
+function CodeBlock({ code, language = 'text', copy = true, className, ...props }: CodeBlockProps) {
   const highlighted = React.useMemo(
     () => highlightCode(code, language),
     [code, language],
   )
 
   return (
-    <pre
-      className={cn(
-        'overflow-x-auto font-mono text-[13px] leading-6 text-foreground',
-        className,
+    <div className={cn("relative group", className)}>
+      <pre
+        className={cn(
+          'overflow-x-auto font-mono text-[13px] leading-6 text-foreground p-4',
+          // removed className here to avoid conflict with wrapper className if any
+        )}
+        {...props}
+      >
+        <code>{highlighted}</code>
+      </pre>
+      {copy && (
+        <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
+          <CopyButton value={code} className="h-6 w-6 border bg-background/80 shadow-sm backdrop-blur-sm" />
+        </div>
       )}
-      {...props}
-    >
-      <code>{highlighted}</code>
-    </pre>
+    </div>
   )
 }
 
