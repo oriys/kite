@@ -36,11 +36,16 @@ export function useDocuments(statusFilter?: DocStatus) {
   return { items, loading, refresh, create, remove }
 }
 
-export function useDocument(id: string) {
+export function useDocument(id?: string | null) {
   const [doc, setDoc] = React.useState<Doc | undefined>(undefined)
   const [loading, setLoading] = React.useState(true)
 
   const refresh = React.useCallback(() => {
+    if (!id) {
+      setDoc(undefined)
+      setLoading(false)
+      return
+    }
     setDoc(docs.get(id))
     setLoading(false)
   }, [id])
@@ -51,6 +56,7 @@ export function useDocument(id: string) {
 
   const update = React.useCallback(
     (patch: Partial<Pick<Doc, 'title' | 'content'>>) => {
+      if (!id) return undefined
       const updated = docs.update(id, patch)
       if (updated) setDoc(updated)
       return updated
@@ -60,6 +66,7 @@ export function useDocument(id: string) {
 
   const transition = React.useCallback(
     (status: DocStatus) => {
+      if (!id) return undefined
       const updated = docs.transition(id, status)
       if (updated) setDoc(updated)
       return updated
@@ -68,10 +75,12 @@ export function useDocument(id: string) {
   )
 
   const remove = React.useCallback(() => {
+    if (!id) return false
     return docs.remove(id)
   }, [id])
 
   const duplicate = React.useCallback(() => {
+    if (!id) return undefined
     return docs.duplicate(id)
   }, [id])
 

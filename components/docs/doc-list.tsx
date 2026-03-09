@@ -5,6 +5,7 @@ import { FileText, Clock, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { type Doc, STATUS_CONFIG, docs as docStore } from '@/lib/documents'
+import { getDocEditorHref } from '@/lib/docs-url'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -78,7 +79,7 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
         const wc = docStore.wordCount(doc.content)
 
         return (
-          <Link key={doc.id} href={`/docs/${doc.id}`} className="group">
+          <Link key={doc.id} href={getDocEditorHref(doc.id)} className="group">
             <Card className="h-full transition-shadow hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_24px_60px_-32px_rgba(15,23,42,0.25)]">
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">

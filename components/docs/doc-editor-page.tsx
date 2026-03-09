@@ -1,24 +1,49 @@
 'use client'
 
 import * as React from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+
 import { type DocStatus } from '@/lib/documents'
+import { getDocEditorHref } from '@/lib/docs-url'
 import { useDocument } from '@/hooks/use-documents'
 import { Input } from '@/components/ui/input'
 import { DocEditor } from '@/components/docs/doc-editor'
 import { DocStatusBar } from '@/components/docs/doc-status-bar'
-import { Skeleton } from '@/components/ui/skeleton'
 
-export default function DocEditorPage() {
-  const params = useParams<{ id: string }>()
+function MissingDocumentState() {
   const router = useRouter()
-  const { doc, loading, update, transition, remove, duplicate } = useDocument(params.id)
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      <div className="rounded-lg border border-border/70 bg-card p-8 text-center shadow-sm">
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">
+          Document not found
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Pick a document from the list or create a new one first.
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push('/docs')}
+          className="mt-4 inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Back to Documents
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function DocEditorPageClient() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const docId = searchParams.get('doc')
+  const { doc, loading, update, transition, remove, duplicate } = useDocument(docId)
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
   const [initialized, setInitialized] = React.useState(false)
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Initialize local state from doc
   React.useEffect(() => {
     if (doc && !initialized) {
       setTitle(doc.title)
@@ -27,7 +52,15 @@ export default function DocEditorPage() {
     }
   }, [doc, initialized])
 
-  // Auto-save with debounce
+  React.useEffect(() => {
+    if (!docId) {
+      setInitialized(false)
+      setTitle('')
+      setContent('')
+      return
+    }
+  }, [docId])
+
   const scheduleAutoSave = React.useCallback(
     (newTitle: string, newContent: string) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -38,7 +71,6 @@ export default function DocEditorPage() {
     [update],
   )
 
-  // Cleanup timer
   React.useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -56,7 +88,6 @@ export default function DocEditorPage() {
   }
 
   const handleTransition = (status: DocStatus) => {
-    // Flush any pending save
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current)
       update({ title, content })
@@ -71,23 +102,21 @@ export default function DocEditorPage() {
 
   const handleDuplicate = () => {
     const newDoc = duplicate()
-    if (newDoc) router.push(`/docs/${newDoc.id}`)
+    if (newDoc) router.push(getDocEditorHref(newDoc.id))
   }
 
-  if (loading || !doc) {
-    return (
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <Skeleton className="mb-4 h-10 w-2/3" />
-        <Skeleton className="h-[600px] w-full rounded-md" />
-      </div>
-    )
+  if (loading) {
+    return null
+  }
+
+  if (!docId || !doc) {
+    return <MissingDocumentState />
   }
 
   const isReadOnly = doc.status === 'published' || doc.status === 'archived'
 
   return (
     <div className="flex h-dvh flex-col">
-      {/* Title bar */}
       <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
         <div className="mx-auto max-w-5xl">
           <Input
@@ -101,7 +130,6 @@ export default function DocEditorPage() {
         </div>
       </div>
 
-      {/* Editor */}
       <div className="flex-1 overflow-hidden">
         <div className="mx-auto h-full max-w-5xl px-4 py-4 sm:px-6">
           <DocEditor
@@ -113,7 +141,6 @@ export default function DocEditorPage() {
         </div>
       </div>
 
-      {/* Status bar */}
       <DocStatusBar
         doc={{ ...doc, title, content }}
         onTransition={handleTransition}

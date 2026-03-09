@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { DocList } from '@/components/docs/doc-list'
+import { getDocEditorHref } from '@/lib/docs-url'
 import {
   Dialog,
   DialogContent,
@@ -48,7 +49,7 @@ export default function DocsPage() {
     const doc = create(title, '')
     setNewTitle('')
     setDialogOpen(false)
-    router.push(`/docs/${doc.id}`)
+    router.push(getDocEditorHref(doc.id))
   }
 
   return (
