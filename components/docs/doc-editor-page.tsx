@@ -2,20 +2,53 @@
 
 import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 
-import { type DocStatus } from '@/lib/documents'
+import { type DocStatus, STATUS_CONFIG } from '@/lib/documents'
 import { cn } from '@/lib/utils'
 import { getDocEditorHref } from '@/lib/docs-url'
 import { useDocument } from '@/hooks/use-documents'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { DocEditor } from '@/components/docs/doc-editor'
-import { DocStatusBar } from '@/components/docs/doc-status-bar'
+import { DocStatusBar, type SaveState } from '@/components/docs/doc-status-bar'
 import { type EditorViewMode } from '@/components/docs/doc-toolbar'
 
 function getEditorShellClassName(mode: EditorViewMode) {
   return cn(
     'mx-auto w-full px-4 sm:px-6',
     mode === 'split' ? 'max-w-[1560px]' : 'max-w-5xl',
+  )
+}
+
+function EditorSkeleton() {
+  return (
+    <div className="flex h-dvh flex-col">
+      <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
+        <div className="mx-auto max-w-5xl">
+          <Skeleton className="h-7 w-64" />
+        </div>
+      </div>
+      <div className="flex-1 px-4 py-4 sm:px-6">
+        <div className="mx-auto max-w-5xl space-y-4">
+          <Skeleton className="h-8 w-full" />
+          <div className="space-y-3 pt-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-4/6" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-border/60 bg-muted/20 px-4 py-2">
+        <div className="mx-auto flex max-w-5xl items-center gap-3">
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="h-5 w-24" />
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -52,7 +85,10 @@ export function DocEditorPageClient() {
   const [content, setContent] = React.useState('')
   const [editorMode, setEditorMode] = React.useState<EditorViewMode>('wysiwyg')
   const [initialized, setInitialized] = React.useState(false)
+  const [saveState, setSaveState] = React.useState<SaveState>('idle')
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savedFeedbackRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const editorFocusRef = React.useRef<{ focus: () => void } | null>(null)
 
   React.useEffect(() => {
     if (doc && !initialized) {
@@ -74,8 +110,12 @@ export function DocEditorPageClient() {
   const scheduleAutoSave = React.useCallback(
     (newTitle: string, newContent: string) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = setTimeout(() => {
-        update({ title: newTitle, content: newContent })
+      if (savedFeedbackRef.current) clearTimeout(savedFeedbackRef.current)
+      setSaveState('saving')
+      saveTimerRef.current = setTimeout(async () => {
+        await update({ title: newTitle, content: newContent })
+        setSaveState('saved')
+        savedFeedbackRef.current = setTimeout(() => setSaveState('idle'), 2000)
       }, 800)
     },
     [update],
@@ -84,6 +124,7 @@ export function DocEditorPageClient() {
   React.useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      if (savedFeedbackRef.current) clearTimeout(savedFeedbackRef.current)
     }
   }, [])
 
@@ -97,26 +138,43 @@ export function DocEditorPageClient() {
     scheduleAutoSave(title, newContent)
   }
 
-  const handleTransition = (status: DocStatus) => {
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      editorFocusRef.current?.focus()
+    }
+  }
+
+  const handleTransition = async (status: DocStatus) => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current)
-      update({ title, content })
+      await update({ title, content })
     }
-    transition(status)
+    await transition(status)
+    const config = STATUS_CONFIG[status]
+    toast.success(`Moved to ${config.label}`, {
+      description: `"${title || 'Untitled'}" is now ${config.label.toLowerCase()}.`,
+    })
   }
 
-  const handleDelete = () => {
-    remove()
+  const handleDelete = async () => {
+    await remove()
     router.push('/docs')
+    toast.success('Document deleted')
   }
 
-  const handleDuplicate = () => {
-    const newDoc = duplicate()
-    if (newDoc) router.push(getDocEditorHref(newDoc.id))
+  const handleDuplicate = async () => {
+    const newDoc = await duplicate()
+    if (newDoc) {
+      router.push(getDocEditorHref(newDoc.id))
+      toast.success('Document duplicated', {
+        description: `Created "${newDoc.title}".`,
+      })
+    }
   }
 
   if (loading) {
-    return null
+    return <EditorSkeleton />
   }
 
   if (!docId || !doc) {
@@ -132,6 +190,7 @@ export function DocEditorPageClient() {
           <Input
             value={title}
             onChange={(e) => handleTitleChange(e.target.value)}
+            onKeyDown={handleTitleKeyDown}
             readOnly={isReadOnly}
             aria-label="Document title"
             placeholder="Untitled document…"
@@ -139,6 +198,16 @@ export function DocEditorPageClient() {
           />
         </div>
       </div>
+
+      {isReadOnly && (
+        <div className="border-b border-amber-500/20 bg-amber-50/50 px-4 py-1.5 dark:bg-amber-950/20 sm:px-6">
+          <div className={getEditorShellClassName(editorMode)}>
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              This document is {doc.status}. Revert to draft to make changes.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden">
         <div className={cn(getEditorShellClassName(editorMode), 'h-full py-4')}>
@@ -148,12 +217,14 @@ export function DocEditorPageClient() {
             readOnly={isReadOnly}
             className="h-full"
             onModeChange={setEditorMode}
+            editorFocusRef={editorFocusRef}
           />
         </div>
       </div>
 
       <DocStatusBar
         doc={{ ...doc, title, content }}
+        saveState={saveState}
         onTransition={handleTransition}
         onDelete={handleDelete}
         onDuplicate={handleDuplicate}

@@ -831,9 +831,10 @@ interface DocEditorProps {
   readOnly?: boolean
   className?: string
   onModeChange?: (mode: EditorViewMode) => void
+  editorFocusRef?: React.MutableRefObject<{ focus: () => void } | null>
 }
 
-export function DocEditor({ content, onChange, readOnly, className, onModeChange }: DocEditorProps) {
+export function DocEditor({ content, onChange, readOnly, className, onModeChange, editorFocusRef }: DocEditorProps) {
   const [mode, setMode] = React.useState<EditorMode>('wysiwyg')
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
   const [tableControls, setTableControls] = React.useState<TableControlsState | null>(null)
@@ -1151,6 +1152,23 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     onModeChange?.(mode)
   }, [mode, onModeChange])
 
+  // ── Expose focus method to parent ──────────────────────────────────────
+  React.useEffect(() => {
+    if (!editorFocusRef) return
+    editorFocusRef.current = {
+      focus: () => {
+        if (editingMode === 'source') {
+          textareaRef.current?.focus()
+        } else {
+          editorRef.current?.focus()
+        }
+      },
+    }
+    return () => {
+      editorFocusRef.current = null
+    }
+  }, [editorFocusRef, editingMode])
+
   // ── Mode switching ───────────────────────────────────────────────────────
   const handleModeChange = React.useCallback(
     (m: EditorMode) => {
@@ -1423,9 +1441,10 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
           <div
             ref={editorViewportRef}
             className={cn(
-              'min-h-0 overflow-auto',
+              'min-h-0 overflow-auto transition-[box-shadow] duration-200',
               mode !== 'split' && 'flex-1',
               mode === 'split' && 'border-b border-border/60 md:border-b-0 md:border-r',
+              mode === 'split' && activePane === 'wysiwyg' && 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]',
             )}
           >
             <div
@@ -1590,7 +1609,12 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
         )}
 
         {hasSourceEditor(mode) && (
-          <div className={cn('min-h-0', mode !== 'split' && 'flex-1', mode === 'split' && 'bg-muted/[0.14]')}>
+          <div className={cn(
+            'min-h-0 transition-[box-shadow] duration-200',
+            mode !== 'split' && 'flex-1',
+            mode === 'split' && 'bg-muted/[0.14]',
+            mode === 'split' && activePane === 'source' && 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]',
+          )}>
             <textarea
               ref={textareaRef}
               value={content}

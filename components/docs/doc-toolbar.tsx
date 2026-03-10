@@ -24,6 +24,7 @@ import {
 import { type DocSnippet } from '@/lib/doc-snippets'
 import { CODE_LANGUAGE_OPTIONS, type CodeLanguageOption } from '@/lib/code-highlighting'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { DocSnippetPicker } from '@/components/docs/doc-snippet-picker'
 import {
@@ -34,6 +35,11 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Tooltip,
   TooltipContent,
@@ -97,6 +103,7 @@ function richInsertBlock(html: string) {
 // ── Action definitions ─────────────────────────────────────────────────────
 
 interface ToolbarAction {
+  id?: string
   icon: React.ComponentType<{ className?: string }>
   label: string
   shortcut?: string
@@ -172,23 +179,19 @@ const actions: (ToolbarAction | 'separator')[] = [
   },
   'separator',
   {
+    id: 'link',
     icon: Link2,
     label: 'Link',
     shortcut: '⌘K',
     sourceAction: (ta) => wrapSelection(ta, '[', '](url)'),
-    richAction: () => {
-      const url = prompt('URL:')
-      if (url) richExec('createLink', url)
-    },
+    richAction: () => {},
   },
   {
+    id: 'image',
     icon: Image,
     label: 'Image',
     sourceAction: (ta) => insertBlock(ta, '![alt](url)\n'),
-    richAction: () => {
-      const url = prompt('Image URL:')
-      if (url) richInsertBlock(`<img src="${url}" alt="image" />`)
-    },
+    richAction: () => {},
   },
   {
     icon: Table,
@@ -206,6 +209,169 @@ const actions: (ToolbarAction | 'separator')[] = [
     richAction: () => richExec('insertHorizontalRule'),
   },
 ]
+
+// ── Inline insert popovers ──────────────────────────────────────────────
+
+interface LinkPopoverProps {
+  disabled?: boolean
+  mode: ToolbarMode
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>
+  editorRef?: React.RefObject<HTMLDivElement | null>
+  onSourceChange?: (content: string) => void
+  onRichChange?: () => void
+}
+
+function LinkPopover({ disabled, mode, textareaRef, editorRef, onSourceChange, onRichChange }: LinkPopoverProps) {
+  const [open, setOpen] = React.useState(false)
+  const [url, setUrl] = React.useState('')
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  const handleSubmit = () => {
+    const trimmed = url.trim()
+    if (!trimmed) return
+
+    if (mode === 'source' && textareaRef?.current) {
+      wrapSelection(textareaRef.current, '[', `](${trimmed})`)
+      onSourceChange?.(textareaRef.current.value)
+    } else {
+      editorRef?.current?.focus()
+      richExec('createLink', trimmed)
+      requestAnimationFrame(() => onRichChange?.())
+    }
+    setUrl('')
+    setOpen(false)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={(next) => {
+      setOpen(next)
+      if (!next) setUrl('')
+    }}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={disabled}
+              onMouseDown={(e) => e.preventDefault()}
+              aria-label="Link"
+            >
+              <Link2 className="size-3.5" />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          Link
+          <span className="ml-2 text-muted-foreground">⌘K</span>
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent align="start" className="w-72 p-3" onOpenAutoFocus={(e) => {
+        e.preventDefault()
+        inputRef.current?.focus()
+      }}>
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit() }} className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-foreground">URL</label>
+          <Input
+            ref={inputRef}
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://…"
+            className="h-8 text-sm"
+          />
+          <Button type="submit" size="sm" className="h-7 self-end text-xs" disabled={!url.trim()}>
+            Insert Link
+          </Button>
+        </form>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+interface ImagePopoverProps {
+  disabled?: boolean
+  mode: ToolbarMode
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>
+  editorRef?: React.RefObject<HTMLDivElement | null>
+  onSourceChange?: (content: string) => void
+  onRichChange?: () => void
+}
+
+function ImagePopover({ disabled, mode, textareaRef, editorRef, onSourceChange, onRichChange }: ImagePopoverProps) {
+  const [open, setOpen] = React.useState(false)
+  const [url, setUrl] = React.useState('')
+  const [alt, setAlt] = React.useState('')
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  const handleSubmit = () => {
+    const trimmed = url.trim()
+    if (!trimmed) return
+    const altText = alt.trim() || 'image'
+
+    if (mode === 'source' && textareaRef?.current) {
+      insertBlock(textareaRef.current, `![${altText}](${trimmed})\n`)
+      onSourceChange?.(textareaRef.current.value)
+    } else {
+      editorRef?.current?.focus()
+      richInsertBlock(`<img src="${trimmed}" alt="${altText}" />`)
+      requestAnimationFrame(() => onRichChange?.())
+    }
+    setUrl('')
+    setAlt('')
+    setOpen(false)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={(next) => {
+      setOpen(next)
+      if (!next) { setUrl(''); setAlt('') }
+    }}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={disabled}
+              onMouseDown={(e) => e.preventDefault()}
+              aria-label="Image"
+            >
+              <Image className="size-3.5" />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          Image
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent align="start" className="w-72 p-3" onOpenAutoFocus={(e) => {
+        e.preventDefault()
+        inputRef.current?.focus()
+      }}>
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit() }} className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-foreground">Image URL</label>
+          <Input
+            ref={inputRef}
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://…"
+            className="h-8 text-sm"
+          />
+          <label className="text-xs font-medium text-foreground">Alt text</label>
+          <Input
+            value={alt}
+            onChange={(e) => setAlt(e.target.value)}
+            placeholder="Describe the image…"
+            className="h-8 text-sm"
+          />
+          <Button type="submit" size="sm" className="h-7 self-end text-xs" disabled={!url.trim()}>
+            Insert Image
+          </Button>
+        </form>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 // ── Toolbar component ──────────────────────────────────────────────────────
 
@@ -393,6 +559,32 @@ export function DocToolbar({
               )
             }
             return <Separator key={i} orientation="vertical" className="mx-1 h-5" />
+          }
+          if (item.id === 'link') {
+            return (
+              <LinkPopover
+                key={item.label}
+                disabled={disabled}
+                mode={mode}
+                textareaRef={textareaRef}
+                editorRef={editorRef}
+                onSourceChange={onSourceChange}
+                onRichChange={onRichChange}
+              />
+            )
+          }
+          if (item.id === 'image') {
+            return (
+              <ImagePopover
+                key={item.label}
+                disabled={disabled}
+                mode={mode}
+                textareaRef={textareaRef}
+                editorRef={editorRef}
+                onSourceChange={onSourceChange}
+                onRichChange={onRichChange}
+              />
+            )
           }
           return (
             <Tooltip key={item.label}>

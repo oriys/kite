@@ -9,6 +9,7 @@ import { useDocuments } from '@/hooks/use-documents'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { UserMenu } from '@/components/auth/user-menu'
 import { DocList } from '@/components/docs/doc-list'
 import { getDocEditorHref } from '@/lib/docs-url'
 import {
@@ -45,9 +46,9 @@ export default function DocsPage() {
     return c
   }, [items])
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const title = newTitle.trim() || 'Untitled'
-    const doc = create(title, '')
+    const doc = await create(title, '')
     setNewTitle('')
     setDialogOpen(false)
     router.push(getDocEditorHref(doc.id))
@@ -65,6 +66,7 @@ export default function DocsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
+          <UserMenu />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-8">

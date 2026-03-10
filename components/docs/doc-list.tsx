@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { FileText, Clock, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { type Doc, STATUS_CONFIG, docs as docStore } from '@/lib/documents'
+import { type Doc, STATUS_CONFIG, wordCount } from '@/lib/documents'
 import { getDocEditorHref } from '@/lib/docs-url'
 import { Button } from '@/components/ui/button'
 import {
@@ -76,7 +76,7 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
     <div className={cn('grid gap-3 sm:grid-cols-2 xl:grid-cols-3', className)}>
       {documents.map((doc) => {
         const config = STATUS_CONFIG[doc.status]
-        const wc = docStore.wordCount(doc.content)
+        const wc = wordCount(doc.content)
 
         return (
           <div key={doc.id} className="group">

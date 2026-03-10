@@ -8,11 +8,13 @@ import {
   ChevronRight,
   Trash2,
   Copy,
+  Check,
+  Loader2,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { cn } from '@/lib/utils'
-import { type Doc, type DocStatus, STATUS_CONFIG, docs as docStore } from '@/lib/documents'
+import { type Doc, type DocStatus, STATUS_CONFIG, wordCount } from '@/lib/documents'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import {
@@ -34,8 +36,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
+export type SaveState = 'idle' | 'saving' | 'saved'
+
 interface DocStatusBarProps {
   doc: Doc
+  saveState?: SaveState
   onTransition: (status: DocStatus) => void
   onDelete: () => void
   onDuplicate: () => void
@@ -53,10 +58,10 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`
 }
 
-export function DocStatusBar({ doc, onTransition, onDelete, onDuplicate, className }: DocStatusBarProps) {
+export function DocStatusBar({ doc, saveState = 'idle', onTransition, onDelete, onDuplicate, className }: DocStatusBarProps) {
   const router = useRouter()
   const config = STATUS_CONFIG[doc.status]
-  const wc = docStore.wordCount(doc.content)
+  const wc = wordCount(doc.content)
 
   return (
     <div className={cn(
@@ -83,8 +88,22 @@ export function DocStatusBar({ doc, onTransition, onDelete, onDuplicate, classNa
         </span>
 
         <span className="flex items-center gap-1">
-          <Clock className="size-3" />
-          Saved {timeAgo(doc.updatedAt)}
+          {saveState === 'saving' ? (
+            <>
+              <Loader2 className="size-3 animate-spin" />
+              <span className="text-muted-foreground">Saving…</span>
+            </>
+          ) : saveState === 'saved' ? (
+            <>
+              <Check className="size-3 text-emerald-500" />
+              <span className="text-emerald-600 dark:text-emerald-400">Saved</span>
+            </>
+          ) : (
+            <>
+              <Clock className="size-3" />
+              Saved {timeAgo(doc.updatedAt)}
+            </>
+          )}
         </span>
 
         {doc.versions.length > 0 && (
