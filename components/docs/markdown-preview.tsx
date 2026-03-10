@@ -1,13 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { marked } from 'marked'
 import { cn } from '@/lib/utils'
-
-marked.setOptions({
-  gfm: true,
-  breaks: true,
-})
+import { renderMarkdown } from '@/lib/markdown'
 
 interface MarkdownPreviewProps extends React.ComponentProps<'div'> {
   content: string
@@ -16,7 +11,7 @@ interface MarkdownPreviewProps extends React.ComponentProps<'div'> {
 export function MarkdownPreview({ content, className, ...props }: MarkdownPreviewProps) {
   const html = React.useMemo(() => {
     if (!content.trim()) return '<p class="text-muted-foreground italic">No content yet…</p>'
-    return marked.parse(content, { async: false }) as string
+    return renderMarkdown(content)
   }, [content])
 
   return (

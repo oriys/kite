@@ -332,6 +332,162 @@
       @apply my-4 border-l-2 border-accent/50 pl-4 italic text-muted-foreground;
     }
 
+    .doc-json-viewer {
+      @apply my-4 overflow-hidden rounded-md border border-border/75 bg-card/95 font-mono text-[13px] leading-7 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:shadow-none;
+    }
+
+    .doc-json-toolbar {
+      @apply flex items-center justify-between border-b border-border/60 bg-muted/35 px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground;
+    }
+
+    .doc-json-label {
+      @apply font-semibold text-foreground/75;
+    }
+
+    .doc-json-hint {
+      @apply text-muted-foreground/80;
+    }
+
+    .doc-json-tree {
+      @apply overflow-x-auto px-4 py-3;
+    }
+
+    .doc-json-node {
+      @apply block;
+    }
+
+    .doc-json-summary {
+      @apply block cursor-pointer rounded-sm select-none;
+      list-style: none;
+      padding-left: calc(var(--json-level, 0) * 1rem);
+    }
+
+    .doc-json-summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .doc-json-line {
+      @apply rounded-sm;
+      padding-left: calc(var(--json-level, 0) * 1rem);
+    }
+
+    .doc-json-line:hover,
+    .doc-json-summary:hover {
+      @apply bg-muted/30;
+    }
+
+    .doc-json-toggle {
+      @apply mr-1 inline-block w-4 text-center text-muted-foreground;
+    }
+
+    .doc-json-toggle::before {
+      content: '▾';
+    }
+
+    .doc-json-node:not([open]) > .doc-json-summary .doc-json-toggle::before {
+      content: '▸';
+    }
+
+    .doc-json-key {
+      color: var(--tone-info-text);
+    }
+
+    .doc-json-string {
+      color: var(--tone-success-text);
+    }
+
+    .doc-json-number {
+      color: var(--tone-caution-text);
+    }
+
+    .doc-json-boolean {
+      color: var(--accent-foreground);
+    }
+
+    .doc-json-null {
+      @apply italic text-muted-foreground;
+    }
+
+    .doc-json-brace,
+    .doc-json-punctuation {
+      @apply text-muted-foreground;
+    }
+
+    .doc-json-meta {
+      @apply ml-2 text-[11px] text-muted-foreground/75;
+    }
+
+    .doc-json-inline-ellipsis,
+    .doc-json-inline-close {
+      @apply text-muted-foreground;
+    }
+
+    .doc-json-node[open] > .doc-json-summary .doc-json-inline-ellipsis,
+    .doc-json-node[open] > .doc-json-summary .doc-json-inline-close,
+    .doc-json-node[open] > .doc-json-summary .doc-json-meta {
+      display: none;
+    }
+
+    .doc-json-node:not([open]) > .doc-json-children,
+    .doc-json-node:not([open]) > .doc-json-closing {
+      display: none;
+    }
+
+    .doc-json-children {
+      @apply min-w-max;
+    }
+
+    .doc-json-closing {
+      @apply text-muted-foreground;
+    }
+
+    .doc-json-viewer pre {
+      @apply m-0 overflow-x-auto border-0 bg-transparent p-4 shadow-none;
+    }
+
+    .doc-json-viewer pre code {
+      @apply bg-transparent p-0;
+    }
+
+    .doc-code-comment {
+      @apply italic text-muted-foreground;
+    }
+
+    .doc-code-string {
+      color: var(--tone-success-text);
+    }
+
+    .doc-code-number {
+      color: var(--tone-caution-text);
+    }
+
+    .doc-code-keyword {
+      color: var(--tone-info-text);
+      font-weight: 600;
+    }
+
+    .doc-code-constant {
+      color: var(--accent-foreground);
+      font-weight: 500;
+    }
+
+    .doc-code-variable {
+      color: var(--tone-subscription-text);
+    }
+
+    .doc-code-attribute {
+      color: var(--tone-info-text);
+    }
+
+    .doc-code-type {
+      color: color-mix(in oklab, var(--tone-caution-text) 78%, var(--foreground) 22%);
+    }
+
+    .doc-code-url {
+      @apply underline decoration-border underline-offset-2;
+      color: var(--foreground);
+    }
+
     code {
       @apply rounded-sm bg-muted/60 px-1.5 py-0.5 font-mono text-[13px] text-foreground;
     }
@@ -341,6 +497,10 @@
       code {
         @apply bg-transparent p-0 text-[13px] leading-6;
       }
+    }
+
+    pre[data-code-language] code {
+      @apply block min-w-max;
     }
 
     hr { @apply my-6 border-border/60; }

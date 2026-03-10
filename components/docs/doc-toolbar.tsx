@@ -3,8 +3,11 @@
 import * as React from 'react'
 import {
   Bold,
+  ChevronDown,
+  Columns2,
   Italic,
   Strikethrough,
+  FileCode,
   Heading1,
   Heading2,
   Heading3,
@@ -15,10 +18,22 @@ import {
   Link2,
   Image,
   Minus,
+  PenLine,
   Table,
 } from 'lucide-react'
+import { type DocSnippet } from '@/lib/doc-snippets'
+import { CODE_LANGUAGE_OPTIONS, type CodeLanguageOption } from '@/lib/code-highlighting'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { DocSnippetPicker } from '@/components/docs/doc-snippet-picker'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Tooltip,
   TooltipContent,
@@ -195,29 +210,188 @@ const actions: (ToolbarAction | 'separator')[] = [
 // ── Toolbar component ──────────────────────────────────────────────────────
 
 export type ToolbarMode = 'source' | 'wysiwyg'
+export type EditorViewMode = ToolbarMode | 'split'
+
+interface EditorModeOption {
+  value: EditorViewMode
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+}
+
+const EDITOR_MODE_OPTIONS: EditorModeOption[] = [
+  {
+    value: 'wysiwyg',
+    label: 'Edit',
+    icon: PenLine,
+  },
+  {
+    value: 'source',
+    label: 'Markdown',
+    icon: FileCode,
+  },
+  {
+    value: 'split',
+    label: 'Split View',
+    icon: Columns2,
+  },
+]
+
+interface EditorModeMenuProps {
+  value: EditorViewMode
+  onChange: (mode: EditorViewMode) => void
+}
+
+function EditorModeMenu({ value, onChange }: EditorModeMenuProps) {
+  const activeIndex = EDITOR_MODE_OPTIONS.findIndex((option) => option.value === value)
+  const normalizedIndex = activeIndex === -1 ? 0 : activeIndex
+  const activeMode = EDITOR_MODE_OPTIONS[normalizedIndex]
+  const nextMode = EDITOR_MODE_OPTIONS[(normalizedIndex + 1) % EDITOR_MODE_OPTIONS.length]
+  const ActiveIcon = activeMode.icon
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground hover:bg-background/80 hover:text-foreground"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onChange(nextMode.value)}
+          aria-label={`Current view: ${activeMode.label}. Switch to ${nextMode.label}.`}
+        >
+          <ActiveIcon className="size-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs">
+        {activeMode.label}
+        {' -> '}
+        {nextMode.label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+interface CodeBlockMenuProps {
+  disabled?: boolean
+  onBeforeOpen?: () => void
+  onSelect: (language: CodeLanguageOption) => void
+}
+
+function CodeBlockMenu({ disabled, onBeforeOpen, onSelect }: CodeBlockMenuProps) {
+  return (
+    <DropdownMenu modal={false}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              className="gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                onBeforeOpen?.()
+              }}
+              aria-label="Insert code block"
+            >
+              <FileCode className="size-3.5" />
+              <span>Code</span>
+              <ChevronDown className="size-3 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          Code Block
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="start" side="bottom" className="w-56">
+        <DropdownMenuLabel>Insert code block</DropdownMenuLabel>
+        {CODE_LANGUAGE_OPTIONS.map((language) => (
+          <DropdownMenuItem key={language.value} onSelect={() => onSelect(language)}>
+            <span>{language.label}</span>
+            <DropdownMenuShortcut>{language.hint}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 interface DocToolbarProps {
   mode: ToolbarMode
+  editorMode: EditorViewMode
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   editorRef?: React.RefObject<HTMLDivElement | null>
   disabled?: boolean
+  onEditorModeChange: (mode: EditorViewMode) => void
+  onSourceChange?: (content: string) => void
+  onRichChange?: () => void
+  insertPickerOpen: boolean
+  onInsertPickerOpenChange: (open: boolean) => void
+  onBeforeOpenInsertPicker?: () => void
+  onInsertSnippet?: (snippet: DocSnippet) => void
+  onBeforeOpenCodeMenu?: () => void
+  onInsertCodeBlock?: (language: string) => void
 }
 
-export function DocToolbar({ mode, textareaRef, editorRef, disabled }: DocToolbarProps) {
+export function DocToolbar({
+  mode,
+  editorMode,
+  textareaRef,
+  editorRef,
+  disabled,
+  onEditorModeChange,
+  onSourceChange,
+  onRichChange,
+  insertPickerOpen,
+  onInsertPickerOpenChange,
+  onBeforeOpenInsertPicker,
+  onInsertSnippet,
+  onBeforeOpenCodeMenu,
+  onInsertCodeBlock,
+}: DocToolbarProps) {
   const handleClick = (item: ToolbarAction) => {
     if (mode === 'source') {
-      if (textareaRef?.current) item.sourceAction(textareaRef.current)
+      if (textareaRef?.current) {
+        item.sourceAction(textareaRef.current)
+        onSourceChange?.(textareaRef.current.value)
+      }
     } else {
       editorRef?.current?.focus()
       item.richAction()
+      requestAnimationFrame(() => {
+        onRichChange?.()
+      })
     }
   }
 
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex flex-wrap items-center gap-0.5 border-b border-border/60 bg-muted/30 px-2 py-1.5">
+        <EditorModeMenu value={editorMode} onChange={onEditorModeChange} />
+        <Separator orientation="vertical" className="mx-1 h-5" />
+        <DocSnippetPicker
+          open={insertPickerOpen}
+          disabled={disabled || !onInsertSnippet}
+          onBeforeOpen={onBeforeOpenInsertPicker}
+          onOpenChange={onInsertPickerOpenChange}
+          onSelect={(snippet) => onInsertSnippet?.(snippet)}
+        />
+        <Separator orientation="vertical" className="mx-1 h-5" />
         {actions.map((item, i) => {
           if (item === 'separator') {
+            if (i === 4 && onInsertCodeBlock) {
+              return (
+                <React.Fragment key={`sep-${i}`}>
+                  <CodeBlockMenu
+                    disabled={disabled}
+                    onBeforeOpen={onBeforeOpenCodeMenu}
+                    onSelect={(language) => onInsertCodeBlock(language.value)}
+                  />
+                  <Separator orientation="vertical" className="mx-1 h-5" />
+                </React.Fragment>
+              )
+            }
             return <Separator key={i} orientation="vertical" className="mx-1 h-5" />
           }
           return (

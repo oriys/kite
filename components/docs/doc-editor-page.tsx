@@ -4,11 +4,20 @@ import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 import { type DocStatus } from '@/lib/documents'
+import { cn } from '@/lib/utils'
 import { getDocEditorHref } from '@/lib/docs-url'
 import { useDocument } from '@/hooks/use-documents'
 import { Input } from '@/components/ui/input'
 import { DocEditor } from '@/components/docs/doc-editor'
 import { DocStatusBar } from '@/components/docs/doc-status-bar'
+import { type EditorViewMode } from '@/components/docs/doc-toolbar'
+
+function getEditorShellClassName(mode: EditorViewMode) {
+  return cn(
+    'mx-auto w-full px-4 sm:px-6',
+    mode === 'split' ? 'max-w-[1560px]' : 'max-w-5xl',
+  )
+}
 
 function MissingDocumentState() {
   const router = useRouter()
@@ -41,6 +50,7 @@ export function DocEditorPageClient() {
   const { doc, loading, update, transition, remove, duplicate } = useDocument(docId)
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
+  const [editorMode, setEditorMode] = React.useState<EditorViewMode>('wysiwyg')
   const [initialized, setInitialized] = React.useState(false)
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -118,7 +128,7 @@ export function DocEditorPageClient() {
   return (
     <div className="flex h-dvh flex-col">
       <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
-        <div className="mx-auto max-w-5xl">
+        <div className={getEditorShellClassName(editorMode)}>
           <Input
             value={title}
             onChange={(e) => handleTitleChange(e.target.value)}
@@ -131,12 +141,13 @@ export function DocEditorPageClient() {
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <div className="mx-auto h-full max-w-5xl px-4 py-4 sm:px-6">
+        <div className={cn(getEditorShellClassName(editorMode), 'h-full py-4')}>
           <DocEditor
             content={content}
             onChange={handleContentChange}
             readOnly={isReadOnly}
             className="h-full"
+            onModeChange={setEditorMode}
           />
         </div>
       </div>
