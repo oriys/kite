@@ -123,13 +123,13 @@ export function DocSnippetPicker({
           <span className="text-[10px] tracking-[0.12em] text-muted-foreground">⌘/</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[min(28rem,calc(100vw-2rem))] p-0">
-        <Command className="rounded-md border-0">
+      <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] rounded-xl p-0">
+        <Command className="rounded-xl border-0">
           <CommandInput
             autoFocus
             placeholder="Search blocks, snippets, or components…"
           />
-          <CommandList className="max-h-[26rem]">
+          <CommandList className="max-h-[24rem]">
             <CommandEmpty>No matching blocks.</CommandEmpty>
             {DOC_SNIPPET_CATEGORIES.map((category) => {
               const categoryItems = items.filter((snippet) => snippet.category === category)
@@ -139,7 +139,11 @@ export function DocSnippetPicker({
               }
 
               return (
-                <CommandGroup key={category} heading={category}>
+                <CommandGroup
+                  key={category}
+                  heading={category}
+                  className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.18em]"
+                >
                   {categoryItems.map((snippet) => {
                     const Icon = snippetIcons[snippet.id] ?? LayoutTemplate
 
@@ -151,21 +155,24 @@ export function DocSnippetPicker({
                           onSelect(snippet)
                           onOpenChange(false)
                         }}
-                        className="items-start gap-3 px-3 py-3"
+                        className="items-start gap-2.5 rounded-lg px-2 py-1.5"
                       >
-                        <span className="mt-0.5 rounded-sm border border-border/70 bg-muted/40 p-1.5">
+                        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border border-border/55 bg-muted/20 text-muted-foreground">
                           <Icon className="size-3.5 text-muted-foreground" />
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate font-medium text-foreground">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-[13px] font-medium text-foreground">
                               {snippet.label}
                             </span>
-                            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                            <Badge
+                              variant="outline"
+                              className="h-5 rounded-md px-1.5 py-0 text-[10px] uppercase tracking-[0.16em]"
+                            >
                               {snippet.category}
                             </Badge>
                           </div>
-                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
                             {snippet.description}
                           </p>
                         </div>
@@ -177,12 +184,12 @@ export function DocSnippetPicker({
             })}
           </CommandList>
         </Command>
-        <div className="flex items-center justify-between gap-3 border-t border-border/60 bg-muted/15 px-3 py-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center justify-between gap-3 border-t border-border/60 bg-muted/15 px-3 py-2 text-[10px] text-muted-foreground">
           <p>
             Use the Insert button or press <span className="font-medium text-foreground">⌘/</span>{' '}
             to open this picker.
           </p>
-          <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-[11px]">
+          <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-[10px]">
             <Link href="/docs/components">Manage</Link>
           </Button>
         </div>

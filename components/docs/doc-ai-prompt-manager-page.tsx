@@ -32,8 +32,7 @@ import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
 import { DocsAiMenu } from '@/components/docs/docs-ai-menu'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { UserMenu } from '@/components/auth/user-menu'
+import { DocsHeaderUtilities } from '@/components/docs/docs-header-utilities'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -89,6 +88,26 @@ const ACTION_META: Record<
   explain: {
     description: 'Explain technical text in plainer language for wider audiences.',
     helper: 'Use when a section needs more context, not just rewriting.',
+  },
+  review: {
+    description: 'Produce a technical-editor review report for the full draft.',
+    helper: 'Great for coverage checks, clarity issues, and concrete fix recommendations.',
+  },
+  score: {
+    description: 'Grade the document with a rubric and a short final verdict.',
+    helper: 'Useful when you want an at-a-glance quality signal before review.',
+  },
+  summarize: {
+    description: 'Generate an executive summary of the document.',
+    helper: 'Best for turning long drafts into a fast review briefing.',
+  },
+  outline: {
+    description: 'Extract the real structure as a clean hierarchical outline.',
+    helper: 'Use when the draft needs structure review or navigation scaffolding.',
+  },
+  checklist: {
+    description: 'Convert the draft into a practical checklist of next actions.',
+    helper: 'Useful for launch readiness, QA sweeps, or implementation follow-ups.',
   },
   custom: {
     description: 'Run a one-off instruction that the user writes against the selected text.',
@@ -234,8 +253,8 @@ export function DocAiPromptManagerPage() {
                 Route every AI action through its own model and instruction set.
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-                Pin polish, shorten, expand, translate, explain, or custom prompt runs to
-                different enabled models, then tune the prompt each one receives.
+                Pin each rewrite, review, translation, or custom action to different enabled
+                models, then tune the prompt each one receives.
                 Unassigned actions fall back to the current default AI automatically.
               </p>
             </div>
@@ -266,29 +285,30 @@ export function DocAiPromptManagerPage() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/docs">
-                <ArrowLeft data-icon="inline-start" />
-                Back to Documents
-              </Link>
-            </Button>
-            <DocsAiMenu />
-            <ThemeToggle />
-            <UserMenu />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleResetAll}
-              disabled={!isDirty && draftCustomizedCount === 0}
-            >
-              <RefreshCw data-icon="inline-start" />
-              Restore defaults
-            </Button>
-            <Button size="sm" onClick={handleSave} disabled={!isDirty}>
-              <Sparkles data-icon="inline-start" />
-              Save actions
-            </Button>
+          <div className="flex flex-wrap items-center justify-start gap-3 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/docs">
+                  <ArrowLeft data-icon="inline-start" />
+                  Back to Documents
+                </Link>
+              </Button>
+              <DocsAiMenu />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleResetAll}
+                disabled={!isDirty && draftCustomizedCount === 0}
+              >
+                <RefreshCw data-icon="inline-start" />
+                Restore defaults
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={!isDirty}>
+                <Sparkles data-icon="inline-start" />
+                Save actions
+              </Button>
+            </div>
+            <DocsHeaderUtilities className="lg:ml-1 lg:border-l lg:border-border/60 lg:pl-3" />
           </div>
         </div>
         <div className="grid gap-3 px-5 py-4 sm:px-6">

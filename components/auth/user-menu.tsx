@@ -3,6 +3,7 @@
 import { useSession, signOut } from 'next-auth/react'
 import { LogOut } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { buttonVariants } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 
 export function UserMenu() {
   const { data: session } = useSession()
@@ -26,11 +28,20 @@ export function UserMenu() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-        <Avatar className="size-7">
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            buttonVariants({ variant: 'outline', size: 'icon' }),
+            'rounded-md p-0',
+          )}
+          aria-label={name ? `${name} account menu` : 'Account menu'}
+        >
+          <Avatar className="size-7">
           {image && <AvatarImage src={image} alt={name ?? ''} />}
           <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
-        </Avatar>
+          </Avatar>
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel className="font-normal">

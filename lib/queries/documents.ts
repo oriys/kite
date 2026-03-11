@@ -244,4 +244,33 @@ export async function updateDocumentSummary(
   return updated ? await getDocument(id, workspaceId) : null
 }
 
+export async function updateDocumentSummaryIfUnchanged(
+  id: string,
+  workspaceId: string,
+  input: {
+    summary: string
+    title?: string
+  },
+  expectedUpdatedAt: Date,
+) {
+  const patch = {
+    summary: input.summary,
+    ...(input.title ? { title: input.title } : {}),
+  }
+
+  const [updated] = await db
+    .update(documents)
+    .set(patch)
+    .where(
+      and(
+        eq(documents.id, id),
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.updatedAt, expectedUpdatedAt),
+      ),
+    )
+    .returning()
+
+  return updated ? await getDocument(id, workspaceId) : null
+}
+
 export { verifyWorkspaceMembership }

@@ -18,8 +18,7 @@ import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { cn } from '@/lib/utils'
 import { formatAiContextWindow } from '@/lib/ai'
 import { DocsAiMenu } from '@/components/docs/docs-ai-menu'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { UserMenu } from '@/components/auth/user-menu'
+import { DocsHeaderUtilities } from '@/components/docs/docs-header-utilities'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -167,28 +166,29 @@ export function DocAiManagerPage() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/docs">
-                <ArrowLeft data-icon="inline-start" />
-                Back to Documents
-              </Link>
-            </Button>
-            <DocsAiMenu />
-            <ThemeToggle />
-            <UserMenu />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void refresh()}
-              disabled={loading}
-            >
-              <RefreshCw
-                data-icon="inline-start"
-                className={cn(loading && 'animate-spin')}
-              />
-              Fetch models
-            </Button>
+          <div className="flex flex-wrap items-center justify-start gap-3 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/docs">
+                  <ArrowLeft data-icon="inline-start" />
+                  Back to Documents
+                </Link>
+              </Button>
+              <DocsAiMenu />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void refresh()}
+                disabled={loading}
+              >
+                <RefreshCw
+                  data-icon="inline-start"
+                  className={cn(loading && 'animate-spin')}
+                />
+                Fetch models
+              </Button>
+            </div>
+            <DocsHeaderUtilities className="lg:ml-1 lg:border-l lg:border-border/60 lg:pl-3" />
           </div>
         </div>
         <div className="grid gap-3 px-5 py-4 sm:px-6">

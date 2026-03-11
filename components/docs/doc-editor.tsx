@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import TurndownService from 'turndown'
 import { toast } from 'sonner'
 import {
@@ -26,12 +27,16 @@ import {
   AI_ACTION_LABELS,
   MAX_AI_CUSTOM_PROMPT_LENGTH,
   MAX_AI_TRANSFORM_TEXT_LENGTH,
+  isAiAppendResultAction,
   type AiTransformAction,
 } from '@/lib/ai'
 import {
   resolveAiActionModel,
   resolveAiActionPrompt,
 } from '@/lib/ai-prompts'
+import {
+  type DocEditorAiPanelSide,
+} from '@/lib/doc-editor-layout'
 import { type DocSnippet } from '@/lib/doc-snippets'
 import {
   createDefaultHeatmapDocument,
@@ -82,9 +87,11 @@ import { DocHeatmapEditorDialog } from '@/components/docs/doc-heatmap-editor-dia
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
-import { normalizeAnnotationQuote, wordCount } from '@/lib/documents'
+import { wordCount } from '@/lib/documents'
 
 type EditorMode = EditorViewMode
+type SplitPaneLeading = 'wysiwyg' | 'source'
+type SplitPaneScrollSource = 'rich' | 'source'
 type BlockShortcut =
   | { kind: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { kind: 'unordered-list' }
@@ -94,6 +101,128 @@ type BlockShortcut =
 type ActiveTableMenu = 'row' | 'column' | null
 type ActiveTableResizeAxis = 'column' | 'row' | null
 const COMPONENT_BLOCK_SELECTOR = '.doc-json-viewer, .doc-heatmap, pre, table, img, hr'
+const DOC_SPLIT_RATIO_STORAGE_KEY = 'doc-editor-split-pane-ratio'
+const DOC_SPLIT_LEADING_STORAGE_KEY = 'doc-editor-split-pane-leading'
+const DOC_SPLIT_RATIO_DEFAULT = 0.55
+const DOC_SPLIT_RATIO_MIN = 0.32
+const DOC_SPLIT_RATIO_MAX = 0.68
+const DOC_AI_SPLIT_RATIO_STORAGE_KEY = 'doc-editor-ai-split-ratio'
+const DOC_AI_SPLIT_RATIO_DEFAULT = 0.4
+const DOC_AI_SPLIT_RATIO_MIN = 0.24
+const DOC_AI_SPLIT_RATIO_MAX = 0.72
+
+function clampSplitPaneRatio(value: number) {
+  if (!Number.isFinite(value)) {
+    return DOC_SPLIT_RATIO_DEFAULT
+  }
+
+  return Math.min(DOC_SPLIT_RATIO_MAX, Math.max(DOC_SPLIT_RATIO_MIN, value))
+}
+
+function clampAiSplitRatio(value: number) {
+  if (!Number.isFinite(value)) {
+    return DOC_AI_SPLIT_RATIO_DEFAULT
+  }
+
+  return Math.min(DOC_AI_SPLIT_RATIO_MAX, Math.max(DOC_AI_SPLIT_RATIO_MIN, value))
+}
+
+function readStoredSplitPaneRatio() {
+  if (typeof window === 'undefined') {
+    return DOC_SPLIT_RATIO_DEFAULT
+  }
+
+  try {
+    return clampSplitPaneRatio(Number(window.localStorage.getItem(DOC_SPLIT_RATIO_STORAGE_KEY)))
+  } catch {
+    return DOC_SPLIT_RATIO_DEFAULT
+  }
+}
+
+function persistSplitPaneRatio(value: number) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(
+    DOC_SPLIT_RATIO_STORAGE_KEY,
+    String(clampSplitPaneRatio(value)),
+  )
+}
+
+function readStoredAiSplitRatio() {
+  if (typeof window === 'undefined') {
+    return DOC_AI_SPLIT_RATIO_DEFAULT
+  }
+
+  try {
+    return clampAiSplitRatio(Number(window.localStorage.getItem(DOC_AI_SPLIT_RATIO_STORAGE_KEY)))
+  } catch {
+    return DOC_AI_SPLIT_RATIO_DEFAULT
+  }
+}
+
+function persistAiSplitRatio(value: number) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(
+    DOC_AI_SPLIT_RATIO_STORAGE_KEY,
+    String(clampAiSplitRatio(value)),
+  )
+}
+
+function normalizeSplitPaneLeading(value: string | null | undefined): SplitPaneLeading {
+  return value === 'source' ? 'source' : 'wysiwyg'
+}
+
+function readStoredSplitPaneLeading() {
+  if (typeof window === 'undefined') {
+    return 'wysiwyg' as SplitPaneLeading
+  }
+
+  try {
+    return normalizeSplitPaneLeading(
+      window.localStorage.getItem(DOC_SPLIT_LEADING_STORAGE_KEY),
+    )
+  } catch {
+    return 'wysiwyg' as SplitPaneLeading
+  }
+}
+
+function persistSplitPaneLeading(value: SplitPaneLeading) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(DOC_SPLIT_LEADING_STORAGE_KEY, value)
+}
+
+function getScrollableProgress(element: Pick<HTMLElement, 'scrollTop' | 'scrollHeight' | 'clientHeight'>) {
+  const maxScrollTop = Math.max(element.scrollHeight - element.clientHeight, 0)
+
+  if (maxScrollTop <= 0) {
+    return 0
+  }
+
+  return element.scrollTop / maxScrollTop
+}
+
+function setScrollableProgress(
+  element: Pick<HTMLElement, 'scrollTop' | 'scrollHeight' | 'clientHeight'>,
+  progress: number,
+) {
+  const maxScrollTop = Math.max(element.scrollHeight - element.clientHeight, 0)
+
+  if (maxScrollTop <= 0) {
+    element.scrollTop = 0
+    return
+  }
+
+  const normalizedProgress = Math.min(1, Math.max(0, progress))
+  element.scrollTop = normalizedProgress * maxScrollTop
+}
 
 interface ActiveTableResizeState {
   axis: Exclude<ActiveTableResizeAxis, null>
@@ -185,6 +314,22 @@ turndown.addRule('jsonViewer', {
       return `\n\`\`\`json\n${json}\n\`\`\`\n`
     } catch {
       return '\n```json\n{}\n```\n'
+    }
+  },
+})
+
+turndown.addRule('schemaTree', {
+  filter: (node) =>
+    node instanceof HTMLElement &&
+    node.classList.contains('doc-schema-viewer') &&
+    Boolean(node.dataset.docSchema),
+  replacement: (_content, node) => {
+    const encoded = (node as HTMLElement).dataset.docSchema ?? ''
+
+    try {
+      return `\n${decodeURIComponent(encoded)}\n`
+    } catch {
+      return ''
     }
   },
 })
@@ -573,6 +718,31 @@ function createEmptyParagraph() {
   const paragraph = document.createElement('p')
   paragraph.append(document.createElement('br'))
   return paragraph
+}
+
+function renderMarkdownForSelectionInsertion(markdown: string) {
+  const html = mdToHtml(markdown).trim()
+
+  if (!html) {
+    return ''
+  }
+
+  const template = document.createElement('template')
+  template.innerHTML = html
+  const topLevelNodes = Array.from(template.content.childNodes).filter((node) => {
+    return node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent?.trim())
+  })
+
+  if (topLevelNodes.length === 1 && topLevelNodes[0] instanceof HTMLParagraphElement) {
+    return topLevelNodes[0].innerHTML
+  }
+
+  return html
+}
+
+function renderMarkdownForBlockInsertion(markdown: string) {
+  const html = mdToHtml(markdown).trim()
+  return html || '<p><br></p>'
 }
 
 function insertParagraphAfterTable(table: HTMLTableElement) {
@@ -1068,13 +1238,33 @@ function insertSnippetIntoRichEditor(
   document.execCommand('insertHTML', false, `${mdToHtml(snippet.template)}<p><br></p>`)
 }
 
+function appendAiResultToDocument(currentContent: string, result: string) {
+  const nextResult = result.trim()
+
+  if (!nextResult) {
+    return currentContent
+  }
+
+  const baseContent = currentContent.trimEnd()
+
+  if (!baseContent) {
+    return `${nextResult}\n`
+  }
+
+  return `${baseContent}\n\n---\n\n${nextResult}\n`
+}
+
 function replaceSelectionInRichEditor(
   editor: HTMLDivElement,
   selectionRange: Range | null,
   nextText: string,
 ) {
   restoreRichSelection(editor, selectionRange)
-  document.execCommand('insertText', false, nextText)
+  document.execCommand(
+    'insertHTML',
+    false,
+    renderMarkdownForSelectionInsertion(nextText),
+  )
 }
 
 function insertExplanationIntoRichEditor(
@@ -1086,25 +1276,7 @@ function insertExplanationIntoRichEditor(
 
   const anchor = getCurrentComponentElement(editor) ?? getCurrentBlockElement(editor)
   const quote = document.createElement('blockquote')
-  const sections = explanation
-    .trim()
-    .split(/\n{2,}/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-
-  for (const section of sections.length > 0 ? sections : [explanation.trim()]) {
-    const paragraph = document.createElement('p')
-    const lines = section.split('\n')
-
-    lines.forEach((line, index) => {
-      if (index > 0) {
-        paragraph.append(document.createElement('br'))
-      }
-      paragraph.append(document.createTextNode(line))
-    })
-
-    quote.append(paragraph)
-  }
+  quote.innerHTML = renderMarkdownForBlockInsertion(explanation)
 
   const paragraph = createEmptyParagraph()
 
@@ -1240,11 +1412,15 @@ interface DocEditorProps {
   onModeChange?: (mode: EditorViewMode) => void
   editorFocusRef?: React.MutableRefObject<DocEditorHandle | null>
   onAiPreviewVisibilityChange?: (visible: boolean) => void
+  documentWidth?: number
+  onDocumentWidthChange?: (width: number) => void
+  onDocumentResizeStateChange?: (active: boolean) => void
+  aiPreviewSide?: DocEditorAiPanelSide
+  onAiPreviewSideChange?: (side: DocEditorAiPanelSide) => void
 }
 
 export interface DocEditorHandle {
   focus: () => void
-  getSelectionQuote: () => string
 }
 
 export function DocEditor({
@@ -1255,6 +1431,11 @@ export function DocEditor({
   onModeChange,
   editorFocusRef,
   onAiPreviewVisibilityChange,
+  documentWidth,
+  onDocumentWidthChange,
+  onDocumentResizeStateChange,
+  aiPreviewSide = 'right',
+  onAiPreviewSideChange,
 }: DocEditorProps) {
   const {
     items: aiModels,
@@ -1275,6 +1456,7 @@ export function DocEditor({
   const [mode, setMode] = React.useState<EditorMode>('wysiwyg')
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
   const [aiPendingAction, setAiPendingAction] = React.useState<AiTransformAction | null>(null)
+  const [aiPendingScope, setAiPendingScope] = React.useState<'selection' | 'document' | null>(null)
   const [aiPreview, setAiPreview] = React.useState<AiPreviewState | null>(null)
   const [activeTableResizeAxis, setActiveTableResizeAxis] = React.useState<ActiveTableResizeAxis>(null)
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
@@ -1290,9 +1472,35 @@ export function DocEditor({
   const [customPromptSelectionText, setCustomPromptSelectionText] = React.useState('')
   const [insertPickerOpen, setInsertPickerOpen] = React.useState(false)
   const [showShortcuts, setShowShortcuts] = React.useState(false)
+  const [documentResizeActive, setDocumentResizeActive] = React.useState(false)
+  const [splitPaneResizeActive, setSplitPaneResizeActive] = React.useState(false)
+  const [splitPaneRatio, setSplitPaneRatioState] = React.useState(DOC_SPLIT_RATIO_DEFAULT)
+  const [aiSplitRatio, setAiSplitRatioState] = React.useState(DOC_AI_SPLIT_RATIO_DEFAULT)
+  const [splitPaneLeading, setSplitPaneLeadingState] =
+    React.useState<SplitPaneLeading>('wysiwyg')
   const editorRef = React.useRef<HTMLDivElement>(null)
   const editorCanvasRef = React.useRef<HTMLDivElement>(null)
   const editorViewportRef = React.useRef<HTMLDivElement>(null)
+  const splitPaneRef = React.useRef<HTMLDivElement>(null)
+  const aiSplitPaneRef = React.useRef<HTMLDivElement>(null)
+  const documentResizeRef = React.useRef<{
+    startClientX: number
+    startValue: number
+    mode: 'document' | 'ai-preview'
+    dragged: boolean
+  } | null>(null)
+  const splitPaneResizeRef = React.useRef<{
+    startClientX: number
+    startRatio: number
+    dragged: boolean
+  } | null>(null)
+  const splitPaneScrollSyncRef = React.useRef<{
+    source: SplitPaneScrollSource | null
+    frame: number | null
+  }>({
+    source: null,
+    frame: null,
+  })
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   // Track whether we are switching modes so we don't fight with onChange
   const switchingRef = React.useRef(false)
@@ -1308,6 +1516,100 @@ export function DocEditor({
   const aiRequestIdRef = React.useRef(0)
   const customPromptSelectionRef = React.useRef<Range | null>(null)
   const editingMode: ToolbarMode = mode === 'split' ? activePane : mode
+  const reducedMotion = useReducedMotion()
+  const aiPreviewOnLeft = Boolean(aiPreview) && aiPreviewSide === 'left'
+  const aiDocumentPendingAction =
+    aiPendingScope === 'document' ? aiPendingAction : null
+  const wysiwygOnLeft = splitPaneLeading === 'wysiwyg'
+  const splitPaneColumns = `minmax(0, ${splitPaneRatio}fr) minmax(0, ${1 - splitPaneRatio}fr)`
+  const aiSplitColumns = aiPreview
+    ? aiPreviewOnLeft
+      ? `minmax(0, ${aiSplitRatio}fr) minmax(0, ${1 - aiSplitRatio}fr)`
+      : `minmax(0, ${1 - aiSplitRatio}fr) minmax(0, ${aiSplitRatio}fr)`
+    : null
+  const aiSplitDividerPosition = aiPreviewOnLeft ? aiSplitRatio : 1 - aiSplitRatio
+  const paneTransition = reducedMotion
+    ? { duration: 0 }
+    : { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const }
+
+  React.useEffect(() => {
+    setSplitPaneRatioState(readStoredSplitPaneRatio())
+    setSplitPaneLeadingState(readStoredSplitPaneLeading())
+    setAiSplitRatioState(readStoredAiSplitRatio())
+  }, [])
+
+  const setSplitPaneRatio = React.useCallback((nextRatio: number) => {
+    const normalizedRatio = clampSplitPaneRatio(nextRatio)
+    setSplitPaneRatioState(normalizedRatio)
+    persistSplitPaneRatio(normalizedRatio)
+  }, [])
+
+  const setAiSplitRatio = React.useCallback((nextRatio: number) => {
+    const normalizedRatio = clampAiSplitRatio(nextRatio)
+    setAiSplitRatioState(normalizedRatio)
+    persistAiSplitRatio(normalizedRatio)
+  }, [])
+
+  const setSplitPaneLeading = React.useCallback((nextLeading: SplitPaneLeading) => {
+    const normalizedLeading = normalizeSplitPaneLeading(nextLeading)
+    setSplitPaneLeadingState(normalizedLeading)
+    persistSplitPaneLeading(normalizedLeading)
+  }, [])
+
+  const toggleSplitPaneLeading = React.useCallback(() => {
+    setSplitPaneLeading(splitPaneLeading === 'wysiwyg' ? 'source' : 'wysiwyg')
+  }, [setSplitPaneLeading, splitPaneLeading])
+
+  const scheduleSplitPaneScrollUnlock = React.useCallback((source: SplitPaneScrollSource) => {
+    const syncState = splitPaneScrollSyncRef.current
+
+    if (syncState.frame !== null) {
+      window.cancelAnimationFrame(syncState.frame)
+    }
+
+    syncState.frame = window.requestAnimationFrame(() => {
+      if (splitPaneScrollSyncRef.current.source === source) {
+        splitPaneScrollSyncRef.current.source = null
+      }
+      splitPaneScrollSyncRef.current.frame = null
+    })
+  }, [])
+
+  const syncSplitPaneScroll = React.useCallback(
+    (source: SplitPaneScrollSource) => {
+      if (mode !== 'split') {
+        return
+      }
+
+      const richViewport = editorViewportRef.current
+      const sourceViewport = textareaRef.current
+
+      if (!richViewport || !sourceViewport) {
+        return
+      }
+
+      const syncState = splitPaneScrollSyncRef.current
+      const oppositeSource: SplitPaneScrollSource = source === 'rich' ? 'source' : 'rich'
+
+      if (syncState.source === oppositeSource) {
+        return
+      }
+
+      syncState.source = source
+
+      const progress = getScrollableProgress(
+        source === 'rich' ? richViewport : sourceViewport,
+      )
+
+      setScrollableProgress(
+        source === 'rich' ? sourceViewport : richViewport,
+        progress,
+      )
+
+      scheduleSplitPaneScrollUnlock(source)
+    },
+    [mode, scheduleSplitPaneScrollUnlock],
+  )
 
   const syncRichEditorToMarkdown = React.useCallback(() => {
     if (!editorRef.current) return
@@ -1654,29 +1956,6 @@ export function DocEditor({
     [captureRichSelection, syncRichEditorToMarkdown, updateHeatmapControls],
   )
 
-  const getSelectionQuote = React.useCallback(() => {
-    if (editingMode === 'source') {
-      const textarea = textareaRef.current
-      if (!textarea) return ''
-
-      const start = sourceSelectionRef.current?.start ?? textarea.selectionStart
-      const end = sourceSelectionRef.current?.end ?? textarea.selectionEnd
-      if (start === end) return ''
-
-      return normalizeAnnotationQuote(textarea.value.slice(start, end))
-    }
-
-    const currentSelection = window.getSelection()?.toString() ?? ''
-    const savedRange = richSelectionRef.current
-    const rangeSelection =
-      savedRange &&
-      editorRef.current?.contains(savedRange.startContainer) &&
-      editorRef.current?.contains(savedRange.endContainer)
-        ? savedRange.toString()
-        : ''
-    return normalizeAnnotationQuote(currentSelection || rangeSelection)
-  }, [editingMode])
-
   React.useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
       const resizeState = activeTableResizeRef.current
@@ -1724,6 +2003,200 @@ export function DocEditor({
       document.body.style.removeProperty('user-select')
     }
   }, [syncRichEditorToMarkdown, updateTableControls])
+
+  React.useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      const resizeState = documentResizeRef.current
+
+      if (!resizeState) {
+        return
+      }
+
+      const deltaX = event.clientX - resizeState.startClientX
+
+      if (!resizeState.dragged) {
+        if (Math.abs(deltaX) < 4) {
+          return
+        }
+
+        resizeState.dragged = true
+      }
+
+      if (resizeState.mode === 'ai-preview') {
+        const containerWidth = aiSplitPaneRef.current?.clientWidth
+
+        if (!containerWidth) {
+          return
+        }
+
+        setAiSplitRatio(
+          resizeState.startValue +
+            (deltaX / containerWidth) * (aiPreviewOnLeft ? 1 : -1),
+        )
+        return
+      }
+
+      if (onDocumentWidthChange) {
+        onDocumentWidthChange(
+          resizeState.startValue +
+            deltaX * 2 * (aiPreviewOnLeft ? -1 : 1),
+        )
+      }
+    }
+
+    const handleMouseUp = () => {
+      const resizeState = documentResizeRef.current
+
+      if (!resizeState) {
+        return
+      }
+
+      documentResizeRef.current = null
+      setDocumentResizeActive(false)
+
+      if (
+        !resizeState.dragged &&
+        aiPreview &&
+        onAiPreviewSideChange
+      ) {
+        onAiPreviewSideChange(aiPreviewSide === 'left' ? 'right' : 'left')
+      }
+
+      if (!activeTableResizeRef.current) {
+        document.body.style.removeProperty('cursor')
+        document.body.style.removeProperty('user-select')
+      }
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+
+      if (!activeTableResizeRef.current) {
+        document.body.style.removeProperty('cursor')
+        document.body.style.removeProperty('user-select')
+      }
+    }
+  }, [
+    aiPreview,
+    aiPreviewOnLeft,
+    aiPreviewSide,
+    onAiPreviewSideChange,
+    onDocumentWidthChange,
+    setAiSplitRatio,
+  ])
+
+  React.useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      const resizeState = splitPaneResizeRef.current
+      const splitPane = splitPaneRef.current
+
+      if (!resizeState || !splitPane) {
+        return
+      }
+
+      const deltaX = event.clientX - resizeState.startClientX
+
+      if (!resizeState.dragged) {
+        if (Math.abs(deltaX) < 4) {
+          return
+        }
+
+        resizeState.dragged = true
+      }
+
+      const paneWidth = splitPane.getBoundingClientRect().width
+      if (paneWidth <= 0) {
+        return
+      }
+
+      setSplitPaneRatio(resizeState.startRatio + deltaX / paneWidth)
+    }
+
+    const handleMouseUp = () => {
+      const resizeState = splitPaneResizeRef.current
+
+      if (!resizeState) {
+        return
+      }
+
+      splitPaneResizeRef.current = null
+      setSplitPaneResizeActive(false)
+
+      if (!resizeState.dragged) {
+        toggleSplitPaneLeading()
+      }
+
+      if (!activeTableResizeRef.current && !documentResizeRef.current) {
+        document.body.style.removeProperty('cursor')
+        document.body.style.removeProperty('user-select')
+      }
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+
+      if (!activeTableResizeRef.current && !documentResizeRef.current) {
+        document.body.style.removeProperty('cursor')
+        document.body.style.removeProperty('user-select')
+      }
+    }
+  }, [setSplitPaneRatio, toggleSplitPaneLeading])
+
+  React.useEffect(() => {
+    if (mode !== 'split') {
+      const syncState = splitPaneScrollSyncRef.current
+
+      if (syncState.frame !== null) {
+        window.cancelAnimationFrame(syncState.frame)
+        syncState.frame = null
+      }
+
+      syncState.source = null
+      return
+    }
+
+    const richViewport = editorViewportRef.current
+    const sourceViewport = textareaRef.current
+
+    if (!richViewport || !sourceViewport) {
+      return
+    }
+
+    const handleRichScroll = () => {
+      syncSplitPaneScroll('rich')
+    }
+
+    const handleSourceScroll = () => {
+      syncSplitPaneScroll('source')
+    }
+
+    richViewport.addEventListener('scroll', handleRichScroll, { passive: true })
+    sourceViewport.addEventListener('scroll', handleSourceScroll, { passive: true })
+
+    syncSplitPaneScroll(activePane === 'source' ? 'source' : 'rich')
+
+    return () => {
+      richViewport.removeEventListener('scroll', handleRichScroll)
+      sourceViewport.removeEventListener('scroll', handleSourceScroll)
+
+      const syncState = splitPaneScrollSyncRef.current
+
+      if (syncState.frame !== null) {
+        window.cancelAnimationFrame(syncState.frame)
+        syncState.frame = null
+      }
+
+      syncState.source = null
+    }
+  }, [activePane, mode, syncSplitPaneScroll])
 
   React.useEffect(() => {
     const handleSelectionChange = () => {
@@ -1925,6 +2398,7 @@ export function DocEditor({
       const requestId = ++aiRequestIdRef.current
 
       setAiPendingAction(request.action)
+      setAiPendingScope(request.scope)
 
       try {
         const response = await fetch('/api/ai/transform', {
@@ -1975,6 +2449,7 @@ export function DocEditor({
       } finally {
         if (aiRequestIdRef.current === requestId) {
           setAiPendingAction(null)
+          setAiPendingScope(null)
         }
       }
     },
@@ -2177,6 +2652,7 @@ export function DocEditor({
 
       aiRequestIdRef.current += 1
       setAiPendingAction(null)
+      setAiPendingScope(null)
 
       const preview = aiPreview
       setAiPreview(null)
@@ -2209,11 +2685,12 @@ export function DocEditor({
   }, [aiPreview, runAiPreviewRequest])
 
   const handleAcceptAiPreview = React.useCallback(() => {
-    if (!aiPreview || readOnly || !editorRef.current) return
+    if (!aiPreview || readOnly) return
 
     const preview = aiPreview
     aiRequestIdRef.current += 1
     setAiPendingAction(null)
+    setAiPendingScope(null)
     setAiPreview(null)
 
     requestAnimationFrame(() => {
@@ -2221,11 +2698,15 @@ export function DocEditor({
       if (!editor && preview.scope === 'selection') return
 
       if (preview.scope === 'document') {
+        const nextDocumentContent = isAiAppendResultAction(preview.action)
+          ? appendAiResultToDocument(latestMdRef.current, preview.resultText)
+          : preview.resultText
+
         if (editor && hasRichEditor(mode)) {
-          editor.innerHTML = mdToHtml(preview.resultText)
+          editor.innerHTML = mdToHtml(nextDocumentContent)
         }
-        latestMdRef.current = preview.resultText
-        onChange(preview.resultText)
+        latestMdRef.current = nextDocumentContent
+        onChange(nextDocumentContent)
         setSelectionInfo(null)
         setActivePane(editingMode)
         return
@@ -2233,7 +2714,7 @@ export function DocEditor({
 
       if (!editor) return
 
-      if (preview.action === 'explain') {
+      if (preview.action === 'explain' || isAiAppendResultAction(preview.action)) {
         insertExplanationIntoRichEditor(editor, preview.selectionRange, preview.resultText)
       } else {
         replaceSelectionInRichEditor(editor, preview.selectionRange, preview.resultText)
@@ -2247,7 +2728,15 @@ export function DocEditor({
         syncRichEditorToMarkdown()
       })
     })
-  }, [aiPreview, captureRichSelection, editingMode, mode, onChange, readOnly, syncRichEditorToMarkdown])
+  }, [
+    aiPreview,
+    captureRichSelection,
+    editingMode,
+    mode,
+    onChange,
+    readOnly,
+    syncRichEditorToMarkdown,
+  ])
 
   const handleSlashMenuClose = React.useCallback(() => {
     slashMenuRef.current?.hide()
@@ -2328,7 +2817,67 @@ export function DocEditor({
     onAiPreviewVisibilityChange?.(Boolean(aiPreview))
   }, [aiPreview, onAiPreviewVisibilityChange])
 
+  React.useEffect(() => {
+    onDocumentResizeStateChange?.(documentResizeActive)
+  }, [documentResizeActive, onDocumentResizeStateChange])
+
   const customActionModelSelection = resolveActionModelSelection('custom')
+
+  const handleDocumentResizeStart = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      const resizingAiPanel = Boolean(aiPreview)
+      const canResizeAiPanel = resizingAiPanel && Boolean(aiSplitPaneRef.current)
+      const canResizeDocument =
+        !resizingAiPanel &&
+        typeof documentWidth === 'number' &&
+        Boolean(onDocumentWidthChange)
+
+      if (!canResizeAiPanel && !canResizeDocument) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const startWidth = canResizeAiPanel
+        ? aiSplitRatio
+        : documentWidth ?? 0
+
+      documentResizeRef.current = {
+        startClientX: event.clientX,
+        startValue: startWidth,
+        mode: canResizeAiPanel ? 'ai-preview' : 'document',
+        dragged: false,
+      }
+
+      setDocumentResizeActive(true)
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    },
+    [aiPreview, aiSplitRatio, documentWidth, onDocumentWidthChange],
+  )
+
+  const handleSplitPaneResizeStart = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (mode !== 'split') {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      splitPaneResizeRef.current = {
+        startClientX: event.clientX,
+        startRatio: splitPaneRatio,
+        dragged: false,
+      }
+
+      setSplitPaneResizeActive(true)
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    },
+    [mode, splitPaneRatio],
+  )
 
   // ── Expose focus method to parent ──────────────────────────────────────
   React.useEffect(() => {
@@ -2341,12 +2890,11 @@ export function DocEditor({
           editorRef.current?.focus()
         }
       },
-      getSelectionQuote,
     }
     return () => {
       editorFocusRef.current = null
     }
-  }, [editorFocusRef, editingMode, getSelectionQuote])
+  }, [editorFocusRef, editingMode])
 
   // ── WYSIWYG input handler ────────────────────────────────────────────────
   const handleEditorInput = React.useCallback(() => {
@@ -2686,39 +3234,69 @@ export function DocEditor({
         onInsertCodeBlock={handleInsertCodeBlock}
         activeAiLabel={activeModel?.label ?? activeModelId}
         aiDisabled={Boolean(aiPendingAction) || !activeModelId}
-        onAiPolishDocument={() => {
-          void handleAiDocumentAction('polish')
-        }}
-        onAiTranslateDocument={(targetLanguage) => {
-          void handleAiDocumentAction('translate', { targetLanguage })
+        aiDocumentPendingAction={aiDocumentPendingAction}
+        onAiDocumentAction={(action, options) => {
+          void handleAiDocumentAction(action, options)
         }}
       />
 
       {/* Editor area */}
       <div
+        ref={aiSplitPaneRef}
+        style={
+          aiPreview && aiSplitColumns
+            ? ({
+                '--doc-ai-split-columns': aiSplitColumns,
+              } as React.CSSProperties)
+            : undefined
+        }
         className={cn(
-          'flex-1 min-h-0',
-          aiPreview && 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px]',
+          'group/ai-split-pane relative flex-1 min-h-0 grid grid-cols-1 motion-reduce:transition-none xl:transition-[grid-template-columns] xl:duration-300 xl:ease-[cubic-bezier(0.22,1,0.36,1)]',
+          aiPreview
+            ? 'xl:[grid-template-columns:var(--doc-ai-split-columns)]'
+            : 'xl:[grid-template-columns:minmax(0,1fr)]',
         )}
       >
-        <div
-          className={cn(
-            'min-h-0',
+        <motion.div
+          ref={splitPaneRef}
+          layout
+          transition={paneTransition}
+          style={
             mode === 'split'
-              ? 'grid h-full grid-cols-1 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]'
+              ? ({
+                  '--doc-split-columns': splitPaneColumns,
+                } as React.CSSProperties)
+              : undefined
+          }
+          className={cn(
+            'group/document-pane group/split-pane relative min-h-0 min-w-0',
+            aiPreviewOnLeft ? 'xl:order-2' : 'xl:order-1',
+            mode === 'split'
+              ? 'grid h-full grid-cols-1 md:[grid-template-columns:var(--doc-split-columns)]'
               : 'flex h-full flex-col',
           )}
         >
-          {hasRichEditor(mode) && (
-            <div
-              ref={editorViewportRef}
-              className={cn(
-                'min-h-0 overflow-auto transition-[box-shadow] duration-200',
-                mode !== 'split' && 'flex-1',
-                mode === 'split' && 'border-b border-border/60 md:border-b-0 md:border-r',
-                mode === 'split' && activePane === 'wysiwyg' && 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]',
-              )}
-            >
+          <AnimatePresence initial={false} mode="popLayout">
+            {hasRichEditor(mode) ? (
+              <motion.div
+                key="rich-pane"
+                ref={editorViewportRef}
+                layout
+                initial={reducedMotion ? false : { opacity: 0, x: -18, scale: 0.995 }}
+                animate={reducedMotion ? undefined : { opacity: 1, x: 0, scale: 1 }}
+                exit={reducedMotion ? undefined : { opacity: 0, x: -18, scale: 0.995 }}
+                transition={paneTransition}
+                className={cn(
+                  'min-h-0 overflow-auto transition-[box-shadow] duration-200',
+                  mode === 'split' && (wysiwygOnLeft ? 'md:order-1' : 'md:order-2'),
+                  mode !== 'split' && 'flex-1',
+                  mode === 'split' && 'border-b border-border/60 md:border-b-0',
+                  mode === 'split' && activePane === 'wysiwyg' &&
+                    (wysiwygOnLeft
+                      ? 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]'
+                      : 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]'),
+                )}
+              >
               <div
                 ref={editorCanvasRef}
                 className="relative min-h-full"
@@ -2976,56 +3554,150 @@ export function DocEditor({
                 </>
               )}
               </div>
-            </div>
-          )}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
-          {hasSourceEditor(mode) && (
-            <div className={cn(
-              'min-h-0 transition-[box-shadow] duration-200',
-              mode !== 'split' && 'flex-1',
-              mode === 'split' && 'bg-muted/[0.14]',
-              mode === 'split' && activePane === 'source' && 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]',
-            )}>
-              <textarea
-                ref={textareaRef}
-                value={content}
-                onChange={(e) => onChange(e.target.value)}
-                onKeyDown={handleSourceKeyDown}
-                onFocus={() => setActivePane('source')}
-                onSelect={captureSourceSelection}
-                onClick={captureSourceSelection}
-                onKeyUp={captureSourceSelection}
-                readOnly={readOnly}
-                spellCheck={false}
-                aria-label="Markdown source editor"
+          <AnimatePresence initial={false} mode="popLayout">
+            {hasSourceEditor(mode) ? (
+              <motion.div
+                key="source-pane"
+                layout
+                initial={reducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }}
+                animate={reducedMotion ? undefined : { opacity: 1, x: 0, scale: 1 }}
+                exit={reducedMotion ? undefined : { opacity: 0, x: 18, scale: 0.995 }}
+                transition={paneTransition}
                 className={cn(
-                  'block w-full resize-none bg-transparent',
-                  'font-mono text-[13px] leading-7 text-foreground',
-                  'placeholder:text-muted-foreground/60',
-                  'outline-none',
-                  mode === 'split' ? 'h-full min-h-[600px] p-5 md:p-6' : 'h-full min-h-[600px] p-4',
-                  readOnly && 'cursor-default opacity-70',
+                  'min-h-0 transition-[box-shadow] duration-200',
+                  mode === 'split' && (wysiwygOnLeft ? 'md:order-2' : 'md:order-1'),
+                  mode !== 'split' && 'flex-1',
+                  mode === 'split' && 'bg-muted/[0.14]',
+                  mode === 'split' && activePane === 'source' &&
+                    (wysiwygOnLeft
+                      ? 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]'
+                      : 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]'),
                 )}
-                placeholder="Start writing in Markdown…"
+              >
+                <textarea
+                  ref={textareaRef}
+                  value={content}
+                  onChange={(e) => onChange(e.target.value)}
+                  onKeyDown={handleSourceKeyDown}
+                  onFocus={() => setActivePane('source')}
+                  onSelect={captureSourceSelection}
+                  onClick={captureSourceSelection}
+                  onKeyUp={captureSourceSelection}
+                  readOnly={readOnly}
+                  spellCheck={false}
+                  aria-label="Markdown source editor"
+                  className={cn(
+                    'block w-full resize-none bg-transparent',
+                    'font-mono text-[13px] leading-7 text-foreground',
+                    'placeholder:text-muted-foreground/60',
+                    'outline-none',
+                    mode === 'split' ? 'h-full min-h-[600px] p-5 md:p-6' : 'h-full min-h-[600px] p-4',
+                    readOnly && 'cursor-default opacity-70',
+                  )}
+                  placeholder="Start writing in Markdown…"
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          {mode === 'split' ? (
+            <button
+              type="button"
+              onMouseDown={handleSplitPaneResizeStart}
+              aria-label="Drag to resize split editors, click to swap sides"
+              title="Drag to resize split editors, click to swap sides"
+              className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center md:flex"
+              style={{ left: `${splitPaneRatio * 100}%` }}
+            >
+              <span
+                className={cn(
+                  'absolute h-full w-px bg-border/60 transition-colors duration-200',
+                  splitPaneResizeActive
+                    ? 'bg-foreground/45'
+                    : 'group-hover/split-pane:bg-foreground/28',
+                )}
+              />
+            </button>
+          ) : null}
+
+          {!aiPreview && onDocumentWidthChange && typeof documentWidth === 'number' ? (
+            <button
+              type="button"
+              onMouseDown={handleDocumentResizeStart}
+              aria-label="Resize document width"
+              className={cn(
+                'absolute inset-y-0 z-40 hidden cursor-col-resize items-center justify-center xl:flex',
+                'w-4',
+                'right-0 translate-x-1/2',
+              )}
+            >
+              <span
+                className={cn(
+                  'h-full w-px bg-border/60 transition-colors duration-200',
+                  documentResizeActive
+                    ? 'bg-foreground/45'
+                    : 'group-hover/document-pane:bg-foreground/28',
+                )}
+              />
+            </button>
+          ) : null}
+        </motion.div>
+
+        <div
+          className={cn(
+            'h-full min-h-0 min-w-0 overflow-hidden motion-reduce:transition-none',
+            aiPreviewOnLeft ? 'xl:order-1' : 'xl:order-2',
+            aiPreview ? 'pointer-events-auto' : 'pointer-events-none',
+          )}
+          aria-hidden={!aiPreview}
+        >
+          {aiPreview ? (
+            <div
+              className={cn(
+                'flex h-full min-h-0 flex-col animate-in fade-in duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none',
+                aiPreviewOnLeft ? 'slide-in-from-left-3' : 'slide-in-from-right-3',
+              )}
+            >
+              <DocAiResultPanel
+                scope={aiPreview.scope}
+                action={aiPreview.action}
+                resultText={aiPreview.resultText}
+                modelLabel={aiPreview.modelLabel}
+                modelId={aiPreview.modelId}
+                targetLanguage={aiPreview.targetLanguage}
+                customPrompt={aiPreview.customPrompt}
+                pending={aiPendingAction === aiPreview.action}
+                onRetry={handleRetryAiPreview}
+                onAccept={handleAcceptAiPreview}
+                side={aiPreviewSide}
+                onClose={() => handleAiPreviewOpenChange(false)}
               />
             </div>
-          )}
+          ) : null}
         </div>
 
         {aiPreview ? (
-          <DocAiResultPanel
-            scope={aiPreview.scope}
-            action={aiPreview.action}
-            resultText={aiPreview.resultText}
-            modelLabel={aiPreview.modelLabel}
-            modelId={aiPreview.modelId}
-            targetLanguage={aiPreview.targetLanguage}
-            customPrompt={aiPreview.customPrompt}
-            pending={aiPendingAction === aiPreview.action}
-            onRetry={handleRetryAiPreview}
-            onAccept={handleAcceptAiPreview}
-            onClose={() => handleAiPreviewOpenChange(false)}
-          />
+          <button
+            type="button"
+            onMouseDown={handleDocumentResizeStart}
+            aria-label="Drag to resize AI split panes, click to swap sides"
+            title="Drag to resize AI split panes, click to swap sides"
+            className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center xl:flex"
+            style={{ left: `${aiSplitDividerPosition * 100}%` }}
+          >
+            <span
+              className={cn(
+                'absolute h-full w-px bg-border/60 transition-colors duration-200',
+                documentResizeActive
+                  ? 'bg-foreground/45'
+                  : 'group-hover/ai-split-pane:bg-foreground/28',
+              )}
+            />
+          </button>
         ) : null}
 
         <Dialog

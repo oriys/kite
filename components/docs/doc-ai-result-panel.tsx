@@ -1,8 +1,16 @@
 'use client'
 
-import { Check, RefreshCw, Sparkles, X } from 'lucide-react'
+import { Check, RefreshCw, X } from 'lucide-react'
 
-import { AI_ACTION_LABELS, type AiTransformAction } from '@/lib/ai'
+import {
+  AI_ACTION_LABELS,
+  isAiAppendResultAction,
+  isAiRewriteAction,
+  type AiTransformAction,
+} from '@/lib/ai'
+import { type DocEditorAiPanelSide } from '@/lib/doc-editor-layout'
+import { cn } from '@/lib/utils'
+import { DocAiGlyph } from '@/components/docs/doc-ai-glyph'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -19,6 +27,7 @@ interface DocAiResultPanelProps {
   pending?: boolean
   onRetry: () => void
   onAccept: () => void
+  side?: DocEditorAiPanelSide
   onClose: () => void
 }
 
@@ -33,17 +42,53 @@ export function DocAiResultPanel({
   pending,
   onRetry,
   onAccept,
+  side = 'right',
   onClose,
 }: DocAiResultPanelProps) {
+  const documentTitle =
+    action === 'review'
+      ? 'Document review'
+      : action === 'score'
+        ? 'Document scorecard'
+        : action === 'summarize'
+          ? 'Executive summary'
+          : action === 'outline'
+            ? 'Document outline'
+            : action === 'checklist'
+              ? 'Action checklist'
+              : 'Full-document draft'
+
+  const description =
+    scope === 'document' && isAiRewriteAction(action)
+      ? 'Review the AI rewrite here. Accepting it will replace the current document.'
+      : scope === 'document' && isAiAppendResultAction(action)
+        ? 'Review the AI report here. Accepting it will append the result to the end of the document.'
+        : 'Reviewing only the AI output. The original stays visible in the editor.'
+
   const acceptLabel =
     action === 'explain'
       ? 'Insert explanation'
+      : scope === 'document' && action === 'review'
+        ? 'Append review'
+        : scope === 'document' && action === 'score'
+          ? 'Append scorecard'
+          : scope === 'document' && action === 'summarize'
+            ? 'Append summary'
+            : scope === 'document' && action === 'outline'
+              ? 'Append outline'
+              : scope === 'document' && action === 'checklist'
+                ? 'Append checklist'
       : scope === 'document'
         ? 'Replace document'
         : 'Replace selection'
 
   return (
-    <aside className="flex min-h-0 flex-col border-t border-border/70 bg-[linear-gradient(180deg,rgba(15,23,42,0.03),transparent_24%)] lg:border-t-0 lg:border-l">
+    <aside
+      className={cn(
+        'flex h-full min-h-0 flex-col overflow-hidden border-t border-border/70 bg-[linear-gradient(180deg,rgba(15,23,42,0.03),transparent_24%)] xl:border-t-0',
+        side === 'left' ? 'xl:border-r' : 'xl:border-l',
+      )}
+    >
       <div className="border-b border-border/70 px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -51,10 +96,10 @@ export function DocAiResultPanel({
               AI Result
             </p>
             <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-              {scope === 'document' ? 'Full-document draft' : 'Selection draft'}
+              {scope === 'document' ? documentTitle : 'Selection draft'}
             </h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Reviewing only the AI output. The original stays visible in the editor.
+              {description}
             </p>
           </div>
           <Button
@@ -76,7 +121,7 @@ export function DocAiResultPanel({
             {modelId}
           </Badge>
           <Badge variant={pending ? 'secondary' : 'outline'}>
-            <Sparkles className={pending ? 'animate-pulse' : undefined} />
+            <DocAiGlyph className={cn('size-[0.8rem]', pending && 'animate-pulse')} />
             {pending ? 'Refreshing' : 'Ready'}
           </Badge>
         </div>

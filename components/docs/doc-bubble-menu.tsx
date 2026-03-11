@@ -5,20 +5,24 @@ import { useRouter } from 'next/navigation'
 import {
   Bold,
   Check,
-  ChevronLeft,
   ChevronRight,
   Code,
   Italic,
+  Languages,
   Link2,
   Loader2,
   PencilLine,
+  Sparkles,
   Strikethrough,
 } from 'lucide-react'
 import {
   AI_ACTION_LABELS,
+  formatAiContextWindow,
   type AiCatalogModel,
   type AiTransformAction,
 } from '@/lib/ai'
+import { cn } from '@/lib/utils'
+import { DocAiGlyph } from '@/components/docs/doc-ai-glyph'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -54,30 +58,136 @@ interface BubbleMenuPosition {
   left: number
 }
 
-type AiMenuView = 'root' | 'models' | 'languages'
+type AiFlyoutPanel = 'models' | 'languages' | null
 
 const MENU_VIEWPORT_PADDING = 8
 const MENU_SELECTION_GAP = 12
 const MENU_FALLBACK_HEIGHT = 44
 const MENU_HORIZONTAL_PADDING = 24
+const AI_MENU_FLYOUT_GAP = 8
+const AI_MENU_MODELS_WIDTH = 288
+const AI_MENU_LANGUAGES_WIDTH = 224
+const AI_MENU_OPEN_DELAY = 140
+const AI_MENU_CLOSE_DELAY = 110
+
+type AiFlyoutDirection = 'right' | 'left' | 'bottom'
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-function OpenAIBlossomIcon({ className }: { className?: string }) {
+function ShortenActionIcon({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="146 227 268 265"
-      fill="none"
-      aria-hidden="true"
-      className={className}
-    >
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
       <path
-        d="M249.176 323.434V298.276C249.176 296.158 249.971 294.569 251.825 293.509L302.406 264.381C309.29 260.409 317.5 258.555 325.973 258.555C357.75 258.555 377.877 283.185 377.877 309.399C377.877 311.253 377.877 313.371 377.611 315.49L325.178 284.771C322.001 282.919 318.822 282.919 315.645 284.771L249.176 323.434ZM367.283 421.415V361.301C367.283 357.592 365.694 354.945 362.516 353.092L296.048 314.43L317.763 301.982C319.617 300.925 321.206 300.925 323.058 301.982L373.639 331.112C388.205 339.586 398.003 357.592 398.003 375.069C398.003 395.195 386.087 413.733 367.283 421.412V421.415ZM233.553 368.452L211.838 355.742C209.986 354.684 209.19 353.095 209.19 350.975V292.718C209.19 264.383 230.905 242.932 260.301 242.932C271.423 242.932 281.748 246.641 290.49 253.26L238.321 283.449C235.146 285.303 233.555 287.951 233.555 291.659V368.455L233.553 368.452ZM280.292 395.462L249.176 377.985V340.913L280.292 323.436L311.407 340.913V377.985L280.292 395.462ZM300.286 475.968C289.163 475.968 278.837 472.259 270.097 465.64L322.264 435.449C325.441 433.597 327.03 430.949 327.03 427.239V350.445L349.011 363.155C350.865 364.213 351.66 365.802 351.66 367.922V426.179C351.66 454.514 329.679 475.965 300.286 475.965V475.968ZM237.525 416.915L186.944 387.785C172.378 379.31 162.582 361.305 162.582 343.827C162.582 323.436 174.763 305.164 193.563 297.485V357.861C193.563 361.571 195.154 364.217 198.33 366.071L264.535 404.467L242.82 416.915C240.967 417.972 239.377 417.972 237.525 416.915ZM234.614 460.343C204.689 460.343 182.71 437.833 182.71 410.028C182.71 407.91 182.976 405.792 183.238 403.672L235.405 433.863C238.582 435.715 241.763 435.715 244.938 433.863L311.407 395.466V420.622C311.407 422.742 310.612 424.331 308.758 425.389L258.179 454.519C251.293 458.491 243.083 460.343 234.611 460.343H234.614ZM300.286 491.854C332.329 491.854 359.073 469.082 365.167 438.892C394.825 431.211 413.892 403.406 413.892 375.073C413.892 356.535 405.948 338.529 391.648 325.552C392.972 319.991 393.766 314.43 393.766 308.87C393.766 271.003 363.048 242.666 327.562 242.666C320.413 242.666 313.528 243.723 306.644 246.109C294.725 234.457 278.307 227.042 260.301 227.042C228.258 227.042 201.513 249.815 195.42 280.004C165.761 287.685 146.694 315.49 146.694 343.824C146.694 362.362 154.638 380.368 168.938 393.344C167.613 398.906 166.819 404.467 166.819 410.027C166.819 447.894 197.538 476.231 233.024 476.231C240.172 476.231 247.058 475.173 253.943 472.788C265.859 484.441 282.278 491.854 300.286 491.854Z"
-        fill="currentColor"
+        d="M2.5 5h3m8 0H10.5M6 3.5 4.5 5 6 6.5M10 9.5 11.5 11 10 12.5M2.5 11h3m8 0H10.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
+  )
+}
+
+function ExpandActionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M5 3.5 3.5 5 5 6.5M11 9.5 12.5 11 11 12.5M2.5 5h3m8 0H10.5M2.5 11h3m8 0H10.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function ExplainActionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M4.5 4.25h7a1.75 1.75 0 0 1 1.75 1.75v4a1.75 1.75 0 0 1-1.75 1.75H8l-2.75 2v-2H4.5A1.75 1.75 0 0 1 2.75 10V6A1.75 1.75 0 0 1 4.5 4.25Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.5 6.75h3M6.5 9.25h2"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function ManageActionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M3 4.25h6M10.5 4.25h2.5M3 8h2.5M7 8h6M3 11.75h6M10.5 11.75H13"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <circle cx="9.5" cy="4.25" r="1.25" fill="currentColor" />
+      <circle cx="5.5" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="9.5" cy="11.75" r="1.25" fill="currentColor" />
+    </svg>
+  )
+}
+
+function AiMenuCard({
+  children,
+  className,
+  style,
+}: {
+  children: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+}) {
+  return (
+    <div
+      style={style}
+      className={cn(
+        'rounded-xl border border-border/80 bg-background/96 p-1 shadow-[0_20px_40px_-28px_rgba(15,23,42,0.32)] backdrop-blur-md',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+function AiMenuItemContent({
+  icon,
+  title,
+  description,
+  trailing,
+}: {
+  icon: React.ReactNode
+  title: string
+  description?: string
+  trailing?: React.ReactNode
+}) {
+  return (
+    <>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-muted/25 text-muted-foreground">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-medium text-foreground">{title}</div>
+        {description ? (
+          <div className="truncate text-[10px] leading-4 text-muted-foreground">
+            {description}
+          </div>
+        ) : null}
+      </div>
+      {trailing}
+    </>
   )
 }
 
@@ -97,8 +207,14 @@ export function DocBubbleMenu({
   const [position, setPosition] = React.useState<BubbleMenuPosition | null>(null)
   const [isVisible, setIsVisible] = React.useState(false)
   const [aiOpen, setAiOpen] = React.useState(false)
-  const [aiMenuView, setAiMenuView] = React.useState<AiMenuView>('root')
+  const [aiFlyoutPanel, setAiFlyoutPanel] = React.useState<AiFlyoutPanel>(null)
+  const [aiFlyoutDirection, setAiFlyoutDirection] = React.useState<AiFlyoutDirection>('right')
+  const [aiFlyoutOffsetTop, setAiFlyoutOffsetTop] = React.useState(0)
   const menuRef = React.useRef<HTMLDivElement>(null)
+  const aiMenuRootRef = React.useRef<HTMLDivElement>(null)
+  const aiFlyoutAnchorRef = React.useRef<HTMLElement | null>(null)
+  const aiFlyoutOpenTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const aiFlyoutCloseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeModel =
     enabledModels.find((model) => model.id === activeModelId) ?? enabledModels[0] ?? null
   const aiActionsDisabled =
@@ -113,8 +229,72 @@ export function DocBubbleMenu({
 
   const closeAiMenu = React.useCallback(() => {
     setAiOpen(false)
-    setAiMenuView('root')
+    setAiFlyoutPanel(null)
+    setAiFlyoutOffsetTop(0)
+    aiFlyoutAnchorRef.current = null
   }, [])
+
+  const clearAiFlyoutTimers = React.useCallback(() => {
+    if (aiFlyoutOpenTimerRef.current) {
+      clearTimeout(aiFlyoutOpenTimerRef.current)
+      aiFlyoutOpenTimerRef.current = null
+    }
+
+    if (aiFlyoutCloseTimerRef.current) {
+      clearTimeout(aiFlyoutCloseTimerRef.current)
+      aiFlyoutCloseTimerRef.current = null
+    }
+  }, [])
+
+  const openAiFlyoutImmediate = React.useCallback(
+    (panel: AiFlyoutPanel, anchorElement?: HTMLElement | null) => {
+      clearAiFlyoutTimers()
+
+      aiFlyoutAnchorRef.current = panel ? anchorElement ?? null : null
+
+      if (panel && aiMenuRootRef.current && anchorElement) {
+        const rootRect = aiMenuRootRef.current.getBoundingClientRect()
+        const anchorRect = anchorElement.getBoundingClientRect()
+        setAiFlyoutOffsetTop(Math.max(0, anchorRect.top - rootRect.top))
+      } else {
+        setAiFlyoutOffsetTop(0)
+      }
+
+      setAiFlyoutPanel(panel)
+    },
+    [clearAiFlyoutTimers],
+  )
+
+  const openAiFlyoutDelayed = React.useCallback(
+    (panel: Exclude<AiFlyoutPanel, null>, anchorElement?: HTMLElement | null) => {
+      clearAiFlyoutTimers()
+      aiFlyoutOpenTimerRef.current = setTimeout(() => {
+        aiFlyoutAnchorRef.current = anchorElement ?? null
+
+        if (aiMenuRootRef.current && anchorElement) {
+          const rootRect = aiMenuRootRef.current.getBoundingClientRect()
+          const anchorRect = anchorElement.getBoundingClientRect()
+          setAiFlyoutOffsetTop(Math.max(0, anchorRect.top - rootRect.top))
+        } else {
+          setAiFlyoutOffsetTop(0)
+        }
+
+        setAiFlyoutPanel(panel)
+        aiFlyoutOpenTimerRef.current = null
+      }, AI_MENU_OPEN_DELAY)
+    },
+    [clearAiFlyoutTimers],
+  )
+
+  const closeAiFlyoutDelayed = React.useCallback(() => {
+    clearAiFlyoutTimers()
+    aiFlyoutCloseTimerRef.current = setTimeout(() => {
+      setAiFlyoutPanel(null)
+      aiFlyoutAnchorRef.current = null
+      setAiFlyoutOffsetTop(0)
+      aiFlyoutCloseTimerRef.current = null
+    }, AI_MENU_CLOSE_DELAY)
+  }, [clearAiFlyoutTimers])
 
   const updatePosition = React.useCallback(() => {
     const selection = window.getSelection()
@@ -193,6 +373,56 @@ export function DocBubbleMenu({
     const frame = requestAnimationFrame(updatePosition)
     return () => cancelAnimationFrame(frame)
   }, [aiOpen, isVisible, updatePosition])
+
+  React.useEffect(() => {
+    if (!aiOpen || !aiFlyoutPanel || !aiMenuRootRef.current) {
+      return
+    }
+
+    const panelWidth =
+      aiFlyoutPanel === 'models' ? AI_MENU_MODELS_WIDTH : AI_MENU_LANGUAGES_WIDTH
+
+    const updateFlyoutDirection = () => {
+      const rect = aiMenuRootRef.current?.getBoundingClientRect()
+
+      if (!rect) {
+        return
+      }
+
+      if (aiFlyoutAnchorRef.current) {
+        const anchorRect = aiFlyoutAnchorRef.current.getBoundingClientRect()
+        setAiFlyoutOffsetTop(Math.max(0, anchorRect.top - rect.top))
+      }
+
+      const rightSpace = window.innerWidth - rect.right - MENU_VIEWPORT_PADDING
+      const leftSpace = rect.left - MENU_VIEWPORT_PADDING
+
+      if (rightSpace >= panelWidth + AI_MENU_FLYOUT_GAP) {
+        setAiFlyoutDirection('right')
+        return
+      }
+
+      if (leftSpace >= panelWidth + AI_MENU_FLYOUT_GAP) {
+        setAiFlyoutDirection('left')
+        return
+      }
+
+      setAiFlyoutDirection('bottom')
+    }
+
+    updateFlyoutDirection()
+    window.addEventListener('resize', updateFlyoutDirection)
+
+    return () => {
+      window.removeEventListener('resize', updateFlyoutDirection)
+    }
+  }, [aiFlyoutPanel, aiOpen])
+
+  React.useEffect(() => {
+    return () => {
+      clearAiFlyoutTimers()
+    }
+  }, [clearAiFlyoutTimers])
 
   if ((!isVisible && !aiOpen) || !position) return null
 
@@ -289,7 +519,7 @@ export function DocBubbleMenu({
               setAiOpen(open)
 
               if (!open) {
-                setAiMenuView('root')
+                setAiFlyoutPanel(null)
               }
             }}
           >
@@ -306,7 +536,7 @@ export function DocBubbleMenu({
                     {aiPendingAction ? (
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : (
-                      <OpenAIBlossomIcon className="size-[1rem]" />
+                      <DocAiGlyph className="size-[1rem]" />
                     )}
                   </Button>
                 </DropdownMenuTrigger>
@@ -317,168 +547,283 @@ export function DocBubbleMenu({
               align="end"
               side="bottom"
               sideOffset={10}
-              className="rounded-xl border-border/80 bg-background/96 p-1.5 shadow-[0_24px_48px_-28px_rgba(15,23,42,0.38)] backdrop-blur-md"
+              className="overflow-visible border-0 bg-transparent p-0 shadow-none"
               onCloseAutoFocus={(e) => e.preventDefault()}
             >
-              {aiMenuView === 'root' ? (
-                <div className="w-52">
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              <div
+                ref={aiMenuRootRef}
+                className="relative"
+                onMouseEnter={clearAiFlyoutTimers}
+                onMouseLeave={closeAiFlyoutDelayed}
+              >
+                <AiMenuCard className="w-52">
+                  <DropdownMenuLabel className="px-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                     AI assist
                   </DropdownMenuLabel>
+
                   <DropdownMenuItem
+                    className="rounded-lg px-2 py-2"
+                    onMouseEnter={(event) =>
+                      openAiFlyoutDelayed('models', event.currentTarget as HTMLElement)
+                    }
+                    onFocus={(event) =>
+                      openAiFlyoutImmediate('models', event.currentTarget as HTMLElement)
+                    }
                     onSelect={(event) => {
                       event.preventDefault()
-                      setAiMenuView('models')
+                      openAiFlyoutImmediate('models', event.currentTarget as HTMLElement)
                     }}
                   >
-                    <div className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate">
-                        {activeModel ? `Use ${activeModel.label}` : 'Choose enabled AI'}
-                      </span>
-                      <span className="truncate text-[11px] text-muted-foreground">
-                        {activeModel?.id ??
-                          (aiModelsLoading ? 'Loading enabled AI…' : 'No enabled AI yet')}
-                      </span>
-                    </div>
-                    <ChevronRight className="ml-auto size-4 text-muted-foreground" />
+                    <AiMenuItemContent
+                      icon={<DocAiGlyph className="size-[0.95rem]" />}
+                      title={activeModel ? `Use ${activeModel.label}` : 'Choose enabled AI'}
+                      description={
+                        activeModel?.id ??
+                        (aiModelsLoading ? 'Loading enabled AI…' : 'No enabled AI yet')
+                      }
+                      trailing={<ChevronRight className="size-4 text-muted-foreground" />}
+                    />
                   </DropdownMenuItem>
+
                   <DropdownMenuSeparator />
+
                   <DropdownMenuItem
+                    className="rounded-lg px-2 py-2"
                     disabled={aiActionsDisabled}
-                    onSelect={() => onAiAction('polish')}
+                    onMouseEnter={closeAiFlyoutDelayed}
+                    onFocus={() => openAiFlyoutImmediate(null)}
+                    onSelect={() => {
+                      onAiAction('polish')
+                      closeAiMenu()
+                    }}
                   >
-                    {AI_ACTION_LABELS.polish}
+                    <AiMenuItemContent
+                      icon={<Sparkles className="size-4" />}
+                      title={AI_ACTION_LABELS.polish}
+                    />
                   </DropdownMenuItem>
+
                   <DropdownMenuItem
+                    className="rounded-lg px-2 py-2"
                     disabled={aiActionsDisabled}
-                    onSelect={() => onAiAction('shorten')}
+                    onMouseEnter={closeAiFlyoutDelayed}
+                    onFocus={() => openAiFlyoutImmediate(null)}
+                    onSelect={() => {
+                      onAiAction('shorten')
+                      closeAiMenu()
+                    }}
                   >
-                    {AI_ACTION_LABELS.shorten}
+                    <AiMenuItemContent
+                      icon={<ShortenActionIcon className="size-4" />}
+                      title={AI_ACTION_LABELS.shorten}
+                    />
                   </DropdownMenuItem>
+
                   <DropdownMenuItem
+                    className="rounded-lg px-2 py-2"
                     disabled={aiActionsDisabled}
-                    onSelect={() => onAiAction('expand')}
+                    onMouseEnter={closeAiFlyoutDelayed}
+                    onFocus={() => openAiFlyoutImmediate(null)}
+                    onSelect={() => {
+                      onAiAction('expand')
+                      closeAiMenu()
+                    }}
                   >
-                    {AI_ACTION_LABELS.expand}
+                    <AiMenuItemContent
+                      icon={<ExpandActionIcon className="size-4" />}
+                      title={AI_ACTION_LABELS.expand}
+                    />
                   </DropdownMenuItem>
+
                   <DropdownMenuItem
+                    className="rounded-lg px-2 py-2"
                     disabled={aiActionsDisabled}
+                    onMouseEnter={(event) =>
+                      openAiFlyoutDelayed('languages', event.currentTarget as HTMLElement)
+                    }
+                    onFocus={(event) =>
+                      openAiFlyoutImmediate('languages', event.currentTarget as HTMLElement)
+                    }
                     onSelect={(event) => {
                       event.preventDefault()
-                      setAiMenuView('languages')
+                      openAiFlyoutImmediate('languages', event.currentTarget as HTMLElement)
                     }}
                   >
-                    <span>{AI_ACTION_LABELS.translate}</span>
-                    <ChevronRight className="ml-auto size-4 text-muted-foreground" />
+                    <AiMenuItemContent
+                      icon={<Languages className="size-4" />}
+                      title={AI_ACTION_LABELS.translate}
+                      trailing={<ChevronRight className="size-4 text-muted-foreground" />}
+                    />
                   </DropdownMenuItem>
+
                   <DropdownMenuSeparator />
+
                   <DropdownMenuItem
+                    className="rounded-lg px-2 py-2"
                     disabled={aiActionsDisabled}
-                    onSelect={() => onAiAction('explain')}
+                    onMouseEnter={closeAiFlyoutDelayed}
+                    onFocus={() => openAiFlyoutImmediate(null)}
+                    onSelect={() => {
+                      onAiAction('explain')
+                      closeAiMenu()
+                    }}
                   >
-                    {AI_ACTION_LABELS.explain}
+                    <AiMenuItemContent
+                      icon={<ExplainActionIcon className="size-4" />}
+                      title={AI_ACTION_LABELS.explain}
+                    />
                   </DropdownMenuItem>
+
                   <DropdownMenuItem
+                    className="rounded-lg px-2 py-2"
                     disabled={aiActionsDisabled}
+                    onMouseEnter={closeAiFlyoutDelayed}
+                    onFocus={() => openAiFlyoutImmediate(null)}
                     onSelect={() => {
                       closeAiMenu()
                       onOpenAiCustomPrompt()
                     }}
                   >
-                    <PencilLine className="size-4 text-muted-foreground" />
-                    {AI_ACTION_LABELS.custom}...
+                    <AiMenuItemContent
+                      icon={<PencilLine className="size-4" />}
+                      title={`${AI_ACTION_LABELS.custom}...`}
+                    />
                   </DropdownMenuItem>
-                </div>
-              ) : null}
+                </AiMenuCard>
 
-              {aiMenuView === 'models' ? (
-                <div className="w-72">
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Enabled AI
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault()
-                      setAiMenuView('root')
-                    }}
+                {aiFlyoutPanel === 'models' ? (
+                  <AiMenuCard
+                    style={
+                      aiFlyoutDirection === 'bottom'
+                        ? undefined
+                        : { top: `${aiFlyoutOffsetTop}px` }
+                    }
+                    className={cn(
+                      'absolute top-0 z-10 w-72 max-w-[calc(100vw-16px)] animate-in fade-in duration-180',
+                      aiFlyoutDirection === 'right' &&
+                        'left-[calc(100%+8px)] slide-in-from-left-1',
+                      aiFlyoutDirection === 'left' &&
+                        'right-[calc(100%+8px)] slide-in-from-right-1',
+                      aiFlyoutDirection === 'bottom' &&
+                        'left-0 top-[calc(100%+8px)] slide-in-from-top-1',
+                    )}
                   >
-                    <ChevronLeft className="size-4 text-muted-foreground" />
-                    Back
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  {enabledModels.length > 0 ? (
-                    enabledModels.map((model) => (
+                    <DropdownMenuLabel className="px-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Enabled AI
+                    </DropdownMenuLabel>
+
+                    {enabledModels.length > 0 ? (
+                      enabledModels.map((model) => (
+                        <DropdownMenuItem
+                          key={model.id}
+                          className="rounded-lg px-2 py-2"
+                          onSelect={() => {
+                            onActiveModelChange(model.id)
+                            closeAiMenu()
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<DocAiGlyph className="size-[0.95rem]" />}
+                            title={model.label}
+                            description={[
+                              model.provider,
+                              formatAiContextWindow(model.contextWindow),
+                            ]
+                              .filter(Boolean)
+                              .join(' · ') || model.id}
+                            trailing={
+                              model.id === activeModel?.id ? (
+                                <Check className="size-4 text-foreground" />
+                              ) : null
+                            }
+                          />
+                        </DropdownMenuItem>
+                      ))
+                    ) : (
+                      <DropdownMenuItem disabled className="rounded-lg px-2 py-2">
+                        <AiMenuItemContent
+                          icon={
+                            aiModelsLoading ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <DocAiGlyph className="size-[0.95rem]" />
+                            )
+                          }
+                          title={aiModelsLoading ? 'Loading enabled AI…' : 'No enabled AI yet'}
+                        />
+                      </DropdownMenuItem>
+                    )}
+
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem
+                      className="rounded-lg px-2 py-2"
+                      onSelect={() => {
+                        closeAiMenu()
+                        router.push('/docs/ai')
+                      }}
+                    >
+                      <AiMenuItemContent
+                        icon={<ManageActionIcon className="size-4" />}
+                        title="Manage enabled AI"
+                      />
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      className="rounded-lg px-2 py-2"
+                      onSelect={() => {
+                        closeAiMenu()
+                        router.push('/docs/ai/prompts')
+                      }}
+                    >
+                      <AiMenuItemContent
+                        icon={<PencilLine className="size-4" />}
+                        title="Manage AI prompts"
+                      />
+                    </DropdownMenuItem>
+                  </AiMenuCard>
+                ) : null}
+
+                {aiFlyoutPanel === 'languages' ? (
+                  <AiMenuCard
+                    style={
+                      aiFlyoutDirection === 'bottom'
+                        ? undefined
+                        : { top: `${aiFlyoutOffsetTop}px` }
+                    }
+                    className={cn(
+                      'absolute top-0 z-10 w-56 max-w-[calc(100vw-16px)] animate-in fade-in duration-180',
+                      aiFlyoutDirection === 'right' &&
+                        'left-[calc(100%+8px)] slide-in-from-left-1',
+                      aiFlyoutDirection === 'left' &&
+                        'right-[calc(100%+8px)] slide-in-from-right-1',
+                      aiFlyoutDirection === 'bottom' &&
+                        'left-0 top-[calc(100%+8px)] slide-in-from-top-1',
+                    )}
+                  >
+                    <DropdownMenuLabel className="px-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Translate to
+                    </DropdownMenuLabel>
+
+                    {translateLanguages.map((language) => (
                       <DropdownMenuItem
-                        key={model.id}
+                        key={language.value}
+                        className="rounded-lg px-2 py-2"
                         onSelect={() => {
-                          onActiveModelChange(model.id)
+                          onAiAction('translate', { targetLanguage: language.value })
                           closeAiMenu()
                         }}
                       >
-                        <div className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate">{model.label}</span>
-                          <span className="truncate text-[11px] text-muted-foreground">
-                            {model.id}
-                          </span>
-                        </div>
-                        {model.id === activeModel?.id ? (
-                          <Check className="ml-auto size-4 text-foreground" />
-                        ) : null}
+                        <AiMenuItemContent
+                          icon={<Languages className="size-4" />}
+                          title={language.label}
+                          description={language.value}
+                        />
                       </DropdownMenuItem>
-                    ))
-                  ) : (
-                    <DropdownMenuItem disabled>
-                      {aiModelsLoading ? 'Loading enabled AI…' : 'No enabled AI yet'}
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      closeAiMenu()
-                      router.push('/docs/ai')
-                    }}
-                  >
-                    Manage enabled AI
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      closeAiMenu()
-                      router.push('/docs/ai/prompts')
-                    }}
-                  >
-                    Manage AI prompts
-                  </DropdownMenuItem>
-                </div>
-              ) : null}
-
-              {aiMenuView === 'languages' ? (
-                <div className="w-56">
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Translate to
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault()
-                      setAiMenuView('root')
-                    }}
-                  >
-                    <ChevronLeft className="size-4 text-muted-foreground" />
-                    Back
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  {translateLanguages.map((language) => (
-                    <DropdownMenuItem
-                      key={language.value}
-                      onSelect={() => {
-                        onAiAction('translate', { targetLanguage: language.value })
-                        closeAiMenu()
-                      }}
-                    >
-                      {language.label}
-                    </DropdownMenuItem>
-                  ))}
-                </div>
-              ) : null}
+                    ))}
+                  </AiMenuCard>
+                ) : null}
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
         </TooltipProvider>

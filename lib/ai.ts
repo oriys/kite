@@ -4,7 +4,27 @@ export const AI_TRANSFORM_ACTIONS = [
   'expand',
   'translate',
   'explain',
+  'review',
+  'score',
+  'summarize',
+  'outline',
+  'checklist',
   'custom',
+] as const
+
+export const AI_REWRITE_ACTIONS = [
+  'polish',
+  'shorten',
+  'expand',
+  'translate',
+] as const
+
+export const AI_APPEND_RESULT_ACTIONS = [
+  'review',
+  'score',
+  'summarize',
+  'outline',
+  'checklist',
 ] as const
 
 export const AI_PROVIDER_NAME = 'AIHubMix'
@@ -21,6 +41,11 @@ export const AI_ACTION_LABELS: Record<AiTransformAction, string> = {
   expand: 'Expand',
   translate: 'Translate',
   explain: 'Explain',
+  review: 'Review',
+  score: 'Score',
+  summarize: 'Summarize',
+  outline: 'Outline',
+  checklist: 'Checklist',
   custom: 'Custom Prompt',
 }
 
@@ -65,6 +90,18 @@ export interface AiTransformRequest {
 export interface AiTransformResponse {
   result: string
   model: string
+}
+
+export function isAiRewriteAction(action: AiTransformAction) {
+  return AI_REWRITE_ACTIONS.includes(
+    action as (typeof AI_REWRITE_ACTIONS)[number],
+  )
+}
+
+export function isAiAppendResultAction(action: AiTransformAction) {
+  return AI_APPEND_RESULT_ACTIONS.includes(
+    action as (typeof AI_APPEND_RESULT_ACTIONS)[number],
+  )
 }
 
 export function formatAiModelLabel(id: string) {

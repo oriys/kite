@@ -7,19 +7,30 @@ export function useDocuments(statusFilter?: DocStatus) {
   const [items, setItems] = React.useState<Doc[]>([])
   const [loading, setLoading] = React.useState(true)
 
-  const refresh = React.useCallback(async () => {
-    setLoading(true)
-    const params = statusFilter ? `?status=${statusFilter}` : ''
-    const res = await fetch(`/api/documents${params}`)
-    if (res.ok) {
-      const data = await res.json()
-      setItems(normalizeDocList(data))
+  const refresh = React.useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) {
+      setLoading(true)
     }
-    setLoading(false)
+
+    try {
+      const params = statusFilter ? `?status=${statusFilter}` : ''
+      const res = await fetch(`/api/documents${params}`)
+      if (res.ok) {
+        const data = normalizeDocList(await res.json())
+        setItems(data)
+        return data
+      }
+
+      return []
+    } finally {
+      if (!options.silent) {
+        setLoading(false)
+      }
+    }
   }, [statusFilter])
 
   React.useEffect(() => {
-    refresh()
+    void refresh()
   }, [refresh])
 
   const create = React.useCallback(

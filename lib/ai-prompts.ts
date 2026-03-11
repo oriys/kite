@@ -29,6 +29,16 @@ export const DEFAULT_AI_ACTION_PROMPTS: Record<AiTransformAction, string> = {
   translate: `Translate the text into ${AI_PROMPT_LANGUAGE_TOKEN} while preserving markdown, code, URLs, numbers, and product names.`,
   explain:
     'Explain the text in plain language. If the text is technical, clarify what it means, what it does, and why it matters.',
+  review:
+    'Review the document like a senior technical editor. Return a concise markdown report with these sections: Strengths, Gaps or Risks, and Recommended Fixes. Ground every point in the source text.',
+  score:
+    'Score the document in markdown across clarity, completeness, structure, consistency, and confidence in technical accuracy. Use a compact table, then end with a short verdict and the top next improvement.',
+  summarize:
+    'Write an executive summary in markdown. Focus on the purpose, the key takeaways, and the most important details a reviewer should know quickly.',
+  outline:
+    'Extract a clean hierarchical outline of the document in markdown list form. Preserve the actual structure and do not invent new sections.',
+  checklist:
+    'Turn the document into an actionable markdown checklist. Use task list items and keep every item concrete, specific, and grounded in the source text.',
   custom:
     "Follow the user's custom instruction exactly. Preserve markdown, code fences, URLs, and proper nouns unless the instruction explicitly asks you to change them.",
 }

@@ -2,29 +2,38 @@
 
 import * as React from 'react'
 import {
+  BadgeCheck,
   Bold,
+  ClipboardList,
   ChevronDown,
   Columns2,
   Italic,
+  Loader2,
+  Sparkles,
   Strikethrough,
   FileCode,
+  FileSearch,
+  FileText,
   Heading1,
   Heading2,
   Heading3,
+  Languages,
   List,
   ListOrdered,
+  Plus,
   Quote,
   Code,
   Link2,
   Image,
   Minus,
-  Languages,
   PenLine,
-  Sparkles,
   Table,
 } from 'lucide-react'
+import { AI_ACTION_LABELS, type AiTransformAction } from '@/lib/ai'
 import { type DocSnippet } from '@/lib/doc-snippets'
 import { CODE_LANGUAGE_OPTIONS, type CodeLanguageOption } from '@/lib/code-highlighting'
+import { cn } from '@/lib/utils'
+import { DocAiGlyph } from '@/components/docs/doc-ai-glyph'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
@@ -32,9 +41,14 @@ import { DocSnippetPicker } from '@/components/docs/doc-snippet-picker'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -485,6 +499,44 @@ function CodeBlockMenu({ disabled, onBeforeOpen, onSelect }: CodeBlockMenuProps)
   )
 }
 
+const DOCUMENT_TRANSLATE_LANGUAGES = [
+  { label: 'Chinese', value: 'Simplified Chinese' },
+  { label: 'English', value: 'English' },
+  { label: 'Japanese', value: 'Japanese' },
+  { label: 'Korean', value: 'Korean' },
+  { label: 'Spanish', value: 'Spanish' },
+  { label: 'French', value: 'French' },
+] as const
+
+interface DocumentAiMenuItemProps {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  description: string
+  shortcut?: string
+}
+
+function DocumentAiMenuItemContent({
+  icon: Icon,
+  label,
+  description,
+  shortcut,
+}: DocumentAiMenuItemProps) {
+  return (
+    <>
+      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border border-border/55 bg-muted/20 text-muted-foreground">
+        <Icon className="size-3.5" />
+      </span>
+      <span className="min-w-0 flex-1 overflow-hidden">
+        <span className="block truncate text-[13px] font-medium text-foreground">{label}</span>
+        <span className="block truncate text-[11px] leading-4 text-muted-foreground">
+          {description}
+        </span>
+      </span>
+      {shortcut ? <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut> : null}
+    </>
+  )
+}
+
 interface DocToolbarProps {
   mode: ToolbarMode
   editorMode: EditorViewMode
@@ -502,8 +554,25 @@ interface DocToolbarProps {
   onInsertCodeBlock?: (language: string) => void
   activeAiLabel?: string | null
   aiDisabled?: boolean
-  onAiPolishDocument?: () => void
-  onAiTranslateDocument?: (targetLanguage: string) => void
+  aiDocumentPendingAction?: AiTransformAction | null
+  onAiDocumentAction?: (
+    action: AiTransformAction,
+    options?: { targetLanguage?: string },
+  ) => void
+}
+
+const AI_PENDING_LABELS: Record<AiTransformAction, string> = {
+  polish: 'Polishing',
+  shorten: 'Shortening',
+  expand: 'Expanding',
+  translate: 'Translating',
+  explain: 'Explaining',
+  review: 'Reviewing',
+  score: 'Scoring',
+  summarize: 'Summarizing',
+  outline: 'Outlining',
+  checklist: 'Building checklist',
+  custom: 'Running prompt',
 }
 
 export function DocToolbar({
@@ -523,8 +592,8 @@ export function DocToolbar({
   onInsertCodeBlock,
   activeAiLabel,
   aiDisabled,
-  onAiPolishDocument,
-  onAiTranslateDocument,
+  aiDocumentPendingAction,
+  onAiDocumentAction,
 }: DocToolbarProps) {
   const handleClick = (item: ToolbarAction) => {
     if (mode === 'source') {
@@ -542,7 +611,11 @@ export function DocToolbar({
   }
 
   const canUseDocumentAi =
-    !disabled && !aiDisabled && Boolean(onAiPolishDocument || onAiTranslateDocument)
+    !disabled && !aiDisabled && Boolean(onAiDocumentAction)
+  const isDocumentAiWorking = Boolean(aiDocumentPendingAction)
+  const documentAiButtonLabel = aiDocumentPendingAction
+    ? `${AI_PENDING_LABELS[aiDocumentPendingAction]}…`
+    : 'AI Actions'
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -627,27 +700,6 @@ export function DocToolbar({
         })}
         <div className="ml-auto flex items-center gap-1 pl-2">
           <Separator orientation="vertical" className="mx-1 hidden h-5 sm:block" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!canUseDocumentAi || !onAiPolishDocument}
-                className="h-8 gap-1.5 rounded-full border-border/70 bg-background/90 px-3 text-xs"
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  onAiPolishDocument?.()
-                }}
-              >
-                <Sparkles className="size-3.5" />
-                <span>AI Polish</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {activeAiLabel ? `Polish full document with ${activeAiLabel}` : 'Polish full document'}
-            </TooltipContent>
-          </Tooltip>
-
           <DropdownMenu modal={false}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -655,28 +707,179 @@ export function DocToolbar({
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!canUseDocumentAi || !onAiTranslateDocument}
-                    className="h-8 gap-1.5 rounded-full border-border/70 bg-background/90 px-3 text-xs"
+                    disabled={!canUseDocumentAi}
+                    className={cn(
+                      'relative h-8 gap-2 overflow-hidden px-2.5 text-xs disabled:opacity-100',
+                      isDocumentAiWorking &&
+                        'border-accent/50 bg-accent/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_0_0_1px_rgba(15,23,42,0.03)]',
+                    )}
                     onMouseDown={(e) => e.preventDefault()}
                   >
-                    <Languages className="size-3.5" />
-                    <span>Translate</span>
-                    <ChevronDown className="size-3 opacity-70" />
+                    {isDocumentAiWorking ? (
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 animate-pulse bg-[linear-gradient(90deg,transparent,rgba(148,163,184,0.14),transparent)] motion-reduce:animate-none"
+                      />
+                    ) : null}
+                    <DocAiGlyph
+                      className={cn(
+                        'relative size-3.5',
+                        isDocumentAiWorking &&
+                          'animate-[pulse_1.6s_cubic-bezier(0.22,1,0.36,1)_infinite] motion-reduce:animate-none',
+                      )}
+                    />
+                    <span className="relative">{documentAiButtonLabel}</span>
+                    {isDocumentAiWorking ? (
+                      <Loader2 className="relative size-3 animate-spin text-muted-foreground motion-reduce:animate-none" />
+                    ) : (
+                      <ChevronDown className="relative size-3 opacity-70" />
+                    )}
                   </Button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
-                {activeAiLabel ? `Translate full document with ${activeAiLabel}` : 'Translate full document'}
+                {isDocumentAiWorking
+                  ? `${documentAiButtonLabel}${activeAiLabel ? ` with ${activeAiLabel}` : ''}`
+                  : activeAiLabel
+                    ? `Run full-document AI actions with ${activeAiLabel}`
+                    : 'Run full-document AI actions'}
               </TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="end" side="bottom" className="w-48">
-              <DropdownMenuLabel>Translate full document</DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => onAiTranslateDocument?.('Simplified Chinese')}>
-                Chinese
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onAiTranslateDocument?.('English')}>
-                English
-              </DropdownMenuItem>
+            <DropdownMenuContent align="end" side="bottom" className="w-80 rounded-xl p-1.5">
+              <DropdownMenuLabel className="pb-1.5">
+                <div className="flex items-center gap-2">
+                  <DocAiGlyph className="size-3.5" />
+                  <span>Full-document AI</span>
+                </div>
+              </DropdownMenuLabel>
+
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="px-2 pb-1 pt-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Rewrite
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('polish')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={Sparkles}
+                    label={AI_ACTION_LABELS.polish}
+                    description="Refine clarity and tone."
+                    shortcut="Replace"
+                  />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('shorten')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={Minus}
+                    label={AI_ACTION_LABELS.shorten}
+                    description="Trim repetition."
+                    shortcut="Replace"
+                  />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('expand')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={Plus}
+                    label={AI_ACTION_LABELS.expand}
+                    description="Add context and detail."
+                    shortcut="Replace"
+                  />
+                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="items-start gap-2.5 rounded-lg px-2 py-1.5 [&>svg:last-child]:hidden">
+                    <DocumentAiMenuItemContent
+                      icon={Languages}
+                      label={AI_ACTION_LABELS.translate}
+                      description="Translate and keep markdown."
+                      shortcut="Replace"
+                    />
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-44 rounded-xl p-1.5 data-[side=right]:[translate:calc(-100%-0.625rem)_0]">
+                    <DropdownMenuLabel>Translate to</DropdownMenuLabel>
+                    {DOCUMENT_TRANSLATE_LANGUAGES.map((language) => (
+                      <DropdownMenuItem
+                        key={language.value}
+                        className="rounded-lg"
+                        onSelect={() =>
+                          onAiDocumentAction?.('translate', {
+                            targetLanguage: language.value,
+                          })
+                        }
+                      >
+                        {language.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </DropdownMenuGroup>
+
+              <DropdownMenuSeparator className="my-2" />
+
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="px-2 pb-1 pt-0 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Review
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('review')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={FileSearch}
+                    label={AI_ACTION_LABELS.review}
+                    description="Audit clarity and coverage."
+                    shortcut="Append"
+                  />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('score')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={BadgeCheck}
+                    label={AI_ACTION_LABELS.score}
+                    description="Generate a scorecard."
+                    shortcut="Append"
+                  />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('summarize')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={FileText}
+                    label={AI_ACTION_LABELS.summarize}
+                    description="Write a short summary."
+                    shortcut="Append"
+                  />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('outline')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={ListOrdered}
+                    label={AI_ACTION_LABELS.outline}
+                    description="Extract an outline."
+                    shortcut="Append"
+                  />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('checklist')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={ClipboardList}
+                    label={AI_ACTION_LABELS.checklist}
+                    description="Turn it into a checklist."
+                    shortcut="Append"
+                  />
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

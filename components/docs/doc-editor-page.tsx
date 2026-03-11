@@ -4,27 +4,41 @@ import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 
-import { type DocStatus, STATUS_CONFIG } from '@/lib/documents'
+import {
+  isDocumentTitleMissing,
+  type DocStatus,
+  STATUS_CONFIG,
+} from '@/lib/documents'
+import {
+  clearPendingDocumentSummary,
+  queuePendingDocumentSummary,
+} from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
 import { getDocEditorHref } from '@/lib/docs-url'
+import { getDocEditorShellWidth } from '@/lib/doc-editor-layout'
+import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
 import { useDocument } from '@/hooks/use-documents'
-import { useDocumentAnnotations } from '@/hooks/use-document-annotations'
-import { useDocumentEvaluations } from '@/hooks/use-document-evaluations'
+import { useDocEditorWidth } from '@/hooks/use-doc-editor-width'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DocEditor,
   type DocEditorHandle,
 } from '@/components/docs/doc-editor'
-import { DocReviewPanel } from '@/components/docs/doc-annotations-panel'
 import { DocStatusBar, type SaveState } from '@/components/docs/doc-status-bar'
 import { type EditorViewMode } from '@/components/docs/doc-toolbar'
 
-function getEditorShellClassName(mode: EditorViewMode, hasAiPreview = false) {
+function getEditorShellClassName(resizing = false) {
   return cn(
-    'mx-auto w-full px-4 sm:px-6',
-    mode === 'split' || hasAiPreview ? 'max-w-[1900px]' : 'max-w-[1760px]',
+    'mx-auto w-full px-4 motion-reduce:transition-none sm:px-6',
+    !resizing && 'transition-[max-width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
   )
+}
+
+function getEditorShellStyle(documentWidth: number) {
+  return {
+    maxWidth: `${getDocEditorShellWidth(documentWidth)}px`,
+  } satisfies React.CSSProperties
 }
 
 function EditorSkeleton() {
@@ -87,31 +101,18 @@ export function DocEditorPageClient() {
   const router = useRouter()
   const docId = searchParams.get('doc')
   const { doc, loading, update, transition, remove, duplicate } = useDocument(docId)
-  const {
-    items: annotations,
-    loading: annotationsLoading,
-    error: annotationsError,
-    create: createAnnotation,
-    update: updateAnnotation,
-    remove: removeAnnotation,
-  } = useDocumentAnnotations(docId)
-  const {
-    items: evaluations,
-    loading: evaluationsLoading,
-    error: evaluationsError,
-    create: createEvaluation,
-    remove: removeEvaluation,
-  } = useDocumentEvaluations(docId)
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
-  const [editorMode, setEditorMode] = React.useState<EditorViewMode>('wysiwyg')
-  const [hasAiPreview, setHasAiPreview] = React.useState(false)
+  const [, setEditorMode] = React.useState<EditorViewMode>('wysiwyg')
+  const [documentResizeActive, setDocumentResizeActive] = React.useState(false)
   const [initializedDocId, setInitializedDocId] = React.useState<string | null>(null)
   const [saveState, setSaveState] = React.useState<SaveState>('idle')
   const [backBusy, setBackBusy] = React.useState(false)
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedFeedbackRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const editorFocusRef = React.useRef<DocEditorHandle | null>(null)
+  const { documentWidth, setDocumentWidth } = useDocEditorWidth()
+  const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
 
   React.useEffect(() => {
     if (doc && initializedDocId !== doc.id) {
@@ -199,10 +200,33 @@ export function DocEditorPageClient() {
     }
   }
 
-  const handleCaptureSelection = React.useCallback(
-    () => editorFocusRef.current?.getSelectionQuote() ?? '',
-    [],
-  )
+  const triggerDocumentSummaryRefresh = React.useCallback((documentId: string) => {
+    queuePendingDocumentSummary(documentId)
+
+    void fetch(`/api/documents/${documentId}/summary`, {
+      method: 'POST',
+      keepalive: true,
+    })
+      .then(async (response) => {
+        if (response.ok) return
+
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+
+        throw new Error(payload?.error ?? 'Failed to generate summary')
+      })
+      .catch((error) => {
+        clearPendingDocumentSummary(documentId)
+
+        toast.error('Summary update failed', {
+          description:
+            error instanceof Error
+              ? error.message
+              : 'The list will fall back to the raw excerpt.',
+        })
+      })
+  }, [])
 
   const handleBack = React.useCallback(async () => {
     if (!docId || backBusy) return
@@ -234,20 +258,14 @@ export function DocEditorPageClient() {
 
       const shouldRefreshSummary =
         Boolean(latestDoc?.content.trim()) &&
-        (contentChanged || !latestDoc?.summary)
+        (
+          contentChanged ||
+          !latestDoc?.summary ||
+          isDocumentTitleMissing(latestDoc?.title)
+        )
 
       if (shouldRefreshSummary) {
-        const response = await fetch(`/api/documents/${docId}/summary`, {
-          method: 'POST',
-        })
-
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null
-
-          throw new Error(payload?.error ?? 'Failed to generate summary')
-        }
+        triggerDocumentSummaryRefresh(docId)
       }
     } catch (error) {
       toast.error('Summary update failed', {
@@ -257,7 +275,7 @@ export function DocEditorPageClient() {
     } finally {
       router.push('/docs')
     }
-  }, [backBusy, content, doc, docId, title, update, router])
+  }, [backBusy, content, doc, docId, title, triggerDocumentSummaryRefresh, update, router])
 
   if (loading) {
     return <EditorSkeleton />
@@ -268,19 +286,12 @@ export function DocEditorPageClient() {
   }
 
   const isReadOnly = doc.status === 'published' || doc.status === 'archived'
-  const openAnnotationCount = annotations.filter(
-    (annotation) => annotation.status === 'open',
-  ).length
-  const averageEvaluationScore =
-    evaluations.length > 0
-      ? evaluations.reduce((sum, evaluation) => sum + evaluation.score, 0) /
-        evaluations.length
-      : null
+  const editorShellStyle = getEditorShellStyle(documentWidth)
 
   return (
     <div className="flex h-dvh flex-col">
       <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
-        <div className={getEditorShellClassName(editorMode, hasAiPreview)}>
+        <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
           <Input
             value={title}
             onChange={(e) => handleTitleChange(e.target.value)}
@@ -295,7 +306,7 @@ export function DocEditorPageClient() {
 
       {isReadOnly && (
         <div className="border-b border-amber-500/20 bg-amber-50/50 px-4 py-1.5 dark:bg-amber-950/20 sm:px-6">
-          <div className={getEditorShellClassName(editorMode, hasAiPreview)}>
+          <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
             <p className="text-xs text-amber-700 dark:text-amber-400">
               This document is {doc.status}. Revert to draft to make changes.
             </p>
@@ -305,46 +316,28 @@ export function DocEditorPageClient() {
 
       <div className="flex-1 overflow-y-auto xl:overflow-hidden">
         <div
-          className={cn(
-            getEditorShellClassName(editorMode, hasAiPreview),
-            'py-4 xl:h-full',
-          )}
+          className={cn(getEditorShellClassName(documentResizeActive), 'py-4 xl:h-full')}
+          style={editorShellStyle}
         >
-          <div className="grid gap-4 xl:h-full xl:grid-cols-[minmax(0,1fr)_360px]">
-            <DocEditor
-              key={doc.id}
-              content={content}
-              onChange={handleContentChange}
-              readOnly={isReadOnly}
-              className="min-h-[60vh] xl:h-full"
-              onModeChange={setEditorMode}
-              editorFocusRef={editorFocusRef}
-              onAiPreviewVisibilityChange={setHasAiPreview}
-            />
-            <DocReviewPanel
-              key={`review-${doc.id}`}
-              evaluations={evaluations}
-              evaluationsLoading={evaluationsLoading}
-              evaluationsError={evaluationsError}
-              onCreateEvaluation={createEvaluation}
-              onDeleteEvaluation={removeEvaluation}
-              annotations={annotations}
-              annotationsLoading={annotationsLoading}
-              annotationsError={annotationsError}
-              onCaptureSelection={handleCaptureSelection}
-              onCreateAnnotation={createAnnotation}
-              onUpdateAnnotation={updateAnnotation}
-              onDeleteAnnotation={removeAnnotation}
-            />
-          </div>
+          <DocEditor
+            key={doc.id}
+            content={content}
+            onChange={handleContentChange}
+            readOnly={isReadOnly}
+            className="min-h-[60vh] xl:h-full"
+            onModeChange={setEditorMode}
+            editorFocusRef={editorFocusRef}
+            documentWidth={documentWidth}
+            onDocumentWidthChange={setDocumentWidth}
+            onDocumentResizeStateChange={setDocumentResizeActive}
+            aiPreviewSide={aiPanelSide}
+            onAiPreviewSideChange={setAiPanelSide}
+          />
         </div>
       </div>
 
       <DocStatusBar
         doc={{ ...doc, title, content }}
-        openAnnotationCount={openAnnotationCount}
-        averageEvaluationScore={averageEvaluationScore}
-        evaluationCount={evaluations.length}
         backBusy={backBusy}
         saveState={saveState}
         onBack={() => {

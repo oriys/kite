@@ -1,11 +1,11 @@
 import type { NextRequest } from 'next/server'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 
 import { notFound, withWorkspaceAuth } from '@/lib/api-utils'
-import { generateDocumentSummary } from '@/lib/document-summary'
+import { generateDocumentMetadata } from '@/lib/document-summary'
 import {
   getDocument,
-  updateDocumentSummary,
+  updateDocumentSummaryIfUnchanged,
 } from '@/lib/queries/documents'
 
 export async function POST(
@@ -19,16 +19,29 @@ export async function POST(
   const doc = await getDocument(id, result.ctx.workspaceId)
   if (!doc) return notFound()
 
-  const summary = await generateDocumentSummary({
-    title: doc.title,
-    content: doc.content,
+  after(async () => {
+    try {
+      const metadata = await generateDocumentMetadata({
+        title: doc.title,
+        content: doc.content,
+      })
+
+      await updateDocumentSummaryIfUnchanged(
+        id,
+        result.ctx.workspaceId,
+        metadata,
+        doc.updatedAt,
+      )
+    } catch (error) {
+      console.error(`Failed to refresh summary for document ${id}`, error)
+    }
   })
 
-  const updated = await updateDocumentSummary(id, result.ctx.workspaceId, summary)
-  if (!updated) return notFound()
-
-  return NextResponse.json({
-    id: updated.id,
-    summary: updated.summary,
-  })
+  return NextResponse.json(
+    {
+      id: doc.id,
+      queued: true,
+    },
+    { status: 202 },
+  )
 }

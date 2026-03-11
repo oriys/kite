@@ -2,6 +2,7 @@ export type DocStatus = 'draft' | 'review' | 'published' | 'archived'
 export type DocAnnotationStatus = 'open' | 'resolved'
 export type DocEvaluationScore = 1 | 2 | 3 | 4 | 5
 
+export const UNTITLED_DOCUMENT_TITLE = 'Untitled'
 export const DOC_ANNOTATION_QUOTE_MAX_LENGTH = 480
 export const DOC_ANNOTATION_BODY_MAX_LENGTH = 4000
 export const DOC_EVALUATION_BODY_MAX_LENGTH = 2000
@@ -52,6 +53,11 @@ export interface Doc {
   workspaceId: string
   createdBy: string | null
   versions: DocVersion[]
+}
+
+export function isDocumentTitleMissing(title: string | null | undefined) {
+  const normalized = title?.trim() ?? ''
+  return !normalized || normalized === UNTITLED_DOCUMENT_TITLE
 }
 
 export function isDocEvaluationScore(value: number): value is DocEvaluationScore {

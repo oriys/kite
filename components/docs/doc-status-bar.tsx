@@ -1,18 +1,16 @@
 'use client'
-
 import {
   ArrowLeft,
-  RotateCcw,
-  Clock,
-  FileText,
-  ChevronRight,
-  Trash2,
-  Copy,
   Check,
+  ChevronRight,
+  Clock,
+  Copy,
+  FileText,
   Loader2,
-  MessageSquareQuote,
-  Star,
+  RotateCcw,
+  Trash2,
 } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 
 import { cn } from '@/lib/utils'
@@ -37,14 +35,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 
 export type SaveState = 'idle' | 'saving' | 'saved'
 
 interface DocStatusBarProps {
   doc: Doc
-  openAnnotationCount?: number
-  averageEvaluationScore?: number | null
-  evaluationCount?: number
   backBusy?: boolean
   saveState?: SaveState
   onBack?: () => void
@@ -65,11 +65,40 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`
 }
 
+function summarizeVersion(content: string) {
+  const normalized = content.replace(/\s+/g, ' ').trim()
+  if (!normalized) return 'Empty snapshot'
+  if (normalized.length <= 88) return normalized
+  return `${normalized.slice(0, 87).trimEnd()}…`
+}
+
+function AnimatedMetricNumber({ value }: { value: number }) {
+  const reducedMotion = useReducedMotion()
+
+  if (reducedMotion) {
+    return <span>{value.toLocaleString()}</span>
+  }
+
+  return (
+    <span className="relative inline-flex h-[1.1rem] min-w-[2.5ch] items-center overflow-hidden font-medium tabular-nums">
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={value}
+          initial={{ y: 10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -10, opacity: 0 }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          className="inline-block"
+        >
+          {value.toLocaleString()}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  )
+}
+
 export function DocStatusBar({
   doc,
-  openAnnotationCount = 0,
-  averageEvaluationScore = null,
-  evaluationCount = 0,
   backBusy = false,
   saveState = 'idle',
   onBack,
@@ -81,6 +110,7 @@ export function DocStatusBar({
   const router = useRouter()
   const config = STATUS_CONFIG[doc.status]
   const wc = wordCount(doc.content)
+  const recentVersions = doc.versions.slice(0, 6)
 
   return (
     <div className={cn(
@@ -108,7 +138,7 @@ export function DocStatusBar({
 
         <span className="flex items-center gap-1">
           <FileText className="size-3" />
-          {wc.toLocaleString()} {wc === 1 ? 'word' : 'words'}
+          <AnimatedMetricNumber value={wc} /> {wc === 1 ? 'word' : 'words'}
         </span>
 
         <span className="flex items-center gap-1">
@@ -130,30 +160,50 @@ export function DocStatusBar({
           )}
         </span>
 
-        {doc.versions.length > 0 && (
-          <span className="text-muted-foreground/70">
-            {doc.versions.length} {doc.versions.length === 1 ? 'revision' : 'revisions'}
-          </span>
-        )}
-
-        <span className="flex items-center gap-1 text-muted-foreground/70">
-          <MessageSquareQuote className="size-3" />
-          {openAnnotationCount} open {openAnnotationCount === 1 ? 'annotation' : 'annotations'}
-        </span>
-
-        <span className="flex items-center gap-1 text-muted-foreground/70">
-          <Star
-            className={cn(
-              'size-3',
-              averageEvaluationScore === null
-                ? 'text-muted-foreground/50'
-                : 'fill-amber-400 text-amber-400',
-            )}
-          />
-          {averageEvaluationScore === null
-            ? 'No ratings'
-            : `${averageEvaluationScore.toFixed(1)}/5 · ${evaluationCount} ${evaluationCount === 1 ? 'rating' : 'ratings'}`}
-        </span>
+        {doc.versions.length > 0 ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-muted-foreground/80 transition-colors hover:bg-muted/45 hover:text-foreground"
+              >
+                <span>{doc.versions.length}</span>
+                <span>{doc.versions.length === 1 ? 'revision' : 'revisions'}</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-80 p-1.5">
+              <div className="border-b border-border/70 px-3 py-2">
+                <p className="text-sm font-medium text-foreground">Recent revisions</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Quick snapshots from autosave. Open a card to compare content next.
+                </p>
+              </div>
+              <div className="max-h-72 overflow-y-auto py-1">
+                {recentVersions.map((version, index) => (
+                  <div
+                    key={version.id}
+                    className={cn(
+                      'space-y-1.5 px-3 py-2.5',
+                      index > 0 && 'border-t border-border/60',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                        {timeAgo(version.savedAt)}
+                      </span>
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        {version.wordCount.toLocaleString()} words
+                      </span>
+                    </div>
+                    <p className="text-sm leading-6 text-foreground/90">
+                      {summarizeVersion(version.content)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : null}
       </div>
 
       {/* Right — actions */}

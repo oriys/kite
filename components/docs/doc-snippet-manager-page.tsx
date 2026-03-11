@@ -23,8 +23,7 @@ import {
 } from '@/lib/doc-snippets'
 import { useDocSnippets } from '@/hooks/use-doc-snippets'
 import { cn } from '@/lib/utils'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { UserMenu } from '@/components/auth/user-menu'
+import { DocsHeaderUtilities } from '@/components/docs/docs-header-utilities'
 import { MarkdownPreview } from '@/components/docs/markdown-preview'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -324,19 +323,20 @@ export function DocSnippetManagerPage() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/docs">
-                <ArrowLeft data-icon="inline-start" />
-                Back to Documents
-              </Link>
-            </Button>
-            <ThemeToggle />
-            <UserMenu />
-            <Button size="sm" onClick={openCreateDialog}>
-              <Plus data-icon="inline-start" />
-              New Component
-            </Button>
+          <div className="flex flex-wrap items-center justify-start gap-3 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/docs">
+                  <ArrowLeft data-icon="inline-start" />
+                  Back to Documents
+                </Link>
+              </Button>
+              <Button size="sm" onClick={openCreateDialog}>
+                <Plus data-icon="inline-start" />
+                New Component
+              </Button>
+            </div>
+            <DocsHeaderUtilities className="lg:ml-1 lg:border-l lg:border-border/60 lg:pl-3" />
           </div>
         </div>
         <div className="px-5 py-4 sm:px-6">

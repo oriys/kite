@@ -5,13 +5,20 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Download, Plus, X } from 'lucide-react'
 
-import { type DocStatus, STATUS_CONFIG } from '@/lib/documents'
+import {
+  isDocumentTitleMissing,
+  type DocStatus,
+  STATUS_CONFIG,
+} from '@/lib/documents'
+import {
+  clearPendingDocumentSummary,
+  getPendingDocumentSummaryIds,
+} from '@/lib/document-summary-queue'
 import { useDocuments } from '@/hooks/use-documents'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { UserMenu } from '@/components/auth/user-menu'
 import { DocsAiMenu } from '@/components/docs/docs-ai-menu'
+import { DocsHeaderUtilities } from '@/components/docs/docs-header-utilities'
 import { DocList } from '@/components/docs/doc-list'
 import { getDocEditorHref } from '@/lib/docs-url'
 import {
@@ -30,6 +37,8 @@ const statuses: (DocStatus | 'all')[] = ['all', 'draft', 'review', 'published', 
 const LEGACY_DOCS_STORAGE_KEY = 'editorial-docs'
 const LEGACY_DOCS_IMPORTED_KEY = 'editorial-docs-imported'
 const LEGACY_DOCS_DISMISSED_KEY = 'editorial-docs-import-dismissed'
+const SUMMARY_REFRESH_INTERVAL_MS = 1500
+const SUMMARY_REFRESH_MAX_ATTEMPTS = 6
 
 interface LegacyDocVersion {
   content: string
@@ -71,6 +80,7 @@ export default function DocsPage() {
   const [legacyDocs, setLegacyDocs] = React.useState<LegacyDoc[]>([])
   const [importingLegacyDocs, setImportingLegacyDocs] = React.useState(false)
   const [legacyImportMessage, setLegacyImportMessage] = React.useState<string | null>(null)
+  const pendingSummaryRefreshRef = React.useRef(false)
 
   const filteredItems = React.useMemo(
     () => (filter === 'all' ? items : items.filter((doc) => doc.status === filter)),
@@ -92,6 +102,56 @@ export default function DocsPage() {
 
     setLegacyDocs(readLegacyDocs())
   }, [])
+
+  React.useEffect(() => {
+    if (loading || pendingSummaryRefreshRef.current) return
+
+    const queuedIds = getPendingDocumentSummaryIds()
+    if (queuedIds.length === 0) return
+
+    pendingSummaryRefreshRef.current = true
+
+    let cancelled = false
+    let timer: number | null = null
+
+    const syncQueuedSummaries = async (attempt: number) => {
+      const docs = await refresh({ silent: true })
+      if (cancelled) return
+
+      for (const queuedId of getPendingDocumentSummaryIds()) {
+        const queuedDoc = docs.find((doc) => doc.id === queuedId)
+        if (
+          !queuedDoc ||
+          !queuedDoc.content.trim() ||
+          (queuedDoc.summary.trim() && !isDocumentTitleMissing(queuedDoc.title))
+        ) {
+          clearPendingDocumentSummary(queuedId)
+        }
+      }
+
+      const remainingIds = getPendingDocumentSummaryIds()
+      if (remainingIds.length === 0 || attempt + 1 >= SUMMARY_REFRESH_MAX_ATTEMPTS) {
+        pendingSummaryRefreshRef.current = false
+        return
+      }
+
+      timer = window.setTimeout(() => {
+        void syncQueuedSummaries(attempt + 1)
+      }, SUMMARY_REFRESH_INTERVAL_MS)
+    }
+
+    timer = window.setTimeout(() => {
+      void syncQueuedSummaries(0)
+    }, SUMMARY_REFRESH_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      pendingSummaryRefreshRef.current = false
+      if (timer) {
+        window.clearTimeout(timer)
+      }
+    }
+  }, [loading, refresh])
 
   const dismissLegacyImport = React.useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -181,9 +241,8 @@ export default function DocsPage() {
             Create, edit, review, and publish your API documentation.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-          <UserMenu />
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" className="h-8" asChild>
             <Link href="/docs/components">Quick Insert</Link>
           </Button>
@@ -219,6 +278,8 @@ export default function DocsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </div>
+          <DocsHeaderUtilities className="sm:ml-1 sm:border-l sm:border-border/60 sm:pl-3" />
         </div>
       </div>
 
