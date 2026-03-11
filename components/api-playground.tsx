@@ -58,7 +58,7 @@ export function ApiPlayground({
   const [response, setResponse] = React.useState<{
     status: number
     statusText: string
-    data: any
+    data: unknown
     headers: Record<string, string>
     time: number
     size: string
@@ -101,10 +101,10 @@ export function ApiPlayground({
       const endTime = performance.now()
 
       const resData = await res.text()
-      let parsedData = resData
+      let parsedData: unknown = resData
       try {
         parsedData = JSON.parse(resData)
-      } catch (e) {
+      } catch {
         // Not JSON
       }
 
@@ -151,14 +151,29 @@ export function ApiPlayground({
   const updateKeyValue = (
     id: string,
     field: 'key' | 'value' | 'enabled',
-    value: any,
+    value: string | boolean,
     list: KeyValue[],
     setList: React.Dispatch<React.SetStateAction<KeyValue[]>>,
   ) => {
     setList(
-      list.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item,
-      ),
+      list.map((item) => {
+        if (item.id !== id) return item
+
+        switch (field) {
+          case 'key':
+            return { ...item, key: typeof value === 'string' ? value : item.key }
+          case 'value':
+            return {
+              ...item,
+              value: typeof value === 'string' ? value : item.value,
+            }
+          case 'enabled':
+            return {
+              ...item,
+              enabled: typeof value === 'boolean' ? value : item.enabled,
+            }
+        }
+      }),
     )
   }
 

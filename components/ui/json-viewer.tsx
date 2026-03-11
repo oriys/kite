@@ -6,8 +6,10 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
+type JsonCollection = Record<string, unknown> | unknown[]
+
 interface JsonViewerProps {
-  data: any
+  data: unknown
   className?: string
   initialExpanded?: boolean
   maxHeight?: string | number
@@ -67,10 +69,14 @@ export function JsonViewer({
 
 interface JsonNodeProps {
   keyName: string
-  value: any
+  value: unknown
   isLast: boolean
   initialExpanded: boolean
   level?: number
+}
+
+function isJsonCollection(value: unknown): value is JsonCollection {
+  return typeof value === 'object' && value !== null
 }
 
 function JsonNode({
@@ -81,15 +87,18 @@ function JsonNode({
   level = 0,
 }: JsonNodeProps) {
   const [expanded, setExpanded] = React.useState(initialExpanded || level < 1)
-  
-  const isObject = value !== null && typeof value === 'object'
+
+  const isObject = isJsonCollection(value)
   const isArray = Array.isArray(value)
-  const isEmpty = isObject && Object.keys(value).length === 0
+  const entries = isObject ? Object.entries(value) : []
+  const isEmpty = isObject && entries.length === 0
 
   if (!isObject) {
     return (
       <div className="flex min-w-0 items-start rounded-sm px-1 hover:bg-muted/50">
-        <span className="mr-2 text-blue-600 dark:text-blue-400">"{keyName}":</span>
+        <span className="mr-2 text-blue-600 dark:text-blue-400">
+          &quot;{keyName}&quot;:
+        </span>
         <JsonPrimitive value={value} />
         {!isLast && <span className="text-muted-foreground">,</span>}
       </div>
@@ -99,9 +108,11 @@ function JsonNode({
   if (isEmpty) {
     return (
       <div className="flex min-w-0 items-center rounded-sm px-1 hover:bg-muted/50">
-         <span className="mr-2 text-purple-600 dark:text-purple-400">"{keyName}":</span>
-         <span className="text-muted-foreground">{isArray ? '[]' : '{}'}</span>
-         {!isLast && <span className="text-muted-foreground">,</span>}
+        <span className="mr-2 text-purple-600 dark:text-purple-400">
+          &quot;{keyName}&quot;:
+        </span>
+        <span className="text-muted-foreground">{isArray ? '[]' : '{}'}</span>
+        {!isLast && <span className="text-muted-foreground">,</span>}
       </div>
     )
   }
@@ -115,7 +126,9 @@ function JsonNode({
         <span className="mr-1 text-muted-foreground">
           {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </span>
-        <span className="mr-2 text-purple-600 dark:text-purple-400">"{keyName}":</span>
+        <span className="mr-2 text-purple-600 dark:text-purple-400">
+          &quot;{keyName}&quot;:
+        </span>
         <span className="text-muted-foreground">
           {isArray ? '[' : '{'}
           {!expanded && (
@@ -125,15 +138,15 @@ function JsonNode({
           {!expanded && !isLast && ','}
         </span>
         {!expanded && (
-           <span className="ml-2 text-[10px] text-muted-foreground opacity-50">
-             {Object.keys(value).length} items
-           </span>
+          <span className="ml-2 text-[10px] text-muted-foreground opacity-50">
+            {entries.length} items
+          </span>
         )}
       </div>
-      
+
       {expanded && (
         <div className="ml-4 min-w-0 border-l border-border pl-2">
-          {Object.entries(value).map(([k, v], i, arr) => (
+          {entries.map(([k, v], i, arr) => (
             <JsonNode
               key={k}
               keyName={k}
@@ -145,20 +158,20 @@ function JsonNode({
           ))}
         </div>
       )}
-      
+
       {expanded && (
         <div className="hover:bg-muted/50 rounded-sm px-1">
-           <span className="text-muted-foreground">{isArray ? ']' : '}'}</span>
-           {!isLast && <span className="text-muted-foreground">,</span>}
+          <span className="text-muted-foreground">{isArray ? ']' : '}'}</span>
+          {!isLast && <span className="text-muted-foreground">,</span>}
         </div>
       )}
     </div>
   )
 }
 
-function JsonPrimitive({ value }: { value: any }) {
+function JsonPrimitive({ value }: { value: unknown }) {
   if (typeof value === 'string') {
-    return <span className="text-green-600 dark:text-green-400">"{value}"</span>
+    return <span className="text-green-600 dark:text-green-400">&quot;{value}&quot;</span>
   }
   if (typeof value === 'number') {
     return <span className="text-orange-600 dark:text-orange-400">{value}</span>
