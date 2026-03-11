@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { relations } from 'drizzle-orm'
 import type { AdapterAccountType } from 'next-auth/adapters'
+import { DOC_SNIPPET_CATEGORIES, type DocSnippetCategory } from './doc-snippets'
 
 // ─── Auth.js tables ─────────────────────────────────────────────
 
@@ -126,6 +127,34 @@ export const documents = pgTable(
   ],
 )
 
+export const docSnippetCategoryEnum = pgEnum(
+  'doc_snippet_category',
+  [...DOC_SNIPPET_CATEGORIES] as [DocSnippetCategory, ...DocSnippetCategory[]],
+)
+
+export const docSnippets = pgTable(
+  'doc_snippets',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    id: text('id').notNull(),
+    label: text('label').notNull(),
+    description: text('description').notNull(),
+    category: docSnippetCategoryEnum('category').notNull(),
+    keywords: text('keywords').array().notNull(),
+    template: text('template').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.id] }),
+    index('doc_snippets_workspace_id_idx').on(t.workspaceId),
+    index('doc_snippets_category_idx').on(t.category),
+  ],
+)
+
 export const documentVersions = pgTable(
   'document_versions',
   {
@@ -163,6 +192,7 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 export const workspacesRelations = relations(workspaces, ({ many }) => ({
   members: many(workspaceMembers),
   documents: many(documents),
+  docSnippets: many(docSnippets),
 }))
 
 export const workspaceMembersRelations = relations(
@@ -189,6 +219,13 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
     references: [users.id],
   }),
   versions: many(documentVersions),
+}))
+
+export const docSnippetsRelations = relations(docSnippets, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [docSnippets.workspaceId],
+    references: [workspaces.id],
+  }),
 }))
 
 export const documentVersionsRelations = relations(

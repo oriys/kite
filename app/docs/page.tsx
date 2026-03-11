@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus } from 'lucide-react'
 
@@ -67,6 +68,9 @@ export default function DocsPage() {
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <UserMenu />
+          <Button variant="outline" size="sm" className="h-8" asChild>
+            <Link href="/docs/components">Quick Insert</Link>
+          </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-8">

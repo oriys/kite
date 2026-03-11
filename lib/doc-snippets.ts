@@ -9,6 +9,15 @@ export interface DocSnippet {
   template: string
 }
 
+export type DocSnippetMutation = Omit<DocSnippet, 'id'>
+
+export interface StoredDocSnippet extends DocSnippet {
+  workspaceId: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 export const DOC_SNIPPET_CATEGORIES: readonly DocSnippetCategory[] = [
   'Structure',
   'Writing',
@@ -90,6 +99,50 @@ State the chosen direction clearly and why it won.
 | General availability | Engineering + Support | Monitoring stable and docs published |`,
   },
   {
+    id: 'status-snapshot',
+    label: 'Status Snapshot',
+    description: 'Summarize owner, phase, risk level, and next checkpoint in one glance.',
+    category: 'Structure',
+    keywords: ['status', 'snapshot', 'owner', 'risk', 'summary'],
+    template: `## Status Snapshot
+
+| Area | Current state |
+| --- | --- |
+| Owner | Platform docs team |
+| Phase | Internal review |
+| Risk | Medium: migration validation still open |
+| Next checkpoint | Thursday rollout review |`,
+  },
+  {
+    id: 'launch-checklist',
+    label: 'Launch Checklist',
+    description: 'Track final readiness tasks before a publish, release, or cutover.',
+    category: 'Structure',
+    keywords: ['launch', 'checklist', 'release', 'readiness', 'go-live'],
+    template: `## Launch Checklist
+
+- [ ] Final copy reviewed by document owner
+- [ ] Examples validated against production behavior
+- [ ] Monitoring and alerts confirmed
+- [ ] Support team briefed on rollout notes
+- [ ] Publish gate approved`,
+  },
+  {
+    id: 'incident-timeline',
+    label: 'Incident Timeline',
+    description: 'Capture the sequence of events, response actions, and decisions chronologically.',
+    category: 'Structure',
+    keywords: ['incident', 'timeline', 'events', 'response', 'chronology'],
+    template: `## Incident Timeline
+
+| Time | Event | Owner |
+| --- | --- | --- |
+| 09:12 | Elevated error rate detected in publish API | On-call engineer |
+| 09:19 | Incident declared and triage room opened | Incident commander |
+| 09:34 | Faulty release rolled back | Platform team |
+| 10:02 | Service stabilized and monitoring confirmed recovery | SRE |`,
+  },
+  {
     id: 'callout-note',
     label: 'Callout Note',
     description: 'Insert an editorial note for caveats, policy, or rollout guidance.',
@@ -124,6 +177,61 @@ Yes. Use placeholder values for pending fields and clearly mark them for review.
 
 ### How should changes be reviewed?
 Move the document to review, compare the latest revision, and verify examples before publishing.`,
+  },
+  {
+    id: 'meeting-notes',
+    label: 'Meeting Notes',
+    description: 'Capture agenda, decisions, and follow-up owners from a review or sync.',
+    category: 'Writing',
+    keywords: ['meeting', 'notes', 'agenda', 'decisions', 'follow-up'],
+    template: `## Meeting Notes
+
+### Agenda
+- Review current scope and open dependencies
+- Confirm launch criteria and approvals
+
+### Decisions
+- Keep the first release behind a limited beta gate
+- Publish migration guidance alongside the feature
+
+### Follow-up
+- Product: confirm announcement copy
+- Engineering: validate rollback steps
+- Support: prepare escalation notes`,
+  },
+  {
+    id: 'review-checklist',
+    label: 'Review Checklist',
+    description: 'List the checks reviewers should complete before approving content.',
+    category: 'Writing',
+    keywords: ['review', 'checklist', 'approval', 'qa', 'validation'],
+    template: `## Review Checklist
+
+- [ ] Scope matches the shipped behavior
+- [ ] Screenshots or examples use current UI
+- [ ] Edge cases and failures are documented
+- [ ] Ownership and follow-up actions are clear
+- [ ] Links, commands, and payloads were tested`,
+  },
+  {
+    id: 'migration-guide',
+    label: 'Migration Guide',
+    description: 'Lay out what changes, who is impacted, and the steps to move safely.',
+    category: 'Writing',
+    keywords: ['migration', 'upgrade', 'steps', 'breaking change', 'transition'],
+    template: `## Migration Guide
+
+### Who needs to migrate
+Teams using the legacy document schema or outdated API tokens.
+
+### What changes
+- Deprecated fields are removed from the request body
+- New status values are enforced during validation
+
+### Migration steps
+1. Update any saved examples and automation templates.
+2. Regenerate SDK clients or request helpers.
+3. Re-run staging validation before publishing the change.`,
   },
   {
     id: 'troubleshooting',
@@ -292,6 +400,50 @@ lib/
 \`\`\``,
   },
   {
+    id: 'yaml-config',
+    label: 'YAML Config',
+    description: 'Add a config example for deployment, CI, or app setup guides.',
+    category: 'Data',
+    keywords: ['yaml', 'config', 'settings', 'deployment', 'ci'],
+    template: `## YAML Config
+
+\`\`\`yaml
+environment: production
+workspace: editorial
+features:
+  docs_editor: true
+  quick_insert: true
+\`\`\``,
+  },
+  {
+    id: 'environment-variables',
+    label: 'Environment Variables',
+    description: 'Document runtime variables, defaults, and whether each value is required.',
+    category: 'Data',
+    keywords: ['environment', 'variables', 'env', 'config', 'secrets'],
+    template: `## Environment Variables
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| \`DATABASE_URL\` | Yes | Primary Postgres connection string |
+| \`AUTH_SECRET\` | Yes | Signs session and auth tokens |
+| \`APP_PORT\` | No | Overrides the local HTTP port |`,
+  },
+  {
+    id: 'test-matrix',
+    label: 'Test Matrix',
+    description: 'Organize scenarios, expected outcomes, and coverage owners in one table.',
+    category: 'Data',
+    keywords: ['test', 'matrix', 'coverage', 'qa', 'scenarios'],
+    template: `## Test Matrix
+
+| Scenario | Expected result | Owner |
+| --- | --- | --- |
+| Create a new document | Draft opens in the editor immediately | QA |
+| Insert a saved component | Markdown appears at cursor position | Engineering |
+| Publish a reviewed document | Status changes to published without data loss | Release manager |`,
+  },
+  {
     id: 'api-endpoint',
     label: 'API Endpoint',
     description: 'Scaffold an endpoint section with method, request body, and response.',
@@ -390,6 +542,59 @@ Authorization: Bearer sk_live_xxxxx
 When the limit is exceeded, the API returns \`429 Too Many Requests\` with retry guidance in response headers.`,
   },
   {
+    id: 'pagination',
+    label: 'Pagination',
+    description: 'Describe cursor or page-based navigation, limits, and response metadata.',
+    category: 'API',
+    keywords: ['pagination', 'cursor', 'page', 'limit', 'list'],
+    template: `## Pagination
+
+| Parameter | Meaning |
+| --- | --- |
+| \`cursor\` | Continue from the previous response position |
+| \`limit\` | Maximum records to return in one page |
+
+### Response metadata
+
+\`\`\`json
+{
+  "nextCursor": "cur_456",
+  "hasMore": true
+}
+\`\`\``,
+  },
+  {
+    id: 'schema-field-table',
+    label: 'Schema Field Table',
+    description: 'Document field names, types, constraints, and descriptions in one reference block.',
+    category: 'API',
+    keywords: ['schema', 'fields', 'table', 'properties', 'reference'],
+    template: `## Schema Field Table
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| \`title\` | string | Yes | Human-readable document name |
+| \`status\` | enum | Yes | Current lifecycle state |
+| \`updatedAt\` | string | No | RFC 3339 timestamp for the latest change |`,
+  },
+  {
+    id: 'webhook-retry-policy',
+    label: 'Webhook Retry Policy',
+    description: 'Explain retry cadence, headers, and when deliveries are considered failed.',
+    category: 'API',
+    keywords: ['webhook', 'retry', 'delivery', 'backoff', 'policy'],
+    template: `## Webhook Retry Policy
+
+| Attempt | Delay | Notes |
+| --- | --- | --- |
+| 1 | Immediate | Initial delivery |
+| 2 | 30 seconds | First retry after transient failure |
+| 3 | 5 minutes | Escalates to slower backoff |
+| 4 | 30 minutes | Final delivery before marking failed |
+
+Failed deliveries remain visible in the event log with response status and last error message.`,
+  },
+  {
     id: 'webhook-event',
     label: 'Webhook Event',
     description: 'Document an event name, delivery headers, and payload shape.',
@@ -445,6 +650,74 @@ mutation PublishDocument($id: ID!) {
   },
 ]
 
-export function getDocSnippetSearchValue(snippet: DocSnippet): string {
+export function getDocSnippetSearchValue(
+  snippet: Pick<DocSnippet, 'label' | 'description' | 'category' | 'keywords'>,
+) {
   return [snippet.label, snippet.description, snippet.category, ...snippet.keywords].join(' ')
+}
+
+export function normalizeDocSnippetKeywords(value: string[] | string | null | undefined) {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,\n]/g)
+      : []
+
+  const seen = new Set<string>()
+
+  return rawValues.reduce<string[]>((acc, item) => {
+    const normalized = item.trim().toLowerCase()
+
+    if (!normalized || seen.has(normalized)) {
+      return acc
+    }
+
+    seen.add(normalized)
+    acc.push(normalized)
+    return acc
+  }, [])
+}
+
+export function slugifyDocSnippetId(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return normalized || 'snippet'
+}
+
+export function createFallbackDocSnippets(): StoredDocSnippet[] {
+  const fallbackDate = new Date(0).toISOString()
+
+  return DOC_SNIPPETS.map((snippet, index) => ({
+    ...snippet,
+    workspaceId: 'fallback',
+    sortOrder: index + 1,
+    createdAt: fallbackDate,
+    updatedAt: fallbackDate,
+  }))
+}
+
+export function sortStoredDocSnippets(snippets: StoredDocSnippet[]) {
+  const categoryOrder = new Map(
+    DOC_SNIPPET_CATEGORIES.map((category, index) => [category, index]),
+  )
+
+  return [...snippets].sort((left, right) => {
+    const categoryDelta =
+      (categoryOrder.get(left.category) ?? Number.MAX_SAFE_INTEGER) -
+      (categoryOrder.get(right.category) ?? Number.MAX_SAFE_INTEGER)
+
+    if (categoryDelta !== 0) {
+      return categoryDelta
+    }
+
+    if (left.sortOrder !== right.sortOrder) {
+      return left.sortOrder - right.sortOrder
+    }
+
+    return left.label.localeCompare(right.label)
+  })
 }

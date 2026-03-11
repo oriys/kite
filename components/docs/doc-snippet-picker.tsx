@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import {
   AlertCircle,
   BookOpenText,
@@ -22,10 +23,10 @@ import {
 
 import {
   DOC_SNIPPET_CATEGORIES,
-  DOC_SNIPPETS,
   type DocSnippet,
   getDocSnippetSearchValue,
 } from '@/lib/doc-snippets'
+import { useDocSnippets } from '@/hooks/use-doc-snippets'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -44,9 +45,15 @@ const snippetIcons: Record<string, React.ComponentType<{ className?: string }>> 
   'executive-summary': BookOpenText,
   'decision-record': GitBranch,
   'rollout-plan': Clock3,
+  'status-snapshot': LayoutTemplate,
+  'launch-checklist': Library,
+  'incident-timeline': Clock3,
   'callout-note': MessageSquareQuote,
   'implementation-steps': BookOpenText,
   faq: MessageSquareQuote,
+  'meeting-notes': BookOpenText,
+  'review-checklist': ShieldCheck,
+  'migration-guide': GitBranch,
   troubleshooting: AlertCircle,
   'best-practices': Library,
   glossary: Library,
@@ -58,11 +65,17 @@ const snippetIcons: Record<string, React.ComponentType<{ className?: string }>> 
   'image-figure': ImageIcon,
   'metrics-table': Table2,
   'file-tree': LayoutTemplate,
+  'yaml-config': FileCode2,
+  'environment-variables': Table2,
+  'test-matrix': Table2,
   'api-endpoint': Route,
   'http-request': Route,
   authentication: ShieldCheck,
   'error-response': AlertCircle,
   'rate-limits': Clock3,
+  pagination: Route,
+  'schema-field-table': Table2,
+  'webhook-retry-policy': Webhook,
   'webhook-event': Webhook,
   'graphql-operation': Braces,
 }
@@ -82,6 +95,14 @@ export function DocSnippetPicker({
   onOpenChange,
   onSelect,
 }: DocSnippetPickerProps) {
+  const { items, refresh } = useDocSnippets()
+
+  React.useEffect(() => {
+    if (open) {
+      void refresh()
+    }
+  }, [open, refresh])
+
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -110,15 +131,15 @@ export function DocSnippetPicker({
           <CommandList className="max-h-[26rem]">
             <CommandEmpty>No matching blocks.</CommandEmpty>
             {DOC_SNIPPET_CATEGORIES.map((category) => {
-              const items = DOC_SNIPPETS.filter((snippet) => snippet.category === category)
+              const categoryItems = items.filter((snippet) => snippet.category === category)
 
-              if (items.length === 0) {
+              if (categoryItems.length === 0) {
                 return null
               }
 
               return (
                 <CommandGroup key={category} heading={category}>
-                  {items.map((snippet) => {
+                  {categoryItems.map((snippet) => {
                     const Icon = snippetIcons[snippet.id] ?? LayoutTemplate
 
                     return (
@@ -155,9 +176,14 @@ export function DocSnippetPicker({
             })}
           </CommandList>
         </Command>
-        <div className="border-t border-border/60 bg-muted/15 px-3 py-2 text-[11px] text-muted-foreground">
-          Use the Insert button or press <span className="font-medium text-foreground">⌘/</span>{' '}
-          to open this picker.
+        <div className="flex items-center justify-between gap-3 border-t border-border/60 bg-muted/15 px-3 py-2 text-[11px] text-muted-foreground">
+          <p>
+            Use the Insert button or press <span className="font-medium text-foreground">⌘/</span>{' '}
+            to open this picker.
+          </p>
+          <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-[11px]">
+            <Link href="/docs/components">Manage</Link>
+          </Button>
         </div>
       </PopoverContent>
     </Popover>
