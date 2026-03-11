@@ -53,13 +53,28 @@ type BlockShortcut =
   | { kind: 'blockquote' }
   | { kind: 'divider' }
 type ActiveTableMenu = 'row' | 'column' | null
+type ActiveTableResizeAxis = 'column' | 'row' | null
 const COMPONENT_BLOCK_SELECTOR = '.doc-json-viewer, pre, table, img, hr'
+
+interface ActiveTableResizeState {
+  axis: Exclude<ActiveTableResizeAxis, null>
+  table: HTMLTableElement
+  row: HTMLTableRowElement
+  columnIndex: number
+  startClientX: number
+  startClientY: number
+  startSize: number
+}
 
 interface TableControlsState {
   rowTop: number
   rowLeft: number
   columnTop: number
   columnLeft: number
+  widthHandleTop: number
+  widthHandleLeft: number
+  heightHandleTop: number
+  heightHandleLeft: number
 }
 
 interface CodeBlockControlsState {
@@ -77,6 +92,9 @@ function hasRichEditor(mode: EditorMode) {
 function hasSourceEditor(mode: EditorMode) {
   return mode === 'source' || mode === 'split'
 }
+
+const MIN_TABLE_COLUMN_WIDTH = 88
+const MIN_TABLE_ROW_HEIGHT = 36
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
@@ -131,6 +149,11 @@ turndown.addRule('table', {
   filter: 'table',
   replacement: (_content, node) => {
     const table = node as HTMLTableElement
+
+    if (hasCustomTableSizing(table)) {
+      return `\n${serializeTableHtml(table)}\n`
+    }
+
     const rows: string[][] = []
     table.querySelectorAll('tr').forEach((tr) => {
       const cells: string[] = []
@@ -155,6 +178,143 @@ function mdToHtml(md: string): string {
 
 function htmlToMd(html: string): string {
   return turndown.turndown(html)
+}
+
+function parsePixelSize(value: string | null | undefined) {
+  if (!value) return null
+
+  const match = value.trim().match(/^(-?\d+(?:\.\d+)?)px$/)
+  return match ? Number(match[1]) : null
+}
+
+function serializeTableHtml(table: HTMLTableElement) {
+  const clone = table.cloneNode(true) as HTMLTableElement
+
+  clone.querySelectorAll('colgroup, col, tr, th, td').forEach((element) => {
+    if (!(element instanceof HTMLElement)) return
+
+    if (!element.getAttribute('style')?.trim()) {
+      element.removeAttribute('style')
+    }
+  })
+
+  if (!clone.getAttribute('style')?.trim()) {
+    clone.removeAttribute('style')
+  }
+
+  return clone.outerHTML
+}
+
+function getTableColGroup(table: HTMLTableElement) {
+  return Array.from(table.children).find(
+    (child): child is HTMLTableColElement => child.tagName === 'COLGROUP',
+  ) ?? null
+}
+
+function getTableColumnCount(table: HTMLTableElement) {
+  return Math.max(0, ...Array.from(table.rows).map((row) => row.cells.length))
+}
+
+function hasCustomTableSizing(table: HTMLTableElement) {
+  if (hasCustomColumnSizing(table)) {
+    return true
+  }
+
+  return Array.from(table.rows).some((row) =>
+    Boolean(parsePixelSize(row.style.height)) ||
+    Array.from(row.cells).some((cell) => Boolean(parsePixelSize(cell.style.height))),
+  )
+}
+
+function hasCustomColumnSizing(table: HTMLTableElement) {
+  if (parsePixelSize(table.style.width)) {
+    return true
+  }
+
+  if (getTableColGroup(table)?.querySelector('col[style*="width"]')) {
+    return true
+  }
+
+  return Array.from(table.rows).some((row) =>
+    Array.from(row.cells).some((cell) => Boolean(parsePixelSize(cell.style.width))),
+  )
+}
+
+function ensureTableColGroup(table: HTMLTableElement) {
+  let colGroup = getTableColGroup(table)
+  if (!colGroup) {
+    colGroup = document.createElement('colgroup')
+    table.insertBefore(colGroup, table.firstChild)
+  }
+
+  const columnCount = getTableColumnCount(table)
+  while (colGroup.children.length < columnCount) {
+    colGroup.append(document.createElement('col'))
+  }
+  while (colGroup.children.length > columnCount) {
+    colGroup.lastElementChild?.remove()
+  }
+
+  return Array.from(colGroup.children).filter(
+    (child): child is HTMLTableColElement => child.tagName === 'COL',
+  )
+}
+
+function getTableColumnWidths(table: HTMLTableElement) {
+  const rows = Array.from(table.rows)
+  const cols = ensureTableColGroup(table)
+
+  return cols.map((col, index) => {
+    const explicitWidth = parsePixelSize(col.style.width)
+    if (explicitWidth) {
+      return explicitWidth
+    }
+
+    const sampleCell = rows.find((row) => row.cells[index])?.cells[index]
+    return sampleCell?.getBoundingClientRect().width ?? 160
+  })
+}
+
+function applyTableColumnWidths(table: HTMLTableElement, widths: number[]) {
+  const cols = ensureTableColGroup(table)
+  const nextWidths = widths.map((width) => Math.max(MIN_TABLE_COLUMN_WIDTH, Math.round(width)))
+
+  cols.forEach((col, index) => {
+    const width = nextWidths[index] ?? nextWidths[nextWidths.length - 1] ?? 160
+    col.style.width = `${width}px`
+  })
+
+  table.style.width = `${nextWidths.reduce((sum, width) => sum + width, 0)}px`
+  table.style.tableLayout = 'fixed'
+}
+
+function getExplicitRowHeight(row: HTMLTableRowElement) {
+  return (
+    parsePixelSize(row.style.height) ??
+    Array.from(row.cells)
+      .map((cell) => parsePixelSize(cell.style.height))
+      .find((value): value is number => value !== null) ??
+    null
+  )
+}
+
+function getTableRowHeight(row: HTMLTableRowElement) {
+  return (
+    getExplicitRowHeight(row) ??
+    Math.max(
+      MIN_TABLE_ROW_HEIGHT,
+      ...Array.from(row.cells).map((cell) => cell.getBoundingClientRect().height),
+    )
+  )
+}
+
+function applyTableRowHeight(row: HTMLTableRowElement, height: number) {
+  const nextHeight = Math.max(MIN_TABLE_ROW_HEIGHT, Math.round(height))
+
+  row.style.height = `${nextHeight}px`
+  Array.from(row.cells).forEach((cell) => {
+    cell.style.height = `${nextHeight}px`
+  })
 }
 
 function getSelectionElement(): Element | null {
@@ -406,6 +566,7 @@ function addTableRow(cell: HTMLTableCellElement, position: 'before' | 'after' = 
     tableCell.tagName === 'TH' ? 'th' : 'td',
   )
   const nextIndex = Math.min(cell.cellIndex, Math.max(referenceTags.length - 1, 0))
+  const inheritedHeight = getExplicitRowHeight(row)
 
   let newRow: HTMLTableRowElement
 
@@ -423,6 +584,10 @@ function addTableRow(cell: HTMLTableCellElement, position: 'before' | 'after' = 
     row.insertAdjacentElement(position === 'before' ? 'beforebegin' : 'afterend', newRow)
   }
 
+  if (inheritedHeight) {
+    applyTableRowHeight(newRow, inheritedHeight)
+  }
+
   return newRow.cells[nextIndex] as HTMLTableCellElement | null
 }
 
@@ -435,12 +600,18 @@ function addTableColumn(cell: HTMLTableCellElement, position: 'before' | 'after'
   }
 
   const insertIndex = position === 'before' ? cell.cellIndex : cell.cellIndex + 1
+  const columnWidths = hasCustomColumnSizing(table) ? getTableColumnWidths(table) : null
   let targetCell: HTMLTableCellElement | null = null
 
   Array.from(table.rows).forEach((tableRow) => {
     const tagName = tableRow.parentElement?.tagName === 'THEAD' ? 'th' : 'td'
     const newCell = createTableCell(tagName)
+    const rowHeight = getExplicitRowHeight(tableRow)
     const beforeCell = tableRow.cells[insertIndex] ?? null
+
+    if (rowHeight) {
+      newCell.style.height = `${rowHeight}px`
+    }
 
     tableRow.insertBefore(newCell, beforeCell)
 
@@ -448,6 +619,16 @@ function addTableColumn(cell: HTMLTableCellElement, position: 'before' | 'after'
       targetCell = newCell
     }
   })
+
+  if (columnWidths) {
+    const referenceWidth =
+      columnWidths[Math.min(Math.max(insertIndex - 1, 0), Math.max(columnWidths.length - 1, 0))] ??
+      columnWidths[columnWidths.length - 1] ??
+      160
+
+    columnWidths.splice(insertIndex, 0, referenceWidth)
+    applyTableColumnWidths(table, columnWidths)
+  }
 
   return targetCell
 }
@@ -502,6 +683,7 @@ function deleteTableColumn(cell: HTMLTableCellElement) {
   }
 
   const columnIndex = cell.cellIndex
+  const columnWidths = hasCustomColumnSizing(table) ? getTableColumnWidths(table) : null
   const rows = Array.from(table.rows)
   const remainingCells = Math.max((rows[0]?.cells.length ?? 1) - 1, 0)
 
@@ -513,6 +695,13 @@ function deleteTableColumn(cell: HTMLTableCellElement) {
   rows.forEach((tableRow) => {
     tableRow.cells[columnIndex]?.remove()
   })
+
+  if (columnWidths) {
+    columnWidths.splice(columnIndex, 1)
+    if (columnWidths.length > 0) {
+      applyTableColumnWidths(table, columnWidths)
+    }
+  }
 
   const nextCellIndex = Math.min(columnIndex, remainingCells - 1)
   const currentRowIndex = Math.max(rows.indexOf(row), 0)
@@ -581,6 +770,10 @@ function getTableControlsState(
     rowLeft: tableRect.left - containerRect.left,
     columnTop: tableRect.top - containerRect.top,
     columnLeft: cellRect.left - containerRect.left + cellRect.width / 2,
+    widthHandleTop: cellRect.top - containerRect.top + cellRect.height / 2,
+    widthHandleLeft: cellRect.right - containerRect.left,
+    heightHandleTop: rowRect.bottom - containerRect.top,
+    heightHandleLeft: cellRect.left - containerRect.left + cellRect.width / 2,
   }
 }
 
@@ -929,6 +1122,7 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
   const [mode, setMode] = React.useState<EditorMode>('wysiwyg')
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
   const [aiPendingAction, setAiPendingAction] = React.useState<AiTransformAction | null>(null)
+  const [activeTableResizeAxis, setActiveTableResizeAxis] = React.useState<ActiveTableResizeAxis>(null)
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
   const [tableControls, setTableControls] = React.useState<TableControlsState | null>(null)
   const [openTableMenu, setOpenTableMenu] = React.useState<ActiveTableMenu>(null)
@@ -945,6 +1139,7 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
   // Track the latest markdown so we can detect external changes
   const latestMdRef = React.useRef(content)
   const activeTableCellRef = React.useRef<HTMLTableCellElement | null>(null)
+  const activeTableResizeRef = React.useRef<ActiveTableResizeState | null>(null)
   const activeCodeBlockRef = React.useRef<HTMLPreElement | null>(null)
   const richSelectionRef = React.useRef<Range | null>(null)
   const sourceSelectionRef = React.useRef<SourceSelectionRange | null>(null)
@@ -965,9 +1160,11 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
       setInsertPickerOpen(false)
       setOpenTableMenu(null)
       setOpenCodeBlockMenu(false)
+      setActiveTableResizeAxis(null)
       setTableControls(null)
       setCodeBlockControls(null)
       activeTableCellRef.current = null
+      activeTableResizeRef.current = null
       activeCodeBlockRef.current = null
 
       if (hasRichEditor(mode) && !hasRichEditor(m)) {
@@ -1049,7 +1246,7 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     }
 
     if (
-      openTableMenu &&
+      (openTableMenu || activeTableResizeRef.current) &&
       activeTableCellRef.current &&
       document.contains(activeTableCellRef.current)
     ) {
@@ -1059,6 +1256,45 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     activeTableCellRef.current = null
     return null
   }, [openTableMenu])
+
+  const handleTableResizeStart = React.useCallback(
+    (axis: Exclude<ActiveTableResizeAxis, null>, event: React.MouseEvent<HTMLButtonElement>) => {
+      const cell = getActiveTableCell()
+      const row = cell?.parentElement
+      const table = cell?.closest('table')
+
+      if (
+        !cell ||
+        !(row instanceof HTMLTableRowElement) ||
+        !(table instanceof HTMLTableElement)
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      activeTableCellRef.current = cell
+      activeTableResizeRef.current = {
+        axis,
+        table,
+        row,
+        columnIndex: cell.cellIndex,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startSize:
+          axis === 'column'
+            ? getTableColumnWidths(table)[cell.cellIndex] ?? cell.getBoundingClientRect().width
+            : getTableRowHeight(row),
+      }
+
+      setOpenTableMenu(null)
+      setActiveTableResizeAxis(axis)
+      document.body.style.cursor = axis === 'column' ? 'col-resize' : 'row-resize'
+      document.body.style.userSelect = 'none'
+    },
+    [getActiveTableCell],
+  )
 
   const updateTableControls = React.useCallback(() => {
     if (!editorRef.current || !editorCanvasRef.current || !hasRichEditor(mode)) {
@@ -1176,12 +1412,61 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
   }, [captureRichSelection, captureSourceSelection, editingMode])
 
   React.useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      const resizeState = activeTableResizeRef.current
+
+      if (!resizeState) return
+
+      if (resizeState.axis === 'column') {
+        const widths = getTableColumnWidths(resizeState.table)
+        widths[resizeState.columnIndex] = Math.max(
+          MIN_TABLE_COLUMN_WIDTH,
+          resizeState.startSize + (event.clientX - resizeState.startClientX),
+        )
+        applyTableColumnWidths(resizeState.table, widths)
+      } else {
+        applyTableRowHeight(
+          resizeState.row,
+          resizeState.startSize + (event.clientY - resizeState.startClientY),
+        )
+      }
+
+      requestAnimationFrame(updateTableControls)
+    }
+
+    const handleMouseUp = () => {
+      if (!activeTableResizeRef.current) return
+
+      activeTableResizeRef.current = null
+      setActiveTableResizeAxis(null)
+      document.body.style.removeProperty('cursor')
+      document.body.style.removeProperty('user-select')
+
+      requestAnimationFrame(() => {
+        updateTableControls()
+        syncRichEditorToMarkdown()
+      })
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.removeProperty('cursor')
+      document.body.style.removeProperty('user-select')
+    }
+  }, [syncRichEditorToMarkdown, updateTableControls])
+
+  React.useEffect(() => {
     const handleSelectionChange = () => {
       if (!editorRef.current || !hasRichEditor(mode)) {
         setTableControls(null)
         setCodeBlockControls(null)
         richSelectionRef.current = null
         activeTableCellRef.current = null
+        activeTableResizeRef.current = null
         activeCodeBlockRef.current = null
         return
       }
@@ -1696,6 +1981,11 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
       }
 
       const target = e.target instanceof Element ? e.target : null
+      if (target?.closest('[data-table-resize-handle="true"]')) {
+        updateTableControls()
+        return
+      }
+
       if (target?.closest('[data-code-block-control="true"]')) {
         updateCodeBlockControls()
         return
@@ -1844,6 +2134,44 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+
+                  <button
+                    type="button"
+                    data-table-resize-handle="true"
+                    onMouseDown={(event) => handleTableResizeStart('column', event)}
+                    className={cn(
+                      'absolute z-20 h-12 w-3 -translate-x-1/2 -translate-y-1/2 cursor-col-resize rounded-full border border-border/45 bg-background/96 px-0 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)] backdrop-blur-sm transition-colors',
+                      activeTableResizeAxis === 'column'
+                        ? 'border-accent/80 bg-accent/12'
+                        : 'hover:border-border/70 hover:bg-muted/35',
+                    )}
+                    style={{
+                      top: `${tableControls.widthHandleTop}px`,
+                      left: `${tableControls.widthHandleLeft}px`,
+                    }}
+                    aria-label="Resize column width"
+                  >
+                    <span className="mx-auto block h-6 w-px rounded-full bg-border/80" />
+                  </button>
+
+                  <button
+                    type="button"
+                    data-table-resize-handle="true"
+                    onMouseDown={(event) => handleTableResizeStart('row', event)}
+                    className={cn(
+                      'absolute z-20 h-3 w-12 -translate-x-1/2 -translate-y-1/2 cursor-row-resize rounded-full border border-border/45 bg-background/96 px-0 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)] backdrop-blur-sm transition-colors',
+                      activeTableResizeAxis === 'row'
+                        ? 'border-accent/80 bg-accent/12'
+                        : 'hover:border-border/70 hover:bg-muted/35',
+                    )}
+                    style={{
+                      top: `${tableControls.heightHandleTop}px`,
+                      left: `${tableControls.heightHandleLeft}px`,
+                    }}
+                    aria-label="Resize row height"
+                  >
+                    <span className="mx-auto block h-px w-6 rounded-full bg-border/80" />
+                  </button>
                 </>
               )}
               {codeBlockControls && !readOnly && (
