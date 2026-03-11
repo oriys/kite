@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import TurndownService from 'turndown'
+import { toast } from 'sonner'
 import {
   ArrowDown,
   ArrowLeft,
@@ -20,6 +21,11 @@ import {
   normalizeCodeLanguage,
   renderHighlightedCodeHtml,
 } from '@/lib/code-highlighting'
+import {
+  AI_ACTION_LABELS,
+  MAX_AI_TRANSFORM_TEXT_LENGTH,
+  type AiTransformAction,
+} from '@/lib/ai'
 import { type DocSnippet } from '@/lib/doc-snippets'
 import { cn } from '@/lib/utils'
 import { renderMarkdown } from '@/lib/markdown'
@@ -33,6 +39,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
@@ -352,6 +359,38 @@ function getOrCreateParagraphAfter(element: Element) {
     created: true,
     paragraph,
   }
+}
+
+function moveBlock(editor: HTMLDivElement, direction: 'up' | 'down') {
+  const block = getCurrentComponentElement(editor) ?? getCurrentBlockElement(editor)
+
+  if (!block || block === editor) {
+    return
+  }
+
+  const sibling = direction === 'up' ? block.previousElementSibling : block.nextElementSibling
+  if (!sibling || !editor.contains(sibling)) {
+    return
+  }
+
+  if (direction === 'up') {
+    sibling.before(block)
+  } else {
+    sibling.after(block)
+  }
+
+  const selection = window.getSelection()
+  const range = document.createRange()
+
+  if (block instanceof HTMLImageElement || block instanceof HTMLHRElement) {
+    range.selectNode(block)
+  } else {
+    range.selectNodeContents(block)
+    range.collapse(true)
+  }
+
+  selection?.removeAllRanges()
+  selection?.addRange(range)
 }
 
 function addTableRow(cell: HTMLTableCellElement, position: 'before' | 'after' = 'after') {
@@ -713,6 +752,55 @@ function insertSnippetIntoRichEditor(
   document.execCommand('insertHTML', false, `${mdToHtml(snippet.template)}<p><br></p>`)
 }
 
+function replaceSelectionInRichEditor(
+  editor: HTMLDivElement,
+  selectionRange: Range | null,
+  nextText: string,
+) {
+  restoreRichSelection(editor, selectionRange)
+  document.execCommand('insertText', false, nextText)
+}
+
+function insertExplanationIntoRichEditor(
+  editor: HTMLDivElement,
+  selectionRange: Range | null,
+  explanation: string,
+) {
+  restoreRichSelection(editor, selectionRange)
+
+  const anchor = getCurrentComponentElement(editor) ?? getCurrentBlockElement(editor)
+  const quote = document.createElement('blockquote')
+  const sections = explanation
+    .trim()
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+
+  for (const section of sections.length > 0 ? sections : [explanation.trim()]) {
+    const paragraph = document.createElement('p')
+    const lines = section.split('\n')
+
+    lines.forEach((line, index) => {
+      if (index > 0) {
+        paragraph.append(document.createElement('br'))
+      }
+      paragraph.append(document.createTextNode(line))
+    })
+
+    quote.append(paragraph)
+  }
+
+  const paragraph = createEmptyParagraph()
+
+  if (anchor === editor) {
+    editor.append(quote, paragraph)
+  } else {
+    anchor.after(quote, paragraph)
+  }
+
+  placeCaretAtStart(paragraph)
+}
+
 function buildCodeBlockMarkdown(language: string) {
   const normalized = normalizeCodeLanguage(language)
   const sample = getCodeLanguageSample(normalized)
@@ -840,12 +928,14 @@ interface DocEditorProps {
 export function DocEditor({ content, onChange, readOnly, className, onModeChange, editorFocusRef }: DocEditorProps) {
   const [mode, setMode] = React.useState<EditorMode>('wysiwyg')
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
+  const [aiPendingAction, setAiPendingAction] = React.useState<AiTransformAction | null>(null)
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
   const [tableControls, setTableControls] = React.useState<TableControlsState | null>(null)
   const [openTableMenu, setOpenTableMenu] = React.useState<ActiveTableMenu>(null)
   const [codeBlockControls, setCodeBlockControls] = React.useState<CodeBlockControlsState | null>(null)
   const [openCodeBlockMenu, setOpenCodeBlockMenu] = React.useState(false)
   const [insertPickerOpen, setInsertPickerOpen] = React.useState(false)
+  const [showShortcuts, setShowShortcuts] = React.useState(false)
   const editorRef = React.useRef<HTMLDivElement>(null)
   const editorCanvasRef = React.useRef<HTMLDivElement>(null)
   const editorViewportRef = React.useRef<HTMLDivElement>(null)
@@ -867,6 +957,87 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     latestMdRef.current = md
     onChange(md)
   }, [onChange])
+
+  // ── Mode switching ───────────────────────────────────────────────────────
+  const handleModeChange = React.useCallback(
+    (m: EditorMode) => {
+      switchingRef.current = true
+      setInsertPickerOpen(false)
+      setOpenTableMenu(null)
+      setOpenCodeBlockMenu(false)
+      setTableControls(null)
+      setCodeBlockControls(null)
+      activeTableCellRef.current = null
+      activeCodeBlockRef.current = null
+
+      if (hasRichEditor(mode) && !hasRichEditor(m)) {
+        syncRichEditorToMarkdown()
+      } else if (!hasRichEditor(mode) && hasRichEditor(m)) {
+        requestAnimationFrame(() => {
+          if (editorRef.current) {
+            editorRef.current.innerHTML = mdToHtml(content)
+            latestMdRef.current = content
+          }
+        })
+      }
+
+      const nextActivePane: ToolbarMode =
+        m === 'split'
+          ? mode === 'split'
+            ? activePane
+            : mode === 'source'
+              ? 'source'
+              : 'wysiwyg'
+          : m
+
+      setActivePane(nextActivePane)
+      setMode(m)
+      requestAnimationFrame(() => {
+        if (hasRichEditor(m) && !hasRichEditor(mode)) {
+          editorViewportRef.current?.scrollTo({ top: 0 })
+        }
+
+        if (hasSourceEditor(m) && !hasSourceEditor(mode) && textareaRef.current) {
+          textareaRef.current.scrollTop = 0
+        }
+
+        if (nextActivePane === 'source') {
+          textareaRef.current?.focus()
+        } else {
+          editorRef.current?.focus()
+        }
+
+        switchingRef.current = false
+      })
+    },
+    [activePane, content, mode, syncRichEditorToMarkdown],
+  )
+
+  // ── Global shortcuts ─────────────────────────────────────────────────────
+  React.useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && !e.metaKey && !e.ctrlKey) {
+        if (e.key === '1') {
+          e.preventDefault()
+          handleModeChange('wysiwyg')
+        } else if (e.key === '2') {
+          e.preventDefault()
+          handleModeChange('source')
+        } else if (e.key === '3') {
+          e.preventDefault()
+          handleModeChange('split')
+        }
+      }
+      
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault()
+        setShowShortcuts((prev) => !prev)
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [handleModeChange])
 
   const getActiveTableCell = React.useCallback(() => {
     if (!editorRef.current) return null
@@ -1181,6 +1352,75 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     [editingMode, onChange, readOnly, syncRichEditorToMarkdown],
   )
 
+  const handleAiAction = React.useCallback(
+    async (action: AiTransformAction, options?: { targetLanguage?: string }) => {
+      if (readOnly || !editorRef.current) return
+
+      const selectionRange = richSelectionRef.current?.cloneRange() ?? null
+      const selectedText = selectionRange?.toString().trim() ?? ''
+
+      if (!selectionRange || !selectedText) {
+        toast.error('Select text first', {
+          description: 'Highlight the text you want the AI action to use.',
+        })
+        return
+      }
+
+      if (selectedText.length > MAX_AI_TRANSFORM_TEXT_LENGTH) {
+        toast.error('Selection is too long', {
+          description: `Choose up to ${MAX_AI_TRANSFORM_TEXT_LENGTH} characters at a time.`,
+        })
+        return
+      }
+
+      setAiPendingAction(action)
+
+      try {
+        const response = await fetch('/api/ai/transform', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action,
+            text: selectedText,
+            targetLanguage: options?.targetLanguage,
+          }),
+        })
+
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string; result?: string }
+          | null
+
+        if (!response.ok || !payload?.result) {
+          throw new Error(payload?.error ?? 'The AI action did not return usable text.')
+        }
+
+        if (action === 'explain') {
+          insertExplanationIntoRichEditor(editorRef.current, selectionRange, payload.result)
+        } else {
+          replaceSelectionInRichEditor(editorRef.current, selectionRange, payload.result)
+        }
+
+        richSelectionRef.current = null
+        setSelectionInfo(null)
+
+        requestAnimationFrame(() => {
+          captureRichSelection()
+          syncRichEditorToMarkdown()
+        })
+      } catch (error) {
+        toast.error(`${AI_ACTION_LABELS[action]} failed`, {
+          description:
+            error instanceof Error ? error.message : 'Please try again in a moment.',
+        })
+      } finally {
+        setAiPendingAction(null)
+      }
+    },
+    [captureRichSelection, readOnly, syncRichEditorToMarkdown],
+  )
+
   const handleSlashSelect = React.useCallback((action: string) => {
     if (!editorRef.current) return
     editorRef.current.focus()
@@ -1253,61 +1493,6 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     }
   }, [editorFocusRef, editingMode])
 
-  // ── Mode switching ───────────────────────────────────────────────────────
-  const handleModeChange = React.useCallback(
-    (m: EditorMode) => {
-      switchingRef.current = true
-      setInsertPickerOpen(false)
-      setOpenTableMenu(null)
-      setOpenCodeBlockMenu(false)
-      setTableControls(null)
-      setCodeBlockControls(null)
-      activeTableCellRef.current = null
-      activeCodeBlockRef.current = null
-
-      if (hasRichEditor(mode) && !hasRichEditor(m)) {
-        syncRichEditorToMarkdown()
-      } else if (!hasRichEditor(mode) && hasRichEditor(m)) {
-        requestAnimationFrame(() => {
-          if (editorRef.current) {
-            editorRef.current.innerHTML = mdToHtml(content)
-            latestMdRef.current = content
-          }
-        })
-      }
-
-      const nextActivePane: ToolbarMode =
-        m === 'split'
-          ? mode === 'split'
-            ? activePane
-            : mode === 'source'
-              ? 'source'
-              : 'wysiwyg'
-          : m
-
-      setActivePane(nextActivePane)
-      setMode(m)
-      requestAnimationFrame(() => {
-        if (hasRichEditor(m) && !hasRichEditor(mode)) {
-          editorViewportRef.current?.scrollTo({ top: 0 })
-        }
-
-        if (hasSourceEditor(m) && !hasSourceEditor(mode) && textareaRef.current) {
-          textareaRef.current.scrollTop = 0
-        }
-
-        if (nextActivePane === 'source') {
-          textareaRef.current?.focus()
-        } else {
-          editorRef.current?.focus()
-        }
-
-        switchingRef.current = false
-      })
-    },
-    [activePane, content, mode, syncRichEditorToMarkdown],
-  )
-
   // ── WYSIWYG input handler ────────────────────────────────────────────────
   const handleEditorInput = React.useCallback(() => {
     if (switchingRef.current) return
@@ -1318,8 +1503,40 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
   const handleEditorKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const meta = e.metaKey || e.ctrlKey
+      
+      // Table: Cmd+Enter (Add row below), Cmd+Shift+Enter (Add row above)
+      if (meta && e.key === 'Enter') {
+        const cell = getActiveTableCell()
+        if (cell) {
+          e.preventDefault()
+          handleTableAddRow(e.shiftKey ? 'before' : 'after')
+          return
+        }
+      }
+
+      // Table: Cmd+Backspace (Delete row)
+      if (meta && e.key === 'Backspace') {
+        const cell = getActiveTableCell()
+        if (cell) {
+          e.preventDefault()
+          handleTableDeleteRow()
+          return
+        }
+      }
+
+      // Structural: Alt+Up/Down (Move block)
+      if (e.altKey && !meta && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault()
+        if (editorRef.current) {
+          moveBlock(editorRef.current, e.key === 'ArrowUp' ? 'up' : 'down')
+          requestAnimationFrame(syncRichEditorToMarkdown)
+        }
+        return
+      }
+
       if (e.shiftKey && e.key === 'Enter' && editorRef.current) {
         const component = getCurrentComponentElement(editorRef.current)
+
 
         if (component) {
           e.preventDefault()
@@ -1719,6 +1936,8 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
                         linkBtn.click()
                       }
                     }}
+                    onAiAction={handleAiAction}
+                    aiPendingAction={aiPendingAction}
                   />
                   <DocSlashMenu
                     ref={slashMenuRef}
@@ -1771,6 +1990,11 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
             />
           </div>
         )}
+
+        <KeyboardShortcutsDialog
+          open={showShortcuts}
+          onOpenChange={setShowShortcuts}
+        />
       </div>
     </div>
   )
