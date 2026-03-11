@@ -34,6 +34,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
+import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
+import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
+import { wordCount } from '@/lib/documents'
 
 type EditorMode = EditorViewMode
 type BlockShortcut =
@@ -837,6 +840,7 @@ interface DocEditorProps {
 export function DocEditor({ content, onChange, readOnly, className, onModeChange, editorFocusRef }: DocEditorProps) {
   const [mode, setMode] = React.useState<EditorMode>('wysiwyg')
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
+  const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
   const [tableControls, setTableControls] = React.useState<TableControlsState | null>(null)
   const [openTableMenu, setOpenTableMenu] = React.useState<ActiveTableMenu>(null)
   const [codeBlockControls, setCodeBlockControls] = React.useState<CodeBlockControlsState | null>(null)
@@ -854,6 +858,7 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
   const activeCodeBlockRef = React.useRef<HTMLPreElement | null>(null)
   const richSelectionRef = React.useRef<Range | null>(null)
   const sourceSelectionRef = React.useRef<SourceSelectionRange | null>(null)
+  const slashMenuRef = React.useRef<{ show: () => void; hide: () => void }>(null)
   const editingMode: ToolbarMode = mode === 'split' ? activePane : mode
 
   const syncRichEditorToMarkdown = React.useCallback(() => {
@@ -925,6 +930,37 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     [mode, readOnly],
   )
 
+  const handleBubbleAction = React.useCallback((action: string) => {
+    if (!editorRef.current) return
+    editorRef.current.focus()
+
+    switch (action) {
+      case 'bold':
+        document.execCommand('bold', false)
+        break
+      case 'italic':
+        document.execCommand('italic', false)
+        break
+      case 'strikethrough':
+        document.execCommand('strikeThrough', false)
+        break
+      case 'code':
+        const sel = window.getSelection()
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0)
+          const code = document.createElement('code')
+          try {
+            range.surroundContents(code)
+          } catch {
+            // If selection crosses block boundaries, surroundContents might fail
+            document.execCommand('insertHTML', false, `<code>${sel.toString()}</code>`)
+          }
+        }
+        break
+    }
+    syncRichEditorToMarkdown()
+  }, [syncRichEditorToMarkdown])
+
   const captureSourceSelection = React.useCallback(() => {
     if (!textareaRef.current) return
 
@@ -939,6 +975,16 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
 
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount) return
+
+    const text = selection.toString()
+    if (text && !selection.isCollapsed) {
+      setSelectionInfo({
+        words: wordCount(text),
+        chars: text.length,
+      })
+    } else {
+      setSelectionInfo(null)
+    }
 
     const range = selection.getRangeAt(0)
     if (
@@ -1135,6 +1181,44 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     [editingMode, onChange, readOnly, syncRichEditorToMarkdown],
   )
 
+  const handleSlashSelect = React.useCallback((action: string) => {
+    if (!editorRef.current) return
+    editorRef.current.focus()
+
+    // Remove the "/" that was typed
+    const selection = window.getSelection()
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0)
+      // Check if previous char is indeed "/"
+      const node = range.startContainer
+      if (node.nodeType === Node.TEXT_NODE && range.startOffset > 0) {
+        const text = node.textContent ?? ''
+        if (text[range.startOffset - 1] === '/') {
+          range.setStart(node, range.startOffset - 1)
+          range.deleteContents()
+        }
+      }
+    }
+
+    switch (action) {
+      case 'h1': applyMarkdownShortcut(editorRef.current, { kind: 'heading', level: 1 }); break
+      case 'h2': applyMarkdownShortcut(editorRef.current, { kind: 'heading', level: 2 }); break
+      case 'h3': applyMarkdownShortcut(editorRef.current, { kind: 'heading', level: 3 }); break
+      case 'ul': applyMarkdownShortcut(editorRef.current, { kind: 'unordered-list' }); break
+      case 'ol': applyMarkdownShortcut(editorRef.current, { kind: 'ordered-list' }); break
+      case 'blockquote': applyMarkdownShortcut(editorRef.current, { kind: 'blockquote' }); break
+      case 'divider': applyMarkdownShortcut(editorRef.current, { kind: 'divider' }); break
+      case 'table':
+        const tableHtml = '<table><thead><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr></thead><tbody><tr><td>Cell</td><td>Cell</td><td>Cell</td></tr></tbody></table><p><br></p>'
+        document.execCommand('insertHTML', false, tableHtml)
+        break
+      case 'code':
+        handleInsertCodeBlock('typescript')
+        break
+    }
+    syncRichEditorToMarkdown()
+  }, [handleInsertCodeBlock, syncRichEditorToMarkdown])
+
   // ── Sync initial content into WYSIWYG ────────────────────────────────────
   React.useEffect(() => {
     if (hasRichEditor(mode) && editorRef.current && !switchingRef.current) {
@@ -1256,6 +1340,23 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
         captureRichSelection()
         setInsertPickerOpen(true)
         return
+      }
+
+      if (e.key === '/' && !meta && editorRef.current) {
+        // Detect if we are at the start of a line/block
+        const block = getCurrentBlockElement(editorRef.current)
+        const selection = window.getSelection()
+        if (selection && selection.isCollapsed && selection.anchorNode) {
+          const range = selection.getRangeAt(0).cloneRange()
+          range.setStart(block, 0)
+          const textBefore = range.toString()
+
+          // If we are at the very beginning of a block
+          if (textBefore.trim() === '') {
+            // Wait for "/" to be typed, then show menu
+            setTimeout(() => slashMenuRef.current?.show(), 50)
+          }
+        }
       }
       if (meta && e.key === 'e') {
         e.preventDefault()
@@ -1604,6 +1705,37 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
                   readOnly && 'cursor-default opacity-70',
                 )}
               />
+
+              {!readOnly && hasRichEditor(mode) && (
+                <>
+                  <DocBubbleMenu
+                    editorRef={editorRef}
+                    onAction={handleBubbleAction}
+                    onLinkAction={() => {
+                      // Trigger link popover from toolbar if possible
+                      const linkBtn = document.querySelector('[aria-label="Link"]') as HTMLButtonElement
+                      if (linkBtn) {
+                        linkBtn.focus()
+                        linkBtn.click()
+                      }
+                    }}
+                  />
+                  <DocSlashMenu
+                    ref={slashMenuRef}
+                    editorRef={editorRef}
+                    onSelect={handleSlashSelect}
+                    onClose={() => slashMenuRef.current?.hide()}
+                  />
+
+                  {selectionInfo && (
+                    <div className="pointer-events-none absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-full border border-border/60 bg-background/90 px-3 py-1 text-[10px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
+                      <span>{selectionInfo.words} {selectionInfo.words === 1 ? 'word' : 'words'}</span>
+                      <span className="opacity-40">/</span>
+                      <span>{selectionInfo.chars} {selectionInfo.chars === 1 ? 'char' : 'chars'}</span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
