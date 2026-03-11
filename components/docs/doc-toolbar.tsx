@@ -18,7 +18,9 @@ import {
   Link2,
   Image,
   Minus,
+  Languages,
   PenLine,
+  Sparkles,
   Table,
 } from 'lucide-react'
 import { type DocSnippet } from '@/lib/doc-snippets'
@@ -498,6 +500,10 @@ interface DocToolbarProps {
   onInsertSnippet?: (snippet: DocSnippet) => void
   onBeforeOpenCodeMenu?: () => void
   onInsertCodeBlock?: (language: string) => void
+  activeAiLabel?: string | null
+  aiDisabled?: boolean
+  onAiPolishDocument?: () => void
+  onAiTranslateDocument?: (targetLanguage: string) => void
 }
 
 export function DocToolbar({
@@ -515,6 +521,10 @@ export function DocToolbar({
   onInsertSnippet,
   onBeforeOpenCodeMenu,
   onInsertCodeBlock,
+  activeAiLabel,
+  aiDisabled,
+  onAiPolishDocument,
+  onAiTranslateDocument,
 }: DocToolbarProps) {
   const handleClick = (item: ToolbarAction) => {
     if (mode === 'source') {
@@ -530,6 +540,9 @@ export function DocToolbar({
       })
     }
   }
+
+  const canUseDocumentAi =
+    !disabled && !aiDisabled && Boolean(onAiPolishDocument || onAiTranslateDocument)
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -612,6 +625,61 @@ export function DocToolbar({
             </Tooltip>
           )
         })}
+        <div className="ml-auto flex items-center gap-1 pl-2">
+          <Separator orientation="vertical" className="mx-1 hidden h-5 sm:block" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canUseDocumentAi || !onAiPolishDocument}
+                className="h-8 gap-1.5 rounded-full border-border/70 bg-background/90 px-3 text-xs"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  onAiPolishDocument?.()
+                }}
+              >
+                <Sparkles className="size-3.5" />
+                <span>AI Polish</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {activeAiLabel ? `Polish full document with ${activeAiLabel}` : 'Polish full document'}
+            </TooltipContent>
+          </Tooltip>
+
+          <DropdownMenu modal={false}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canUseDocumentAi || !onAiTranslateDocument}
+                    className="h-8 gap-1.5 rounded-full border-border/70 bg-background/90 px-3 text-xs"
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    <Languages className="size-3.5" />
+                    <span>Translate</span>
+                    <ChevronDown className="size-3 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {activeAiLabel ? `Translate full document with ${activeAiLabel}` : 'Translate full document'}
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" side="bottom" className="w-48">
+              <DropdownMenuLabel>Translate full document</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => onAiTranslateDocument?.('Simplified Chinese')}>
+                Chinese
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onAiTranslateDocument?.('English')}>
+                English
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </TooltipProvider>
   )

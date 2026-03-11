@@ -11,6 +11,7 @@ import {
   ChevronDown,
   GripHorizontal,
   GripVertical,
+  Sparkles,
   Trash2,
 } from 'lucide-react'
 import {
@@ -23,13 +24,41 @@ import {
 } from '@/lib/code-highlighting'
 import {
   AI_ACTION_LABELS,
+  MAX_AI_CUSTOM_PROMPT_LENGTH,
   MAX_AI_TRANSFORM_TEXT_LENGTH,
   type AiTransformAction,
 } from '@/lib/ai'
+import {
+  resolveAiActionModel,
+  resolveAiActionPrompt,
+} from '@/lib/ai-prompts'
 import { type DocSnippet } from '@/lib/doc-snippets'
+import {
+  createDefaultHeatmapDocument,
+  createHeatmapSnippetTemplate,
+  decodeHeatmapDocument,
+  decodeHeatmapSource,
+  HEATMAP_FENCE_LANGUAGE,
+  normalizeHeatmapDocument,
+  renderHeatmapBlockFromData,
+  serializeHeatmapDocument,
+  type HeatmapDocument,
+} from '@/lib/heatmap'
 import { cn } from '@/lib/utils'
 import { renderMarkdown } from '@/lib/markdown'
+import { useAiModels } from '@/hooks/use-ai-models'
+import { useAiPrompts } from '@/hooks/use-ai-prompts'
+import { useAiPreferences } from '@/hooks/use-ai-preferences'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,11 +68,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field'
+import { Textarea } from '@/components/ui/textarea'
 import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
+import { DocAiResultPanel } from '@/components/docs/doc-ai-result-panel'
+import { DocHeatmapEditorDialog } from '@/components/docs/doc-heatmap-editor-dialog'
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
-import { wordCount } from '@/lib/documents'
+import { normalizeAnnotationQuote, wordCount } from '@/lib/documents'
 
 type EditorMode = EditorViewMode
 type BlockShortcut =
@@ -54,7 +93,7 @@ type BlockShortcut =
   | { kind: 'divider' }
 type ActiveTableMenu = 'row' | 'column' | null
 type ActiveTableResizeAxis = 'column' | 'row' | null
-const COMPONENT_BLOCK_SELECTOR = '.doc-json-viewer, pre, table, img, hr'
+const COMPONENT_BLOCK_SELECTOR = '.doc-json-viewer, .doc-heatmap, pre, table, img, hr'
 
 interface ActiveTableResizeState {
   axis: Exclude<ActiveTableResizeAxis, null>
@@ -83,6 +122,36 @@ interface CodeBlockControlsState {
   language: string
   label: string
   hint: string
+}
+
+interface HeatmapControlsState {
+  top: number
+  left: number
+  title: string
+}
+
+interface AiPreviewRequest {
+  scope: 'selection' | 'document'
+  action: AiTransformAction
+  modelId: string
+  modelLabel: string
+  originalText: string
+  selectionRange: Range | null
+  targetLanguage?: string
+  customPrompt?: string
+}
+
+interface AiPreviewState extends AiPreviewRequest {
+  resultText: string
+}
+
+const DEFAULT_HEATMAP_SNIPPET: DocSnippet = {
+  id: 'heatmap',
+  label: 'Heatmap',
+  description: 'Insert an editable heatmap block.',
+  category: 'Data',
+  keywords: ['heatmap', 'matrix', 'grid'],
+  template: createHeatmapSnippetTemplate(),
 }
 
 function hasRichEditor(mode: EditorMode) {
@@ -117,6 +186,23 @@ turndown.addRule('jsonViewer', {
     } catch {
       return '\n```json\n{}\n```\n'
     }
+  },
+})
+
+turndown.addRule('heatmap', {
+  filter: (node) =>
+    node instanceof HTMLElement &&
+    node.classList.contains('doc-heatmap') &&
+    Boolean(node.dataset.docHeatmap),
+  replacement: (_content, node) => {
+    const encodedSource = (node as HTMLElement).dataset.docHeatmap ?? ''
+    const source = decodeHeatmapSource(encodedSource)
+
+    if (!source) {
+      return `\n\`\`\`${HEATMAP_FENCE_LANGUAGE}\n${serializeHeatmapDocument(createDefaultHeatmapDocument())}\n\`\`\`\n`
+    }
+
+    return `\n\`\`\`${HEATMAP_FENCE_LANGUAGE}\n${source}\n\`\`\`\n`
   },
 })
 
@@ -795,6 +881,43 @@ function getCodeBlockControlsState(
   }
 }
 
+function getHeatmapControlsState(
+  container: HTMLElement,
+  heatmapElement: HTMLElement,
+): HeatmapControlsState {
+  const containerRect = container.getBoundingClientRect()
+  const blockRect = heatmapElement.getBoundingClientRect()
+
+  return {
+    top: blockRect.top - containerRect.top + 14,
+    left: blockRect.right - containerRect.left - 14,
+    title: heatmapElement.querySelector('.doc-heatmap-title')?.textContent?.trim() || 'Heatmap',
+  }
+}
+
+function selectComponentElement(element: HTMLElement) {
+  const selection = window.getSelection()
+  const range = document.createRange()
+
+  range.selectNode(element)
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
+function replaceHeatmapElement(element: HTMLElement, data: HeatmapDocument) {
+  const wrapper = document.createElement('div')
+  wrapper.innerHTML = renderHeatmapBlockFromData(normalizeHeatmapDocument(data))
+  const nextElement = wrapper.firstElementChild
+
+  if (!(nextElement instanceof HTMLElement)) {
+    return null
+  }
+
+  element.replaceWith(nextElement)
+  selectComponentElement(nextElement)
+  return nextElement
+}
+
 function isInCodeBlockHeaderZone(codeBlock: HTMLPreElement, clientX: number, clientY: number) {
   const rect = codeBlock.getBoundingClientRect()
 
@@ -1115,19 +1238,56 @@ interface DocEditorProps {
   readOnly?: boolean
   className?: string
   onModeChange?: (mode: EditorViewMode) => void
-  editorFocusRef?: React.MutableRefObject<{ focus: () => void } | null>
+  editorFocusRef?: React.MutableRefObject<DocEditorHandle | null>
+  onAiPreviewVisibilityChange?: (visible: boolean) => void
 }
 
-export function DocEditor({ content, onChange, readOnly, className, onModeChange, editorFocusRef }: DocEditorProps) {
+export interface DocEditorHandle {
+  focus: () => void
+  getSelectionQuote: () => string
+}
+
+export function DocEditor({
+  content,
+  onChange,
+  readOnly,
+  className,
+  onModeChange,
+  editorFocusRef,
+  onAiPreviewVisibilityChange,
+}: DocEditorProps) {
+  const {
+    items: aiModels,
+    loading: aiModelsLoading,
+    defaultModelId,
+  } = useAiModels()
+  const {
+    enabledModels,
+    activeModel,
+    activeModelId,
+    setActiveModelId,
+  } = useAiPreferences(aiModels, defaultModelId)
+  const { prompts: aiPrompts } = useAiPrompts()
+  const enabledModelIds = React.useMemo(
+    () => enabledModels.map((model) => model.id),
+    [enabledModels],
+  )
   const [mode, setMode] = React.useState<EditorMode>('wysiwyg')
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
   const [aiPendingAction, setAiPendingAction] = React.useState<AiTransformAction | null>(null)
+  const [aiPreview, setAiPreview] = React.useState<AiPreviewState | null>(null)
   const [activeTableResizeAxis, setActiveTableResizeAxis] = React.useState<ActiveTableResizeAxis>(null)
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
   const [tableControls, setTableControls] = React.useState<TableControlsState | null>(null)
   const [openTableMenu, setOpenTableMenu] = React.useState<ActiveTableMenu>(null)
   const [codeBlockControls, setCodeBlockControls] = React.useState<CodeBlockControlsState | null>(null)
   const [openCodeBlockMenu, setOpenCodeBlockMenu] = React.useState(false)
+  const [heatmapControls, setHeatmapControls] = React.useState<HeatmapControlsState | null>(null)
+  const [heatmapEditorOpen, setHeatmapEditorOpen] = React.useState(false)
+  const [heatmapDraft, setHeatmapDraft] = React.useState<HeatmapDocument | null>(null)
+  const [customPromptOpen, setCustomPromptOpen] = React.useState(false)
+  const [customPromptValue, setCustomPromptValue] = React.useState('')
+  const [customPromptSelectionText, setCustomPromptSelectionText] = React.useState('')
   const [insertPickerOpen, setInsertPickerOpen] = React.useState(false)
   const [showShortcuts, setShowShortcuts] = React.useState(false)
   const editorRef = React.useRef<HTMLDivElement>(null)
@@ -1141,9 +1301,12 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
   const activeTableCellRef = React.useRef<HTMLTableCellElement | null>(null)
   const activeTableResizeRef = React.useRef<ActiveTableResizeState | null>(null)
   const activeCodeBlockRef = React.useRef<HTMLPreElement | null>(null)
+  const activeHeatmapRef = React.useRef<HTMLElement | null>(null)
   const richSelectionRef = React.useRef<Range | null>(null)
   const sourceSelectionRef = React.useRef<SourceSelectionRange | null>(null)
   const slashMenuRef = React.useRef<{ show: () => void; hide: () => void }>(null)
+  const aiRequestIdRef = React.useRef(0)
+  const customPromptSelectionRef = React.useRef<Range | null>(null)
   const editingMode: ToolbarMode = mode === 'split' ? activePane : mode
 
   const syncRichEditorToMarkdown = React.useCallback(() => {
@@ -1163,9 +1326,12 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
       setActiveTableResizeAxis(null)
       setTableControls(null)
       setCodeBlockControls(null)
+      setHeatmapControls(null)
+      setHeatmapEditorOpen(false)
       activeTableCellRef.current = null
       activeTableResizeRef.current = null
       activeCodeBlockRef.current = null
+      activeHeatmapRef.current = null
 
       if (hasRichEditor(mode) && !hasRichEditor(m)) {
         syncRichEditorToMarkdown()
@@ -1337,6 +1503,57 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     [mode, readOnly],
   )
 
+  const updateHeatmapControls = React.useCallback(
+    (heatmapElement?: HTMLElement | null) => {
+      if (
+        !editorRef.current ||
+        !editorCanvasRef.current ||
+        !hasRichEditor(mode) ||
+        readOnly
+      ) {
+        activeHeatmapRef.current = null
+        setHeatmapControls(null)
+        return
+      }
+
+      const nextHeatmap = heatmapElement ?? activeHeatmapRef.current
+      if (
+        !nextHeatmap ||
+        !document.contains(nextHeatmap) ||
+        !nextHeatmap.classList.contains('doc-heatmap')
+      ) {
+        activeHeatmapRef.current = null
+        setHeatmapControls(null)
+        return
+      }
+
+      activeHeatmapRef.current = nextHeatmap
+      setHeatmapControls(getHeatmapControlsState(editorCanvasRef.current, nextHeatmap))
+    },
+    [mode, readOnly],
+  )
+
+  const openActiveHeatmapEditor = React.useCallback(() => {
+    const heatmapElement = activeHeatmapRef.current
+    const encodedHeatmap = heatmapElement?.dataset.docHeatmap
+
+    if (!heatmapElement || !encodedHeatmap) {
+      return
+    }
+
+    const parsedHeatmap = decodeHeatmapDocument(encodedHeatmap)
+    if (!parsedHeatmap) {
+      toast.error('Unable to edit heatmap', {
+        description: 'Switch to source mode to repair the heatmap JSON block.',
+      })
+      return
+    }
+
+    selectComponentElement(heatmapElement)
+    setHeatmapDraft(parsedHeatmap)
+    setHeatmapEditorOpen(true)
+  }, [])
+
   const handleBubbleAction = React.useCallback((action: string) => {
     if (!editorRef.current) return
     editorRef.current.focus()
@@ -1411,6 +1628,55 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     captureRichSelection()
   }, [captureRichSelection, captureSourceSelection, editingMode])
 
+  const handleHeatmapSave = React.useCallback(
+    (nextHeatmap: HeatmapDocument) => {
+      const heatmapElement = activeHeatmapRef.current
+
+      if (!heatmapElement) {
+        return
+      }
+
+      const replacedElement = replaceHeatmapElement(heatmapElement, nextHeatmap)
+      if (!replacedElement) {
+        return
+      }
+
+      activeHeatmapRef.current = replacedElement
+      setHeatmapDraft(nextHeatmap)
+      setHeatmapEditorOpen(false)
+
+      requestAnimationFrame(() => {
+        updateHeatmapControls(replacedElement)
+        captureRichSelection()
+        syncRichEditorToMarkdown()
+      })
+    },
+    [captureRichSelection, syncRichEditorToMarkdown, updateHeatmapControls],
+  )
+
+  const getSelectionQuote = React.useCallback(() => {
+    if (editingMode === 'source') {
+      const textarea = textareaRef.current
+      if (!textarea) return ''
+
+      const start = sourceSelectionRef.current?.start ?? textarea.selectionStart
+      const end = sourceSelectionRef.current?.end ?? textarea.selectionEnd
+      if (start === end) return ''
+
+      return normalizeAnnotationQuote(textarea.value.slice(start, end))
+    }
+
+    const currentSelection = window.getSelection()?.toString() ?? ''
+    const savedRange = richSelectionRef.current
+    const rangeSelection =
+      savedRange &&
+      editorRef.current?.contains(savedRange.startContainer) &&
+      editorRef.current?.contains(savedRange.endContainer)
+        ? savedRange.toString()
+        : ''
+    return normalizeAnnotationQuote(currentSelection || rangeSelection)
+  }, [editingMode])
+
   React.useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
       const resizeState = activeTableResizeRef.current
@@ -1464,16 +1730,26 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
       if (!editorRef.current || !hasRichEditor(mode)) {
         setTableControls(null)
         setCodeBlockControls(null)
+        setHeatmapControls(null)
         richSelectionRef.current = null
         activeTableCellRef.current = null
         activeTableResizeRef.current = null
         activeCodeBlockRef.current = null
+        activeHeatmapRef.current = null
         return
       }
 
       captureRichSelection()
       updateTableControls()
       updateCodeBlockControls()
+
+      const activeComponent = getCurrentComponentElement(editorRef.current)
+      if (activeComponent?.classList.contains('doc-heatmap')) {
+        updateHeatmapControls(activeComponent)
+      } else if (!heatmapEditorOpen) {
+        activeHeatmapRef.current = null
+        setHeatmapControls(null)
+      }
     }
 
     document.addEventListener('selectionchange', handleSelectionChange)
@@ -1489,7 +1765,14 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
       window.removeEventListener('resize', handleSelectionChange)
       viewport?.removeEventListener('scroll', handleSelectionChange)
     }
-  }, [captureRichSelection, mode, updateCodeBlockControls, updateTableControls])
+  }, [
+    captureRichSelection,
+    heatmapEditorOpen,
+    mode,
+    updateCodeBlockControls,
+    updateHeatmapControls,
+    updateTableControls,
+  ])
 
   const handleTableAddRow = React.useCallback((position: 'before' | 'after') => {
     const cell = getActiveTableCell()
@@ -1637,9 +1920,186 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     [editingMode, onChange, readOnly, syncRichEditorToMarkdown],
   )
 
+  const runAiPreviewRequest = React.useCallback(
+    async (request: AiPreviewRequest) => {
+      const requestId = ++aiRequestIdRef.current
+
+      setAiPendingAction(request.action)
+
+      try {
+        const response = await fetch('/api/ai/transform', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: request.action,
+            text: request.originalText,
+            model: request.modelId,
+            targetLanguage: request.targetLanguage,
+            systemPrompt: aiPrompts.systemPrompt,
+            actionPrompt: resolveAiActionPrompt(
+              request.action,
+              aiPrompts,
+              request.targetLanguage,
+            ),
+            customPrompt: request.customPrompt,
+          }),
+        })
+
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string; result?: string }
+          | null
+
+        if (!response.ok || !payload?.result) {
+          throw new Error(payload?.error ?? 'The AI action did not return usable text.')
+        }
+
+        if (aiRequestIdRef.current !== requestId) {
+          return
+        }
+
+        setAiPreview({
+          ...request,
+          resultText: payload.result,
+        })
+      } catch (error) {
+        if (aiRequestIdRef.current !== requestId) {
+          return
+        }
+
+        toast.error(`${AI_ACTION_LABELS[request.action]} failed`, {
+          description:
+            error instanceof Error ? error.message : 'Please try again in a moment.',
+        })
+      } finally {
+        if (aiRequestIdRef.current === requestId) {
+          setAiPendingAction(null)
+        }
+      }
+    },
+    [aiPrompts],
+  )
+
+  const resolveActionModelSelection = React.useCallback(
+    (action: AiTransformAction) => {
+      const modelId = resolveAiActionModel(
+        action,
+        aiPrompts,
+        activeModelId,
+        enabledModelIds,
+      )
+
+      if (!modelId) {
+        return null
+      }
+
+      const model =
+        enabledModels.find((candidate) => candidate.id === modelId) ??
+        (activeModel?.id === modelId ? activeModel : null)
+
+      return {
+        modelId,
+        modelLabel: model?.label ?? modelId,
+      }
+    },
+    [activeModel, activeModelId, aiPrompts, enabledModelIds, enabledModels],
+  )
+
+  const handleOpenAiCustomPrompt = React.useCallback(() => {
+    if (readOnly || !editorRef.current) return
+
+    const modelSelection = resolveActionModelSelection('custom')
+    if (!modelSelection) {
+      toast.error('No AI is enabled', {
+        description: 'Open AI Control Center and enable at least one model first.',
+      })
+      return
+    }
+
+    const selectionRange = richSelectionRef.current?.cloneRange() ?? null
+    const selectedText = selectionRange?.toString().trim() ?? ''
+
+    if (!selectionRange || !selectedText) {
+      toast.error('Select text first', {
+        description: 'Highlight the text you want the custom prompt to use.',
+      })
+      return
+    }
+
+    if (selectedText.length > MAX_AI_TRANSFORM_TEXT_LENGTH) {
+      toast.error('Selection is too long', {
+        description: `Choose up to ${MAX_AI_TRANSFORM_TEXT_LENGTH} characters at a time.`,
+      })
+      return
+    }
+
+    customPromptSelectionRef.current = selectionRange
+    setCustomPromptSelectionText(selectedText)
+    setCustomPromptValue('')
+    setCustomPromptOpen(true)
+  }, [readOnly, resolveActionModelSelection])
+
+  const handleSubmitCustomPrompt = React.useCallback(async () => {
+    const prompt = customPromptValue.trim()
+    if (!prompt) {
+      return
+    }
+
+    const selectionRange = customPromptSelectionRef.current?.cloneRange() ?? null
+    const selectedText = customPromptSelectionText.trim()
+    const modelSelection = resolveActionModelSelection('custom')
+
+    if (!modelSelection) {
+      toast.error('No AI is enabled', {
+        description: 'Open AI Control Center and enable at least one model first.',
+      })
+      return
+    }
+
+    if (!selectionRange || !selectedText) {
+      toast.error('Selection expired', {
+        description: 'Select the text again and reopen Custom Prompt.',
+      })
+      setCustomPromptOpen(false)
+      customPromptSelectionRef.current = null
+      setCustomPromptSelectionText('')
+      return
+    }
+
+    setCustomPromptOpen(false)
+    customPromptSelectionRef.current = null
+    setCustomPromptSelectionText('')
+    setCustomPromptValue('')
+
+    await runAiPreviewRequest({
+      scope: 'selection',
+      action: 'custom',
+      modelId: modelSelection.modelId,
+      modelLabel: modelSelection.modelLabel,
+      originalText: selectedText,
+      selectionRange,
+      customPrompt: prompt,
+    })
+  }, [
+    customPromptSelectionText,
+    customPromptValue,
+    resolveActionModelSelection,
+    runAiPreviewRequest,
+  ])
+
   const handleAiAction = React.useCallback(
     async (action: AiTransformAction, options?: { targetLanguage?: string }) => {
       if (readOnly || !editorRef.current) return
+
+      const modelSelection = resolveActionModelSelection(action)
+
+      if (!modelSelection) {
+        toast.error('No AI is enabled', {
+          description: 'Open AI Control Center and enable at least one model first.',
+        })
+        return
+      }
 
       const selectionRange = richSelectionRef.current?.cloneRange() ?? null
       const selectedText = selectionRange?.toString().trim() ?? ''
@@ -1658,53 +2118,149 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
         return
       }
 
-      setAiPendingAction(action)
-
-      try {
-        const response = await fetch('/api/ai/transform', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action,
-            text: selectedText,
-            targetLanguage: options?.targetLanguage,
-          }),
-        })
-
-        const payload = (await response.json().catch(() => null)) as
-          | { error?: string; result?: string }
-          | null
-
-        if (!response.ok || !payload?.result) {
-          throw new Error(payload?.error ?? 'The AI action did not return usable text.')
-        }
-
-        if (action === 'explain') {
-          insertExplanationIntoRichEditor(editorRef.current, selectionRange, payload.result)
-        } else {
-          replaceSelectionInRichEditor(editorRef.current, selectionRange, payload.result)
-        }
-
-        richSelectionRef.current = null
-        setSelectionInfo(null)
-
-        requestAnimationFrame(() => {
-          captureRichSelection()
-          syncRichEditorToMarkdown()
-        })
-      } catch (error) {
-        toast.error(`${AI_ACTION_LABELS[action]} failed`, {
-          description:
-            error instanceof Error ? error.message : 'Please try again in a moment.',
-        })
-      } finally {
-        setAiPendingAction(null)
-      }
+      await runAiPreviewRequest({
+        scope: 'selection',
+        action,
+        modelId: modelSelection.modelId,
+        modelLabel: modelSelection.modelLabel,
+        originalText: selectedText,
+        selectionRange,
+        targetLanguage: options?.targetLanguage,
+      })
     },
-    [captureRichSelection, readOnly, syncRichEditorToMarkdown],
+    [readOnly, resolveActionModelSelection, runAiPreviewRequest],
   )
+
+  const handleAiDocumentAction = React.useCallback(
+    async (action: AiTransformAction, options?: { targetLanguage?: string }) => {
+      if (readOnly) return
+
+      const modelSelection = resolveActionModelSelection(action)
+
+      if (!modelSelection) {
+        toast.error('No AI is enabled', {
+          description: 'Open AI Control Center and enable at least one model first.',
+        })
+        return
+      }
+
+      if (!content.trim()) {
+        toast.error('Document is empty', {
+          description: 'Write something first before asking AI to edit the full document.',
+        })
+        return
+      }
+
+      if (content.length > MAX_AI_TRANSFORM_TEXT_LENGTH) {
+        toast.error('Document is too long', {
+          description: `AI full-document actions currently support up to ${MAX_AI_TRANSFORM_TEXT_LENGTH} characters.`,
+        })
+        return
+      }
+
+      await runAiPreviewRequest({
+        scope: 'document',
+        action,
+        modelId: modelSelection.modelId,
+        modelLabel: modelSelection.modelLabel,
+        originalText: content,
+        selectionRange: null,
+        targetLanguage: options?.targetLanguage,
+      })
+    },
+    [content, readOnly, resolveActionModelSelection, runAiPreviewRequest],
+  )
+
+  const handleAiPreviewOpenChange = React.useCallback(
+    (open: boolean) => {
+      if (open || !aiPreview) return
+
+      aiRequestIdRef.current += 1
+      setAiPendingAction(null)
+
+      const preview = aiPreview
+      setAiPreview(null)
+
+      requestAnimationFrame(() => {
+        const editor = editorRef.current
+        if (!editor || preview.scope === 'document') return
+
+        restoreRichSelection(editor, preview.selectionRange)
+        setActivePane('wysiwyg')
+        captureRichSelection()
+      })
+    },
+    [aiPreview, captureRichSelection],
+  )
+
+  const handleRetryAiPreview = React.useCallback(() => {
+    if (!aiPreview) return
+
+    void runAiPreviewRequest({
+      scope: aiPreview.scope,
+      action: aiPreview.action,
+      modelId: aiPreview.modelId,
+      modelLabel: aiPreview.modelLabel,
+      originalText: aiPreview.originalText,
+      selectionRange: aiPreview.selectionRange?.cloneRange() ?? null,
+      targetLanguage: aiPreview.targetLanguage,
+      customPrompt: aiPreview.customPrompt,
+    })
+  }, [aiPreview, runAiPreviewRequest])
+
+  const handleAcceptAiPreview = React.useCallback(() => {
+    if (!aiPreview || readOnly || !editorRef.current) return
+
+    const preview = aiPreview
+    aiRequestIdRef.current += 1
+    setAiPendingAction(null)
+    setAiPreview(null)
+
+    requestAnimationFrame(() => {
+      const editor = editorRef.current
+      if (!editor && preview.scope === 'selection') return
+
+      if (preview.scope === 'document') {
+        if (editor && hasRichEditor(mode)) {
+          editor.innerHTML = mdToHtml(preview.resultText)
+        }
+        latestMdRef.current = preview.resultText
+        onChange(preview.resultText)
+        setSelectionInfo(null)
+        setActivePane(editingMode)
+        return
+      }
+
+      if (!editor) return
+
+      if (preview.action === 'explain') {
+        insertExplanationIntoRichEditor(editor, preview.selectionRange, preview.resultText)
+      } else {
+        replaceSelectionInRichEditor(editor, preview.selectionRange, preview.resultText)
+      }
+
+      richSelectionRef.current = null
+      setSelectionInfo(null)
+
+      requestAnimationFrame(() => {
+        captureRichSelection()
+        syncRichEditorToMarkdown()
+      })
+    })
+  }, [aiPreview, captureRichSelection, editingMode, mode, onChange, readOnly, syncRichEditorToMarkdown])
+
+  const handleSlashMenuClose = React.useCallback(() => {
+    slashMenuRef.current?.hide()
+
+    requestAnimationFrame(() => {
+      const editor = editorRef.current
+      if (!editor) return
+
+      restoreRichSelection(editor, richSelectionRef.current)
+      setActivePane('wysiwyg')
+      captureRichSelection()
+    })
+  }, [captureRichSelection])
 
   const handleSlashSelect = React.useCallback((action: string) => {
     if (!editorRef.current) return
@@ -1737,6 +2293,13 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
         const tableHtml = '<table><thead><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr></thead><tbody><tr><td>Cell</td><td>Cell</td><td>Cell</td></tr></tbody></table><p><br></p>'
         document.execCommand('insertHTML', false, tableHtml)
         break
+      case 'heatmap':
+        document.execCommand(
+          'insertHTML',
+          false,
+          `${mdToHtml(DEFAULT_HEATMAP_SNIPPET.template)}<p><br></p>`,
+        )
+        break
       case 'code':
         handleInsertCodeBlock('typescript')
         break
@@ -1761,6 +2324,12 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
     onModeChange?.(mode)
   }, [mode, onModeChange])
 
+  React.useEffect(() => {
+    onAiPreviewVisibilityChange?.(Boolean(aiPreview))
+  }, [aiPreview, onAiPreviewVisibilityChange])
+
+  const customActionModelSelection = resolveActionModelSelection('custom')
+
   // ── Expose focus method to parent ──────────────────────────────────────
   React.useEffect(() => {
     if (!editorFocusRef) return
@@ -1772,11 +2341,12 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
           editorRef.current?.focus()
         }
       },
+      getSelectionQuote,
     }
     return () => {
       editorFocusRef.current = null
     }
-  }, [editorFocusRef, editingMode])
+  }, [editorFocusRef, editingMode, getSelectionQuote])
 
   // ── WYSIWYG input handler ────────────────────────────────────────────────
   const handleEditorInput = React.useCallback(() => {
@@ -1856,7 +2426,10 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
           // If we are at the very beginning of a block
           if (textBefore.trim() === '') {
             // Wait for "/" to be typed, then show menu
-            setTimeout(() => slashMenuRef.current?.show(), 50)
+            setTimeout(() => {
+              captureRichSelection()
+              slashMenuRef.current?.show()
+            }, 50)
           }
         }
       }
@@ -1991,6 +2564,11 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
         return
       }
 
+      if (target?.closest('[data-heatmap-control="true"]')) {
+        updateHeatmapControls()
+        return
+      }
+
       const codeBlock = target?.closest('pre[data-code-language]')
       if (
         codeBlock instanceof HTMLPreElement &&
@@ -2001,12 +2579,33 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
         return
       }
 
+      const heatmapElement = target?.closest('.doc-heatmap')
+      if (
+        heatmapElement instanceof HTMLElement &&
+        editorRef.current.contains(heatmapElement)
+      ) {
+        updateHeatmapControls(heatmapElement)
+        return
+      }
+
       if (!openCodeBlockMenu) {
         activeCodeBlockRef.current = null
         setCodeBlockControls(null)
       }
+
+      if (!heatmapEditorOpen) {
+        activeHeatmapRef.current = null
+        setHeatmapControls(null)
+      }
     },
-    [mode, openCodeBlockMenu, readOnly, updateCodeBlockControls],
+    [
+      heatmapEditorOpen,
+      mode,
+      openCodeBlockMenu,
+      readOnly,
+      updateCodeBlockControls,
+      updateHeatmapControls,
+    ],
   )
 
   const handleEditorMouseLeave = React.useCallback(() => {
@@ -2014,7 +2613,58 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
 
     activeCodeBlockRef.current = null
     setCodeBlockControls(null)
-  }, [openCodeBlockMenu])
+
+    if (!heatmapEditorOpen) {
+      activeHeatmapRef.current = null
+      setHeatmapControls(null)
+    }
+  }, [heatmapEditorOpen, openCodeBlockMenu])
+
+  const handleEditorClick = React.useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!editorRef.current || !hasRichEditor(mode)) {
+        return
+      }
+
+      const target = e.target instanceof Element ? e.target : null
+      const heatmapElement = target?.closest('.doc-heatmap')
+
+      if (
+        heatmapElement instanceof HTMLElement &&
+        editorRef.current.contains(heatmapElement)
+      ) {
+        activeHeatmapRef.current = heatmapElement
+        selectComponentElement(heatmapElement)
+
+        if (!readOnly) {
+          updateHeatmapControls(heatmapElement)
+        }
+      }
+    },
+    [mode, readOnly, updateHeatmapControls],
+  )
+
+  const handleEditorDoubleClick = React.useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!editorRef.current || !hasRichEditor(mode) || readOnly) {
+        return
+      }
+
+      const target = e.target instanceof Element ? e.target : null
+      const heatmapElement = target?.closest('.doc-heatmap')
+
+      if (
+        heatmapElement instanceof HTMLElement &&
+        editorRef.current.contains(heatmapElement)
+      ) {
+        activeHeatmapRef.current = heatmapElement
+        selectComponentElement(heatmapElement)
+        updateHeatmapControls(heatmapElement)
+        openActiveHeatmapEditor()
+      }
+    },
+    [mode, openActiveHeatmapEditor, readOnly, updateHeatmapControls],
+  )
 
   return (
     <div className={cn('flex flex-col overflow-hidden rounded-md border border-border/75 bg-card/95', className)}>
@@ -2034,33 +2684,49 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
         onInsertSnippet={handleInsertSnippet}
         onBeforeOpenCodeMenu={captureCurrentSelection}
         onInsertCodeBlock={handleInsertCodeBlock}
+        activeAiLabel={activeModel?.label ?? activeModelId}
+        aiDisabled={Boolean(aiPendingAction) || !activeModelId}
+        onAiPolishDocument={() => {
+          void handleAiDocumentAction('polish')
+        }}
+        onAiTranslateDocument={(targetLanguage) => {
+          void handleAiDocumentAction('translate', { targetLanguage })
+        }}
       />
 
       {/* Editor area */}
       <div
         className={cn(
           'flex-1 min-h-0',
-          mode === 'split'
-            ? 'grid grid-cols-1 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]'
-            : 'flex flex-col',
+          aiPreview && 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px]',
         )}
       >
-        {hasRichEditor(mode) && (
-          <div
-            ref={editorViewportRef}
-            className={cn(
-              'min-h-0 overflow-auto transition-[box-shadow] duration-200',
-              mode !== 'split' && 'flex-1',
-              mode === 'split' && 'border-b border-border/60 md:border-b-0 md:border-r',
-              mode === 'split' && activePane === 'wysiwyg' && 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]',
-            )}
-          >
+        <div
+          className={cn(
+            'min-h-0',
+            mode === 'split'
+              ? 'grid h-full grid-cols-1 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]'
+              : 'flex h-full flex-col',
+          )}
+        >
+          {hasRichEditor(mode) && (
             <div
-              ref={editorCanvasRef}
-              className="relative min-h-full"
-              onMouseMove={handleEditorMouseMove}
-              onMouseLeave={handleEditorMouseLeave}
+              ref={editorViewportRef}
+              className={cn(
+                'min-h-0 overflow-auto transition-[box-shadow] duration-200',
+                mode !== 'split' && 'flex-1',
+                mode === 'split' && 'border-b border-border/60 md:border-b-0 md:border-r',
+                mode === 'split' && activePane === 'wysiwyg' && 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]',
+              )}
             >
+              <div
+                ref={editorCanvasRef}
+                className="relative min-h-full"
+                onMouseMove={handleEditorMouseMove}
+                onMouseLeave={handleEditorMouseLeave}
+                onClick={handleEditorClick}
+                onDoubleClick={handleEditorDoubleClick}
+              >
               {tableControls && !readOnly && (
                 <>
                   <DropdownMenu
@@ -2230,6 +2896,27 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
+              {heatmapControls && !readOnly && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  data-heatmap-control="true"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    captureRichSelection()
+                  }}
+                  onClick={openActiveHeatmapEditor}
+                  className="absolute z-20 h-7 -translate-x-full -translate-y-1/2 rounded-full border-border/55 bg-background/96 px-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground shadow-none backdrop-blur-sm hover:border-border/75 hover:bg-background hover:text-foreground"
+                  style={{
+                    top: `${heatmapControls.top}px`,
+                    left: `${heatmapControls.left}px`,
+                  }}
+                  aria-label={`Edit heatmap ${heatmapControls.title}`}
+                >
+                  Edit Heatmap
+                </Button>
+              )}
 
               <div
                 ref={editorRef}
@@ -2265,13 +2952,18 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
                       }
                     }}
                     onAiAction={handleAiAction}
+                    onOpenAiCustomPrompt={handleOpenAiCustomPrompt}
                     aiPendingAction={aiPendingAction}
+                    enabledModels={enabledModels}
+                    activeModelId={activeModel?.id ?? activeModelId}
+                    onActiveModelChange={setActiveModelId}
+                    aiModelsLoading={aiModelsLoading}
                   />
                   <DocSlashMenu
                     ref={slashMenuRef}
                     editorRef={editorRef}
                     onSelect={handleSlashSelect}
-                    onClose={() => slashMenuRef.current?.hide()}
+                    onClose={handleSlashMenuClose}
                   />
 
                   {selectionInfo && (
@@ -2283,45 +2975,151 @@ export function DocEditor({ content, onChange, readOnly, className, onModeChange
                   )}
                 </>
               )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {hasSourceEditor(mode) && (
-          <div className={cn(
-            'min-h-0 transition-[box-shadow] duration-200',
-            mode !== 'split' && 'flex-1',
-            mode === 'split' && 'bg-muted/[0.14]',
-            mode === 'split' && activePane === 'source' && 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]',
-          )}>
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => onChange(e.target.value)}
-              onKeyDown={handleSourceKeyDown}
-              onFocus={() => setActivePane('source')}
-              onSelect={captureSourceSelection}
-              onClick={captureSourceSelection}
-              onKeyUp={captureSourceSelection}
-              readOnly={readOnly}
-              spellCheck={false}
-              aria-label="Markdown source editor"
-              className={cn(
-                'block w-full resize-none bg-transparent',
-                'font-mono text-[13px] leading-7 text-foreground',
-                'placeholder:text-muted-foreground/60',
-                'outline-none',
-                mode === 'split' ? 'h-full min-h-[600px] p-5 md:p-6' : 'h-full min-h-[600px] p-4',
-                readOnly && 'cursor-default opacity-70',
-              )}
-              placeholder="Start writing in Markdown…"
-            />
-          </div>
-        )}
+          {hasSourceEditor(mode) && (
+            <div className={cn(
+              'min-h-0 transition-[box-shadow] duration-200',
+              mode !== 'split' && 'flex-1',
+              mode === 'split' && 'bg-muted/[0.14]',
+              mode === 'split' && activePane === 'source' && 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]',
+            )}>
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={(e) => onChange(e.target.value)}
+                onKeyDown={handleSourceKeyDown}
+                onFocus={() => setActivePane('source')}
+                onSelect={captureSourceSelection}
+                onClick={captureSourceSelection}
+                onKeyUp={captureSourceSelection}
+                readOnly={readOnly}
+                spellCheck={false}
+                aria-label="Markdown source editor"
+                className={cn(
+                  'block w-full resize-none bg-transparent',
+                  'font-mono text-[13px] leading-7 text-foreground',
+                  'placeholder:text-muted-foreground/60',
+                  'outline-none',
+                  mode === 'split' ? 'h-full min-h-[600px] p-5 md:p-6' : 'h-full min-h-[600px] p-4',
+                  readOnly && 'cursor-default opacity-70',
+                )}
+                placeholder="Start writing in Markdown…"
+              />
+            </div>
+          )}
+        </div>
+
+        {aiPreview ? (
+          <DocAiResultPanel
+            scope={aiPreview.scope}
+            action={aiPreview.action}
+            resultText={aiPreview.resultText}
+            modelLabel={aiPreview.modelLabel}
+            modelId={aiPreview.modelId}
+            targetLanguage={aiPreview.targetLanguage}
+            customPrompt={aiPreview.customPrompt}
+            pending={aiPendingAction === aiPreview.action}
+            onRetry={handleRetryAiPreview}
+            onAccept={handleAcceptAiPreview}
+            onClose={() => handleAiPreviewOpenChange(false)}
+          />
+        ) : null}
+
+        <Dialog
+          open={customPromptOpen}
+          onOpenChange={(open) => {
+            setCustomPromptOpen(open)
+
+            if (!open) {
+              customPromptSelectionRef.current = null
+              setCustomPromptSelectionText('')
+              setCustomPromptValue('')
+            }
+          }}
+        >
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{AI_ACTION_LABELS.custom}</DialogTitle>
+              <DialogDescription>
+                Describe exactly how the selected text should be transformed. The result
+                still opens in preview first.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">
+                {customActionModelSelection?.modelLabel ?? 'No AI enabled'}
+              </Badge>
+              <Badge variant="outline">
+                {customPromptSelectionText.length} selected characters
+              </Badge>
+            </div>
+
+            <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Selected text
+              </p>
+              <p className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
+                {customPromptSelectionText}
+              </p>
+            </div>
+
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="custom-ai-prompt">Prompt</FieldLabel>
+                <FieldContent>
+                  <Textarea
+                    id="custom-ai-prompt"
+                    value={customPromptValue}
+                    onChange={(event) => setCustomPromptValue(event.target.value)}
+                    className="min-h-36 leading-6"
+                    placeholder="Example: Rewrite this into a concise changelog for release notes, keep all technical terms and bullet structure."
+                    maxLength={MAX_AI_CUSTOM_PROMPT_LENGTH}
+                    autoFocus
+                  />
+                  <FieldDescription>
+                    Be explicit about tone, format, constraints, or what should stay unchanged.
+                    {` ${customPromptValue.length} / ${MAX_AI_CUSTOM_PROMPT_LENGTH}`}
+                  </FieldDescription>
+                </FieldContent>
+              </Field>
+            </FieldGroup>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCustomPromptOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => void handleSubmitCustomPrompt()}
+                disabled={!customPromptValue.trim()}
+              >
+                <Sparkles data-icon="inline-start" />
+                Run prompt
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <KeyboardShortcutsDialog
           open={showShortcuts}
           onOpenChange={setShowShortcuts}
+        />
+        <DocHeatmapEditorDialog
+          open={heatmapEditorOpen}
+          data={heatmapDraft}
+          onOpenChange={(open) => {
+            setHeatmapEditorOpen(open)
+
+            if (!open) {
+              requestAnimationFrame(() => {
+                updateHeatmapControls()
+              })
+            }
+          }}
+          onSave={handleHeatmapSave}
         />
       </div>
     </div>

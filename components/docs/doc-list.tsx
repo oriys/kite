@@ -97,7 +97,7 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                     />
                   </div>
                   <CardDescription className="line-clamp-2 text-xs leading-5">
-                    {excerpt(doc.content) || 'Empty document'}
+                    {doc.summary || excerpt(doc.content) || 'Empty document'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0 pr-14">

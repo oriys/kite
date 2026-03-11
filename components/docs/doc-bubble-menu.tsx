@@ -1,15 +1,24 @@
 'use client'
 
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Bold,
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Code,
   Italic,
   Link2,
   Loader2,
+  PencilLine,
   Strikethrough,
 } from 'lucide-react'
-import { AI_ACTION_LABELS, type AiTransformAction } from '@/lib/ai'
+import {
+  AI_ACTION_LABELS,
+  type AiCatalogModel,
+  type AiTransformAction,
+} from '@/lib/ai'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -17,9 +26,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
@@ -35,13 +41,25 @@ interface BubbleMenuProps {
   onAction: (action: string) => void
   onLinkAction: () => void
   onAiAction: (action: AiTransformAction, options?: { targetLanguage?: string }) => void
+  onOpenAiCustomPrompt: () => void
   aiPendingAction?: AiTransformAction | null
+  enabledModels: AiCatalogModel[]
+  activeModelId: string | null
+  onActiveModelChange: (modelId: string) => void
+  aiModelsLoading?: boolean
 }
 
 interface BubbleMenuPosition {
   top: number
   left: number
 }
+
+type AiMenuView = 'root' | 'models' | 'languages'
+
+const MENU_VIEWPORT_PADDING = 8
+const MENU_SELECTION_GAP = 12
+const MENU_FALLBACK_HEIGHT = 44
+const MENU_HORIZONTAL_PADDING = 24
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
@@ -68,12 +86,35 @@ export function DocBubbleMenu({
   onAction,
   onLinkAction,
   onAiAction,
+  onOpenAiCustomPrompt,
   aiPendingAction,
+  enabledModels,
+  activeModelId,
+  onActiveModelChange,
+  aiModelsLoading,
 }: BubbleMenuProps) {
+  const router = useRouter()
   const [position, setPosition] = React.useState<BubbleMenuPosition | null>(null)
   const [isVisible, setIsVisible] = React.useState(false)
   const [aiOpen, setAiOpen] = React.useState(false)
+  const [aiMenuView, setAiMenuView] = React.useState<AiMenuView>('root')
   const menuRef = React.useRef<HTMLDivElement>(null)
+  const activeModel =
+    enabledModels.find((model) => model.id === activeModelId) ?? enabledModels[0] ?? null
+  const aiActionsDisabled =
+    Boolean(aiPendingAction) || aiModelsLoading || enabledModels.length === 0 || !activeModel
+  const translateLanguages = React.useMemo(
+    () => [
+      { label: 'Chinese', value: 'Simplified Chinese' },
+      { label: 'English', value: 'English' },
+    ],
+    [],
+  )
+
+  const closeAiMenu = React.useCallback(() => {
+    setAiOpen(false)
+    setAiMenuView('root')
+  }, [])
 
   const updatePosition = React.useCallback(() => {
     const selection = window.getSelection()
@@ -94,19 +135,39 @@ export function DocBubbleMenu({
 
     const rect = range.getBoundingClientRect()
 
-    const parent = editorRef.current.parentElement
-    if (!parent) return
+    const canvas = editorRef.current.parentElement
+    const viewport = canvas?.parentElement
+    if (!canvas || !viewport) return
 
-    const parentRect = parent.getBoundingClientRect()
-    const horizontalPadding = 24
+    const canvasRect = canvas.getBoundingClientRect()
     const toolbarLeft = clamp(
-      rect.left - parentRect.left + rect.width / 2,
-      horizontalPadding,
-      Math.max(horizontalPadding, parentRect.width - horizontalPadding),
+      rect.left - canvasRect.left + rect.width / 2,
+      viewport.scrollLeft + MENU_HORIZONTAL_PADDING,
+      Math.max(
+        viewport.scrollLeft + MENU_HORIZONTAL_PADDING,
+        viewport.scrollLeft + viewport.clientWidth - MENU_HORIZONTAL_PADDING,
+      ),
     )
+    const menuHeight = menuRef.current?.offsetHeight ?? MENU_FALLBACK_HEIGHT
+    const selectionTop = rect.top - canvasRect.top
+    const selectionBottom = rect.bottom - canvasRect.top
+    const minTop = viewport.scrollTop + MENU_VIEWPORT_PADDING
+    const maxTop = Math.max(
+      minTop,
+      viewport.scrollTop + viewport.clientHeight - menuHeight - MENU_VIEWPORT_PADDING,
+    )
+    const aboveTop = selectionTop - menuHeight - MENU_SELECTION_GAP
+    const belowTop = selectionBottom + MENU_SELECTION_GAP
+
+    const top =
+      aboveTop >= minTop
+        ? aboveTop
+        : belowTop <= maxTop
+          ? belowTop
+          : clamp(aboveTop, minTop, maxTop)
 
     setPosition({
-      top: Math.max(8, rect.top - parentRect.top - 48),
+      top,
       left: toolbarLeft,
     })
     setIsVisible(true)
@@ -125,6 +186,13 @@ export function DocBubbleMenu({
       window.removeEventListener('resize', updatePosition)
     }
   }, [updatePosition])
+
+  React.useEffect(() => {
+    if (!isVisible && !aiOpen) return
+
+    const frame = requestAnimationFrame(updatePosition)
+    return () => cancelAnimationFrame(frame)
+  }, [aiOpen, isVisible, updatePosition])
 
   if ((!isVisible && !aiOpen) || !position) return null
 
@@ -215,7 +283,16 @@ export function DocBubbleMenu({
 
           <Separator orientation="vertical" className="mx-1 h-4" />
 
-          <DropdownMenu open={aiOpen} onOpenChange={setAiOpen}>
+          <DropdownMenu
+            open={aiOpen}
+            onOpenChange={(open) => {
+              setAiOpen(open)
+
+              if (!open) {
+                setAiMenuView('root')
+              }
+            }}
+          >
             <Tooltip>
               <TooltipTrigger asChild>
                 <DropdownMenuTrigger asChild>
@@ -240,50 +317,168 @@ export function DocBubbleMenu({
               align="end"
               side="bottom"
               sideOffset={10}
-              className="w-52 rounded-xl border-border/80 bg-background/96 p-1.5 shadow-[0_24px_48px_-28px_rgba(15,23,42,0.38)] backdrop-blur-md"
+              className="rounded-xl border-border/80 bg-background/96 p-1.5 shadow-[0_24px_48px_-28px_rgba(15,23,42,0.38)] backdrop-blur-md"
               onCloseAutoFocus={(e) => e.preventDefault()}
             >
-              <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                AI assist
-              </DropdownMenuLabel>
-              <DropdownMenuItem
-                disabled={Boolean(aiPendingAction)}
-                onSelect={() => onAiAction('polish')}
-              >
-                {AI_ACTION_LABELS.polish}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={Boolean(aiPendingAction)}
-                onSelect={() => onAiAction('shorten')}
-              >
-                {AI_ACTION_LABELS.shorten}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={Boolean(aiPendingAction)}
-                onSelect={() => onAiAction('expand')}
-              >
-                {AI_ACTION_LABELS.expand}
-              </DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger disabled={Boolean(aiPendingAction)}>
-                  {AI_ACTION_LABELS.translate}
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="rounded-xl border-border/80 bg-background/96 p-1.5 backdrop-blur-md">
-                  <DropdownMenuItem onSelect={() => onAiAction('translate', { targetLanguage: 'Simplified Chinese' })}>
-                    Chinese
+              {aiMenuView === 'root' ? (
+                <div className="w-52">
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                    AI assist
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault()
+                      setAiMenuView('models')
+                    }}
+                  >
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">
+                        {activeModel ? `Use ${activeModel.label}` : 'Choose enabled AI'}
+                      </span>
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {activeModel?.id ??
+                          (aiModelsLoading ? 'Loading enabled AI…' : 'No enabled AI yet')}
+                      </span>
+                    </div>
+                    <ChevronRight className="ml-auto size-4 text-muted-foreground" />
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onAiAction('translate', { targetLanguage: 'English' })}>
-                    English
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={aiActionsDisabled}
+                    onSelect={() => onAiAction('polish')}
+                  >
+                    {AI_ACTION_LABELS.polish}
                   </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={Boolean(aiPendingAction)}
-                onSelect={() => onAiAction('explain')}
-              >
-                {AI_ACTION_LABELS.explain}
-              </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={aiActionsDisabled}
+                    onSelect={() => onAiAction('shorten')}
+                  >
+                    {AI_ACTION_LABELS.shorten}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={aiActionsDisabled}
+                    onSelect={() => onAiAction('expand')}
+                  >
+                    {AI_ACTION_LABELS.expand}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={aiActionsDisabled}
+                    onSelect={(event) => {
+                      event.preventDefault()
+                      setAiMenuView('languages')
+                    }}
+                  >
+                    <span>{AI_ACTION_LABELS.translate}</span>
+                    <ChevronRight className="ml-auto size-4 text-muted-foreground" />
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={aiActionsDisabled}
+                    onSelect={() => onAiAction('explain')}
+                  >
+                    {AI_ACTION_LABELS.explain}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={aiActionsDisabled}
+                    onSelect={() => {
+                      closeAiMenu()
+                      onOpenAiCustomPrompt()
+                    }}
+                  >
+                    <PencilLine className="size-4 text-muted-foreground" />
+                    {AI_ACTION_LABELS.custom}...
+                  </DropdownMenuItem>
+                </div>
+              ) : null}
+
+              {aiMenuView === 'models' ? (
+                <div className="w-72">
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Enabled AI
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault()
+                      setAiMenuView('root')
+                    }}
+                  >
+                    <ChevronLeft className="size-4 text-muted-foreground" />
+                    Back
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {enabledModels.length > 0 ? (
+                    enabledModels.map((model) => (
+                      <DropdownMenuItem
+                        key={model.id}
+                        onSelect={() => {
+                          onActiveModelChange(model.id)
+                          closeAiMenu()
+                        }}
+                      >
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate">{model.label}</span>
+                          <span className="truncate text-[11px] text-muted-foreground">
+                            {model.id}
+                          </span>
+                        </div>
+                        {model.id === activeModel?.id ? (
+                          <Check className="ml-auto size-4 text-foreground" />
+                        ) : null}
+                      </DropdownMenuItem>
+                    ))
+                  ) : (
+                    <DropdownMenuItem disabled>
+                      {aiModelsLoading ? 'Loading enabled AI…' : 'No enabled AI yet'}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      closeAiMenu()
+                      router.push('/docs/ai')
+                    }}
+                  >
+                    Manage enabled AI
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      closeAiMenu()
+                      router.push('/docs/ai/prompts')
+                    }}
+                  >
+                    Manage AI prompts
+                  </DropdownMenuItem>
+                </div>
+              ) : null}
+
+              {aiMenuView === 'languages' ? (
+                <div className="w-56">
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Translate to
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault()
+                      setAiMenuView('root')
+                    }}
+                  >
+                    <ChevronLeft className="size-4 text-muted-foreground" />
+                    Back
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {translateLanguages.map((language) => (
+                    <DropdownMenuItem
+                      key={language.value}
+                      onSelect={() => {
+                        onAiAction('translate', { targetLanguage: language.value })
+                        closeAiMenu()
+                      }}
+                    >
+                      {language.label}
+                    </DropdownMenuItem>
+                  ))}
+                </div>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         </TooltipProvider>

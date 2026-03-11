@@ -10,6 +10,8 @@ import {
   Copy,
   Check,
   Loader2,
+  MessageSquareQuote,
+  Star,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -40,7 +42,12 @@ export type SaveState = 'idle' | 'saving' | 'saved'
 
 interface DocStatusBarProps {
   doc: Doc
+  openAnnotationCount?: number
+  averageEvaluationScore?: number | null
+  evaluationCount?: number
+  backBusy?: boolean
   saveState?: SaveState
+  onBack?: () => void
   onTransition: (status: DocStatus) => void
   onDelete: () => void
   onDuplicate: () => void
@@ -58,7 +65,19 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`
 }
 
-export function DocStatusBar({ doc, saveState = 'idle', onTransition, onDelete, onDuplicate, className }: DocStatusBarProps) {
+export function DocStatusBar({
+  doc,
+  openAnnotationCount = 0,
+  averageEvaluationScore = null,
+  evaluationCount = 0,
+  backBusy = false,
+  saveState = 'idle',
+  onBack,
+  onTransition,
+  onDelete,
+  onDuplicate,
+  className,
+}: DocStatusBarProps) {
   const router = useRouter()
   const config = STATUS_CONFIG[doc.status]
   const wc = wordCount(doc.content)
@@ -74,10 +93,15 @@ export function DocStatusBar({ doc, saveState = 'idle', onTransition, onDelete, 
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={() => router.push('/docs')}
+          onClick={onBack ?? (() => router.push('/docs'))}
+          disabled={backBusy}
         >
-          <ArrowLeft className="mr-1.5 size-3" />
-          Back
+          {backBusy ? (
+            <Loader2 className="mr-1.5 size-3 animate-spin" />
+          ) : (
+            <ArrowLeft className="mr-1.5 size-3" />
+          )}
+          {backBusy ? 'Summarizing…' : 'Back'}
         </Button>
 
         <StatusBadge label={config.label} tone={config.tone as StatusTone} />
@@ -111,6 +135,25 @@ export function DocStatusBar({ doc, saveState = 'idle', onTransition, onDelete, 
             {doc.versions.length} {doc.versions.length === 1 ? 'revision' : 'revisions'}
           </span>
         )}
+
+        <span className="flex items-center gap-1 text-muted-foreground/70">
+          <MessageSquareQuote className="size-3" />
+          {openAnnotationCount} open {openAnnotationCount === 1 ? 'annotation' : 'annotations'}
+        </span>
+
+        <span className="flex items-center gap-1 text-muted-foreground/70">
+          <Star
+            className={cn(
+              'size-3',
+              averageEvaluationScore === null
+                ? 'text-muted-foreground/50'
+                : 'fill-amber-400 text-amber-400',
+            )}
+          />
+          {averageEvaluationScore === null
+            ? 'No ratings'
+            : `${averageEvaluationScore.toFixed(1)}/5 · ${evaluationCount} ${evaluationCount === 1 ? 'rating' : 'ratings'}`}
+        </span>
       </div>
 
       {/* Right — actions */}

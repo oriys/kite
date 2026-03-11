@@ -9,6 +9,22 @@ import { verifyWorkspaceMembership } from './workspaces'
 
 type DocStatusValue = (typeof docStatusEnum.enumValues)[number]
 
+interface ImportDocumentVersionInput {
+  content: string
+  savedAt?: string
+  wordCount?: number
+}
+
+interface ImportDocumentInput {
+  title: string
+  content: string
+  summary?: string
+  status?: DocStatusValue
+  createdAt?: string
+  updatedAt?: string
+  versions?: ImportDocumentVersionInput[]
+}
+
 function wordCount(text: string): number {
   const trimmed = text.trim()
   if (!trimmed) return 0
@@ -60,13 +76,69 @@ export async function createDocument(
   title: string,
   content: string,
   createdBy: string,
+  summary = '',
 ) {
   const [doc] = await db
     .insert(documents)
-    .values({ workspaceId, title, content, createdBy })
+    .values({ workspaceId, title, content, summary, createdBy })
     .returning()
 
   return { ...doc, versions: [] }
+}
+
+export async function importDocuments(
+  workspaceId: string,
+  createdBy: string,
+  sourceDocs: ImportDocumentInput[],
+) {
+  if (sourceDocs.length === 0) return []
+
+  return db.transaction(async (tx) => {
+    const imported = []
+
+    for (const sourceDoc of sourceDocs) {
+      const createdAt = sourceDoc.createdAt ? new Date(sourceDoc.createdAt) : new Date()
+      const updatedAt = sourceDoc.updatedAt ? new Date(sourceDoc.updatedAt) : createdAt
+      const status = sourceDoc.status ?? 'draft'
+
+      const [doc] = await tx
+        .insert(documents)
+        .values({
+          workspaceId,
+          title: sourceDoc.title,
+          content: sourceDoc.content,
+          summary: sourceDoc.summary ?? '',
+          status,
+          createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+          updatedAt: Number.isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
+          createdBy,
+        })
+        .returning()
+
+      const versions = Array.isArray(sourceDoc.versions) ? sourceDoc.versions : []
+      if (versions.length > 0) {
+        await tx.insert(documentVersions).values(
+          versions.map((version) => {
+            const savedAt = version.savedAt ? new Date(version.savedAt) : new Date()
+
+            return {
+              documentId: doc.id,
+              content: version.content,
+              wordCount:
+                typeof version.wordCount === 'number'
+                  ? version.wordCount
+                  : wordCount(version.content),
+              savedAt: Number.isNaN(savedAt.getTime()) ? new Date() : savedAt,
+            }
+          }),
+        )
+      }
+
+      imported.push({ ...doc, versions: [] })
+    }
+
+    return imported
+  })
 }
 
 export async function updateDocument(
@@ -105,7 +177,13 @@ export async function updateDocument(
 
   const [updated] = await db
     .update(documents)
-    .set({ ...patch, updatedAt: new Date() })
+    .set({
+      ...patch,
+      ...(patch.content !== undefined && patch.content !== existing.content
+        ? { summary: '' }
+        : {}),
+      updatedAt: new Date(),
+    })
     .where(and(eq(documents.id, id), eq(documents.workspaceId, workspaceId)))
     .returning()
 
@@ -148,7 +226,22 @@ export async function duplicateDocument(
     `${source.title} (copy)`,
     source.content,
     userId,
+    source.summary,
   )
+}
+
+export async function updateDocumentSummary(
+  id: string,
+  workspaceId: string,
+  summary: string,
+) {
+  const [updated] = await db
+    .update(documents)
+    .set({ summary })
+    .where(and(eq(documents.id, id), eq(documents.workspaceId, workspaceId)))
+    .returning()
+
+  return updated ? await getDocument(id, workspaceId) : null
 }
 
 export { verifyWorkspaceMembership }

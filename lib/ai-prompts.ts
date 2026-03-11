@@ -1,0 +1,154 @@
+import {
+  AI_TRANSFORM_ACTIONS,
+  MAX_AI_MODEL_ID_LENGTH,
+  type AiTransformAction,
+} from '@/lib/ai'
+
+export const AI_PROMPTS_STORAGE_KEY = 'editorial-ai-prompt-settings'
+export const AI_PROMPTS_EVENT = 'editorial-ai-prompt-settings:change'
+export const AI_PROMPT_LANGUAGE_TOKEN = '{{targetLanguage}}'
+export const MAX_AI_SYSTEM_PROMPT_LENGTH = 4_000
+export const MAX_AI_ACTION_PROMPT_LENGTH = 2_000
+
+export interface AiPromptSettings {
+  systemPrompt: string
+  actionPrompts: Record<AiTransformAction, string>
+  actionModelIds: Record<AiTransformAction, string>
+}
+
+export const DEFAULT_AI_SYSTEM_PROMPT =
+  'You are an expert editor inside a document workspace. Return only the requested output with no preamble, no surrounding quotes, and no commentary. Preserve markdown, lists, inline code, code fences, URLs, numbers, and proper nouns whenever possible.'
+
+export const DEFAULT_AI_ACTION_PROMPTS: Record<AiTransformAction, string> = {
+  polish:
+    'Improve clarity, fluency, and tone while preserving the original meaning, structure, and terminology.',
+  shorten:
+    'Make the text materially shorter by removing redundancy while preserving the key meaning, structure, and important details.',
+  expand:
+    'Expand the text with useful clarification and supporting detail, but do not invent facts or claims that are not grounded in the original.',
+  translate: `Translate the text into ${AI_PROMPT_LANGUAGE_TOKEN} while preserving markdown, code, URLs, numbers, and product names.`,
+  explain:
+    'Explain the text in plain language. If the text is technical, clarify what it means, what it does, and why it matters.',
+  custom:
+    "Follow the user's custom instruction exactly. Preserve markdown, code fences, URLs, and proper nouns unless the instruction explicitly asks you to change them.",
+}
+
+function normalizePrompt(
+  value: unknown,
+  fallback: string,
+  maxLength: number,
+) {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+
+  if (!normalized) {
+    return fallback
+  }
+
+  return normalized.slice(0, maxLength)
+}
+
+function normalizeModelId(value: unknown) {
+  return typeof value === 'string'
+    ? value.trim().slice(0, MAX_AI_MODEL_ID_LENGTH)
+    : ''
+}
+
+export function createDefaultAiPromptSettings(): AiPromptSettings {
+  return {
+    systemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
+    actionPrompts: { ...DEFAULT_AI_ACTION_PROMPTS },
+    actionModelIds: AI_TRANSFORM_ACTIONS.reduce(
+      (acc, action) => {
+        acc[action] = ''
+        return acc
+      },
+      {} as Record<AiTransformAction, string>,
+    ),
+  }
+}
+
+export function sanitizeAiPromptSettings(
+  raw: Partial<AiPromptSettings> | null | undefined,
+): AiPromptSettings {
+  const defaults = createDefaultAiPromptSettings()
+
+  return {
+    systemPrompt: normalizePrompt(
+      raw?.systemPrompt,
+      defaults.systemPrompt,
+      MAX_AI_SYSTEM_PROMPT_LENGTH,
+    ),
+    actionPrompts: AI_TRANSFORM_ACTIONS.reduce(
+      (acc, action) => {
+        acc[action] = normalizePrompt(
+          raw?.actionPrompts?.[action],
+          defaults.actionPrompts[action],
+          MAX_AI_ACTION_PROMPT_LENGTH,
+        )
+        return acc
+      },
+      {} as Record<AiTransformAction, string>,
+    ),
+    actionModelIds: AI_TRANSFORM_ACTIONS.reduce(
+      (acc, action) => {
+        acc[action] = normalizeModelId(raw?.actionModelIds?.[action])
+        return acc
+      },
+      {} as Record<AiTransformAction, string>,
+    ),
+  }
+}
+
+export function resolveAiPromptTemplate(
+  template: string,
+  targetLanguage?: string,
+) {
+  return template.replaceAll(
+    AI_PROMPT_LANGUAGE_TOKEN,
+    targetLanguage?.trim() || 'the requested language',
+  )
+}
+
+export function resolveAiActionPrompt(
+  action: AiTransformAction,
+  prompts: AiPromptSettings,
+  targetLanguage?: string,
+) {
+  return resolveAiPromptTemplate(prompts.actionPrompts[action], targetLanguage)
+}
+
+export function resolveAiActionModel(
+  action: AiTransformAction,
+  prompts: AiPromptSettings,
+  fallbackModelId: string | null,
+  availableModelIds?: string[],
+) {
+  const configuredModelId = normalizeModelId(prompts.actionModelIds[action])
+
+  if (!configuredModelId) {
+    return fallbackModelId
+  }
+
+  if (availableModelIds && !availableModelIds.includes(configuredModelId)) {
+    return fallbackModelId
+  }
+
+  return configuredModelId
+}
+
+export function countCustomizedAiPrompts(prompts: AiPromptSettings) {
+  const defaults = createDefaultAiPromptSettings()
+  let count = prompts.systemPrompt !== defaults.systemPrompt ? 1 : 0
+
+  for (const action of AI_TRANSFORM_ACTIONS) {
+    if (prompts.actionPrompts[action] !== defaults.actionPrompts[action]) {
+      count += 1
+    }
+
+    if (prompts.actionModelIds[action] !== defaults.actionModelIds[action]) {
+      count += 1
+    }
+  }
+
+  return count
+}

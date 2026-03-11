@@ -4,6 +4,7 @@ import {
   normalizeCodeLanguage,
   renderHighlightedCodeHtml,
 } from '@/lib/code-highlighting'
+import { renderHeatmapBlock } from '@/lib/heatmap'
 import { escapeHtml } from '@/lib/utils'
 
 function renderPrimitive(value: unknown): string {
@@ -121,6 +122,10 @@ function renderCodeBlock(token: Tokens.Code): string {
 
   if (normalized === 'json') {
     return renderJsonCodeBlock(token.text)
+  }
+
+  if (normalized === 'heatmap') {
+    return renderHeatmapBlock(token.text)
   }
 
   const label = getCodeLanguageLabel(normalized)

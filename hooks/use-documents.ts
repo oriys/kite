@@ -133,6 +133,7 @@ function normalizeDoc(raw: Record<string, unknown>): Doc {
     id: raw.id as string,
     title: raw.title as string,
     content: raw.content as string,
+    summary: String(raw.summary ?? ''),
     status: raw.status as DocStatus,
     createdAt: String(raw.createdAt),
     updatedAt: String(raw.updatedAt),

@@ -64,6 +64,7 @@ const snippetIcons: Record<string, React.ComponentType<{ className?: string }>> 
   'json-payload': FileJson,
   'image-figure': ImageIcon,
   'metrics-table': Table2,
+  heatmap: Table2,
   'file-tree': LayoutTemplate,
   'yaml-config': FileCode2,
   'environment-variables': Table2,

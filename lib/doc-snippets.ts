@@ -1,3 +1,5 @@
+import { createHeatmapSnippetTemplate } from './heatmap'
+
 export type DocSnippetCategory = 'Structure' | 'Writing' | 'Data' | 'API'
 
 export interface DocSnippet {
@@ -378,6 +380,14 @@ _Optional caption explaining what readers should notice in this visual._`,
 | Publish success rate | 99.9% | 99.96% |
 | Median review time | < 4h | 2.8h |
 | Docs freshness SLA | < 7d | 5d |`,
+  },
+  {
+    id: 'heatmap',
+    label: 'Heatmap',
+    description: 'Insert a heatmap block for intensity, workload, or trend distribution.',
+    category: 'Data',
+    keywords: ['heatmap', 'matrix', 'intensity', 'distribution', 'grid'],
+    template: createHeatmapSnippetTemplate(),
   },
   {
     id: 'file-tree',

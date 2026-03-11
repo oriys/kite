@@ -50,6 +50,7 @@ const COMMANDS = [
     group: 'Media & Advanced',
     items: [
       { id: 'table', label: 'Table', icon: Table, description: 'Insert a 3x3 table' },
+      { id: 'heatmap', label: 'Heatmap', icon: Table, description: 'Insert an editable heatmap block' },
       { id: 'code', label: 'Code Block', icon: FileCode, description: 'Insert a code snippet' },
       { id: 'divider', label: 'Divider', icon: Minus, description: 'Insert a horizontal rule' },
     ],
@@ -107,13 +108,17 @@ export const DocSlashMenu = React.forwardRef<
   // Handle escape key
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
+      if (!isVisible || e.key !== 'Escape') {
+        return
       }
+
+      e.preventDefault()
+      e.stopPropagation()
+      onClose()
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [isVisible, onClose])
 
   if (!isVisible || !position) return null
 

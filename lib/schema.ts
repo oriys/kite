@@ -113,6 +113,7 @@ export const documents = pgTable(
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     title: text('title').notNull().default('Untitled'),
     content: text('content').notNull().default(''),
+    summary: text('summary').notNull().default(''),
     status: docStatusEnum('status').notNull().default('draft'),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
@@ -124,6 +125,60 @@ export const documents = pgTable(
     index('documents_workspace_id_idx').on(t.workspaceId),
     index('documents_status_idx').on(t.status),
     index('documents_created_by_idx').on(t.createdBy),
+  ],
+)
+
+export const docAnnotationStatusEnum = pgEnum('doc_annotation_status', [
+  'open',
+  'resolved',
+])
+
+export const documentAnnotations = pgTable(
+  'document_annotations',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    quote: text('quote').notNull().default(''),
+    body: text('body').notNull(),
+    status: docAnnotationStatusEnum('status').notNull().default('open'),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    createdBy: text('created_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (t) => [
+    index('document_annotations_document_id_idx').on(t.documentId),
+    index('document_annotations_status_idx').on(t.status),
+    index('document_annotations_created_by_idx').on(t.createdBy),
+  ],
+)
+
+export const documentEvaluations = pgTable(
+  'document_evaluations',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    score: integer('score').notNull(),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    createdBy: text('created_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (t) => [
+    index('document_evaluations_document_id_idx').on(t.documentId),
+    index('document_evaluations_score_idx').on(t.score),
+    index('document_evaluations_created_by_idx').on(t.createdBy),
   ],
 )
 
@@ -179,6 +234,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
   sessions: many(sessions),
   workspaceMembers: many(workspaceMembers),
+  documentAnnotations: many(documentAnnotations),
+  documentEvaluations: many(documentEvaluations),
 }))
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -219,7 +276,37 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
     references: [users.id],
   }),
   versions: many(documentVersions),
+  annotations: many(documentAnnotations),
+  evaluations: many(documentEvaluations),
 }))
+
+export const documentAnnotationsRelations = relations(
+  documentAnnotations,
+  ({ one }) => ({
+    document: one(documents, {
+      fields: [documentAnnotations.documentId],
+      references: [documents.id],
+    }),
+    creator: one(users, {
+      fields: [documentAnnotations.createdBy],
+      references: [users.id],
+    }),
+  }),
+)
+
+export const documentEvaluationsRelations = relations(
+  documentEvaluations,
+  ({ one }) => ({
+    document: one(documents, {
+      fields: [documentEvaluations.documentId],
+      references: [documents.id],
+    }),
+    creator: one(users, {
+      fields: [documentEvaluations.createdBy],
+      references: [users.id],
+    }),
+  }),
+)
 
 export const docSnippetsRelations = relations(docSnippets, ({ one }) => ({
   workspace: one(workspaces, {
