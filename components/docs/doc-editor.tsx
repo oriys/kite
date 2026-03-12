@@ -29,21 +29,47 @@ import {
   resolveAiActionPrompt,
 } from '@/lib/ai-prompts'
 import {
-  type DocEditorAiPanelSide,
-} from '@/lib/doc-editor-layout'
-import { type DocSnippet } from '@/lib/doc-snippets'
-import {
-  createHeatmapSnippetTemplate,
   HEATMAP_FENCE_LANGUAGE,
   normalizeHeatmapDocument,
   serializeHeatmapDocument,
   type HeatmapDocument,
 } from '@/lib/heatmap'
 import { cn } from '@/lib/utils'
-import { renderMarkdown } from '@/lib/markdown'
 import { htmlToMd } from '@/lib/html-to-markdown'
+import { type DocSnippet } from '@/lib/doc-snippets'
 import { JsonViewerNode, SchemaViewerNode, HeatmapNode } from '@/lib/editor/custom-nodes'
 import { createImagePasteDropExtension } from '@/lib/editor/image-paste-drop'
+import {
+  type AiPreviewRequest,
+  type AiPreviewState,
+  type DocEditorProps,
+  type EditorMode,
+  type SplitPaneLeading,
+  type SplitPaneScrollSource,
+  DOC_SPLIT_RATIO_STORAGE_KEY,
+  DOC_SPLIT_LEADING_STORAGE_KEY,
+  DOC_SPLIT_RATIO_DEFAULT,
+  DOC_SPLIT_RATIO_MIN,
+  DOC_SPLIT_RATIO_MAX,
+  DOC_AI_SPLIT_RATIO_STORAGE_KEY,
+  DOC_AI_SPLIT_RATIO_DEFAULT,
+  DOC_AI_SPLIT_RATIO_MIN,
+  DOC_AI_SPLIT_RATIO_MAX,
+  DEFAULT_HEATMAP_SNIPPET,
+  PANE_TRANSITION,
+  clamp,
+  writeStorage,
+  readSplitPaneRatio,
+  readAiSplitRatio,
+  readSplitPaneLeading,
+  hasRichEditor,
+  hasSourceEditor,
+  mdToHtml,
+  getScrollableProgress,
+  setScrollableProgress,
+  appendAiResultToDocument,
+  sourceWrap,
+} from '@/lib/editor/editor-helpers'
 import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
@@ -73,140 +99,11 @@ import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
 import { wordCount } from '@/lib/utils'
 
+export type { DocEditorHandle } from '@/lib/editor/editor-helpers'
+
 // ── Lowlight setup ─────────────────────────────────────────────────────────
 
 const lowlight = createLowlight(common)
-
-// ── Types ──────────────────────────────────────────────────────────────────
-
-type EditorMode = EditorViewMode
-type SplitPaneLeading = 'wysiwyg' | 'source'
-type SplitPaneScrollSource = 'rich' | 'source'
-
-interface AiPreviewRequest {
-  scope: 'selection' | 'document'
-  action: AiTransformAction
-  modelId: string
-  modelLabel: string
-  originalText: string
-  selectionRange: { from: number; to: number } | null
-  targetLanguage?: string
-  customPrompt?: string
-}
-
-interface AiPreviewState extends AiPreviewRequest {
-  resultText: string
-}
-
-interface DocEditorProps {
-  content: string
-  onChange: (content: string) => void
-  readOnly?: boolean
-  className?: string
-  onModeChange?: (mode: EditorViewMode) => void
-  editorFocusRef?: React.MutableRefObject<DocEditorHandle | null>
-  onAiPreviewVisibilityChange?: (visible: boolean) => void
-  documentWidth?: number
-  onDocumentWidthChange?: (width: number) => void
-  onDocumentResizeStateChange?: (active: boolean) => void
-  aiPreviewSide?: DocEditorAiPanelSide
-  onAiPreviewSideChange?: (side: DocEditorAiPanelSide) => void
-}
-
-export interface DocEditorHandle {
-  focus: () => void
-}
-
-// ── Constants ──────────────────────────────────────────────────────────────
-
-const DOC_SPLIT_RATIO_STORAGE_KEY = 'doc-editor-split-pane-ratio'
-const DOC_SPLIT_LEADING_STORAGE_KEY = 'doc-editor-split-pane-leading'
-const DOC_SPLIT_RATIO_DEFAULT = 0.55
-const DOC_SPLIT_RATIO_MIN = 0.32
-const DOC_SPLIT_RATIO_MAX = 0.68
-const DOC_AI_SPLIT_RATIO_STORAGE_KEY = 'doc-editor-ai-split-ratio'
-const DOC_AI_SPLIT_RATIO_DEFAULT = 0.4
-const DOC_AI_SPLIT_RATIO_MIN = 0.24
-const DOC_AI_SPLIT_RATIO_MAX = 0.72
-
-const DEFAULT_HEATMAP_SNIPPET: DocSnippet = {
-  id: 'heatmap',
-  label: 'Heatmap',
-  description: 'Insert an editable heatmap block.',
-  category: 'Data',
-  keywords: ['heatmap', 'matrix', 'grid'],
-  template: createHeatmapSnippetTemplate(),
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function clamp(value: number, min: number, max: number, fallback: number) {
-  if (!Number.isFinite(value)) return fallback
-  return Math.min(max, Math.max(min, value))
-}
-
-function readStorage<T>(key: string, parse: (v: string | null) => T, fallback: T): T {
-  if (typeof window === 'undefined') return fallback
-  try {
-    return parse(window.localStorage.getItem(key))
-  } catch {
-    return fallback
-  }
-}
-
-function writeStorage(key: string, value: string) {
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(key, value)
-  }
-}
-
-function readSplitPaneRatio() {
-  return readStorage(DOC_SPLIT_RATIO_STORAGE_KEY, (v) => clamp(Number(v), DOC_SPLIT_RATIO_MIN, DOC_SPLIT_RATIO_MAX, DOC_SPLIT_RATIO_DEFAULT), DOC_SPLIT_RATIO_DEFAULT)
-}
-
-function readAiSplitRatio() {
-  return readStorage(DOC_AI_SPLIT_RATIO_STORAGE_KEY, (v) => clamp(Number(v), DOC_AI_SPLIT_RATIO_MIN, DOC_AI_SPLIT_RATIO_MAX, DOC_AI_SPLIT_RATIO_DEFAULT), DOC_AI_SPLIT_RATIO_DEFAULT)
-}
-
-function readSplitPaneLeading(): SplitPaneLeading {
-  return readStorage(DOC_SPLIT_LEADING_STORAGE_KEY, (v) => (v === 'source' ? 'source' : 'wysiwyg'), 'wysiwyg')
-}
-
-function hasRichEditor(mode: EditorMode) {
-  return mode === 'wysiwyg' || mode === 'split'
-}
-
-function hasSourceEditor(mode: EditorMode) {
-  return mode === 'source' || mode === 'split'
-}
-
-function mdToHtml(md: string): string {
-  return renderMarkdown(md)
-}
-
-function getScrollableProgress(el: Pick<HTMLElement, 'scrollTop' | 'scrollHeight' | 'clientHeight'>) {
-  const max = Math.max(el.scrollHeight - el.clientHeight, 0)
-  return max <= 0 ? 0 : el.scrollTop / max
-}
-
-function setScrollableProgress(el: Pick<HTMLElement, 'scrollTop' | 'scrollHeight' | 'clientHeight'>, progress: number) {
-  const max = Math.max(el.scrollHeight - el.clientHeight, 0)
-  el.scrollTop = max <= 0 ? 0 : Math.min(1, Math.max(0, progress)) * max
-}
-
-function appendAiResultToDocument(currentMd: string, result: string): string {
-  const trimmed = currentMd.trimEnd()
-  return trimmed ? `${trimmed}\n\n---\n\n${result}` : result
-}
-
-// ── Pane transition config ─────────────────────────────────────────────────
-
-const paneTransition = {
-  type: 'spring' as const,
-  stiffness: 320,
-  damping: 38,
-  mass: 0.8,
-}
 
 // ── Main Editor Component ──────────────────────────────────────────────────
 
@@ -1148,7 +1045,7 @@ export function DocEditor({
         >
         <motion.div
           layout
-          transition={paneTransition}
+          transition={PANE_TRANSITION}
           style={
             mode === 'split'
               ? ({ '--doc-split-columns': splitPaneColumns } as React.CSSProperties)
@@ -1179,7 +1076,7 @@ export function DocEditor({
                     initial={reducedMotion ? false : { opacity: 0, x: -18, scale: 0.995 }}
                     animate={reducedMotion ? undefined : { opacity: 1, x: 0, scale: 1 }}
                     exit={reducedMotion ? undefined : { opacity: 0, x: -18, scale: 0.995 }}
-                    transition={paneTransition}
+                    transition={PANE_TRANSITION}
                     className={cn(
                       'min-h-0 overflow-auto transition-[box-shadow] duration-200',
                       mode === 'split' && (wysiwygOnLeft ? 'md:order-1' : 'md:order-2'),
@@ -1260,7 +1157,7 @@ export function DocEditor({
                     initial={reducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }}
                     animate={reducedMotion ? undefined : { opacity: 1, x: 0, scale: 1 }}
                     exit={reducedMotion ? undefined : { opacity: 0, x: 18, scale: 0.995 }}
-                    transition={paneTransition}
+                    transition={PANE_TRANSITION}
                     className={cn(
                       'min-h-0 transition-[box-shadow] duration-200',
                       mode === 'split' && (wysiwygOnLeft ? 'md:order-2' : 'md:order-1'),
@@ -1509,18 +1406,4 @@ export function DocEditor({
       </div>
     </div>
   )
-}
-
-// ── Source mode helpers ─────────────────────────────────────────────────────
-
-function sourceWrap(ta: HTMLTextAreaElement, before: string, after: string) {
-  const start = ta.selectionStart
-  const end = ta.selectionEnd
-  const selected = ta.value.substring(start, end)
-  const replacement = `${before}${selected || 'text'}${after}`
-  ta.focus()
-  document.execCommand('insertText', false, replacement)
-  const newStart = start + before.length
-  const newEnd = newStart + (selected.length || 4)
-  ta.setSelectionRange(newStart, newEnd)
 }
