@@ -1,6 +1,6 @@
 const DOC_PENDING_SUMMARY_STORAGE_KEY = 'editorial-doc-pending-summary-ids'
 
-function readPendingDocumentSummaryIds() {
+function readPendingIds(): string[] {
   if (typeof window === 'undefined') return []
 
   try {
@@ -18,34 +18,32 @@ function readPendingDocumentSummaryIds() {
   }
 }
 
-function writePendingDocumentSummaryIds(ids: string[]) {
+function writePendingIds(ids: string[]) {
   if (typeof window === 'undefined') return
 
-  try {
-    if (ids.length === 0) {
-      window.sessionStorage.removeItem(DOC_PENDING_SUMMARY_STORAGE_KEY)
-      return
-    }
+  if (ids.length === 0) {
+    window.sessionStorage.removeItem(DOC_PENDING_SUMMARY_STORAGE_KEY)
+    return
+  }
 
+  try {
     window.sessionStorage.setItem(
       DOC_PENDING_SUMMARY_STORAGE_KEY,
       JSON.stringify(ids),
     )
-  } catch {}
+  } catch { /* storage full — silently ignore */ }
 }
 
 export function getPendingDocumentSummaryIds() {
-  return readPendingDocumentSummaryIds()
+  return readPendingIds()
 }
 
 export function queuePendingDocumentSummary(id: string) {
-  const nextIds = new Set(readPendingDocumentSummaryIds())
+  const nextIds = new Set(readPendingIds())
   nextIds.add(id)
-  writePendingDocumentSummaryIds([...nextIds])
+  writePendingIds([...nextIds])
 }
 
 export function clearPendingDocumentSummary(id: string) {
-  writePendingDocumentSummaryIds(
-    readPendingDocumentSummaryIds().filter((queuedId) => queuedId !== id),
-  )
+  writePendingIds(readPendingIds().filter((queuedId) => queuedId !== id))
 }

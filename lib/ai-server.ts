@@ -52,26 +52,22 @@ export async function requestAiTextCompletion(input: {
   model?: string
   temperature?: number
 }) {
-  const apiKey =
-    process.env.AIHUBMIX_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim()
+  const apiKey = process.env.AIHUBMIX_API_KEY?.trim()
 
   if (!apiKey) {
     throw new AiCompletionError(
-      'AIHUBMIX_API_KEY is not configured on the server. OPENAI_API_KEY is also accepted as a fallback.',
+      'AIHUBMIX_API_KEY is not configured on the server.',
       503,
     )
   }
 
   const baseUrl = (
-    process.env.AIHUBMIX_BASE_URL?.trim() ||
-    process.env.OPENAI_BASE_URL?.trim() ||
-    DEFAULT_AIHUBMIX_BASE_URL
+    process.env.AIHUBMIX_BASE_URL?.trim() || DEFAULT_AIHUBMIX_BASE_URL
   ).replace(/\/$/, '')
 
   const model =
     input.model?.trim() ||
     process.env.AIHUBMIX_MODEL?.trim() ||
-    process.env.OPENAI_MODEL?.trim() ||
     DEFAULT_AIHUBMIX_MODEL
 
   const upstream = await fetch(`${baseUrl}/chat/completions`, {

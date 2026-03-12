@@ -3,9 +3,8 @@
 import Link from 'next/link'
 import { FileText, Clock, Trash2 } from 'lucide-react'
 
-import { cn } from '@/lib/utils'
-import { type Doc, STATUS_CONFIG, wordCount } from '@/lib/documents'
-import { getDocEditorHref } from '@/lib/docs-url'
+import { cn, wordCount } from '@/lib/utils'
+import { type Doc, STATUS_CONFIG, getDocEditorHref } from '@/lib/documents'
 import { Button } from '@/components/ui/button'
 import {
   Card,

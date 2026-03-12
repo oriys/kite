@@ -8,14 +8,15 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
+import { useSearchOpen } from '@/components/search-command'
 
 export function SearchTrigger() {
+  const openSearch = useSearchOpen()
+
   return (
     <InputGroup
       className="w-full sm:w-[340px] cursor-pointer"
-      onClick={() => {
-        document.querySelector<HTMLButtonElement>('[data-slot="search-trigger"]')?.click()
-      }}
+      onClick={() => openSearch?.()}
     >
       <InputGroupAddon align="inline-start">
         <Search className="size-4" />

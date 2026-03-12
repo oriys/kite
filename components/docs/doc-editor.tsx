@@ -72,7 +72,7 @@ import { DocHeatmapEditorDialog } from '@/components/docs/doc-heatmap-editor-dia
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
-import { wordCount } from '@/lib/documents'
+import { wordCount } from '@/lib/utils'
 
 // ── Lowlight setup ─────────────────────────────────────────────────────────
 

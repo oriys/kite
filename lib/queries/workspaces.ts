@@ -14,6 +14,7 @@ export async function getUserWorkspaces(userId: string) {
     .from(workspaceMembers)
     .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
     .where(eq(workspaceMembers.userId, userId))
+    .orderBy(workspaces.createdAt)
 
   return rows
 }

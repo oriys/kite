@@ -14,8 +14,8 @@ import {
   queuePendingDocumentSummary,
 } from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
-import { getDocEditorHref } from '@/lib/docs-url'
-import { getDocEditorShellWidth } from '@/lib/doc-editor-layout'
+import { getDocEditorHref } from '@/lib/documents'
+import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
 import { useDocument } from '@/hooks/use-documents'
 import { useDocEditorWidth } from '@/hooks/use-doc-editor-width'
@@ -37,7 +37,7 @@ function getEditorShellClassName(resizing = false) {
 
 function getEditorShellStyle(documentWidth: number) {
   return {
-    maxWidth: `${getDocEditorShellWidth(documentWidth)}px`,
+    maxWidth: `${clampDocEditorWidth(documentWidth)}px`,
   } satisfies React.CSSProperties
 }
 

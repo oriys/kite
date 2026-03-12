@@ -3,15 +3,7 @@ import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, notFound, badRequest } from '@/lib/api-utils'
 import { getDocument, transitionDocument } from '@/lib/queries/documents'
 import type { DocStatus } from '@/lib/documents'
-
-const VALID_STATUSES = ['draft', 'review', 'published', 'archived'] as const
-
-const ALLOWED_TRANSITIONS: Record<DocStatus, readonly DocStatus[]> = {
-  draft: ['review', 'archived'],
-  review: ['draft', 'published', 'archived'],
-  published: ['archived'],
-  archived: ['draft'],
-}
+import { isValidStatus, ALLOWED_TRANSITIONS } from '@/lib/constants'
 
 export async function POST(
   request: NextRequest,
@@ -21,7 +13,7 @@ export async function POST(
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)
-  if (!body?.status || !VALID_STATUSES.includes(body.status)) {
+  if (!body?.status || !isValidStatus(body.status)) {
     return badRequest('Invalid status')
   }
 

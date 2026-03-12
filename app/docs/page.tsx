@@ -2,12 +2,13 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Download, Plus, Search, X } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 
 import {
   isDocumentTitleMissing,
   type DocStatus,
   STATUS_CONFIG,
+  getDocEditorHref,
 } from '@/lib/documents'
 import {
   clearPendingDocumentSummary,
@@ -17,7 +18,6 @@ import { useDocuments } from '@/hooks/use-documents'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { DocList } from '@/components/docs/doc-list'
-import { getDocEditorHref } from '@/lib/docs-url'
 import {
   Dialog,
   DialogContent,
@@ -31,42 +31,8 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 const statuses: (DocStatus | 'all')[] = ['all', 'draft', 'review', 'published', 'archived']
-const LEGACY_DOCS_STORAGE_KEY = 'editorial-docs'
-const LEGACY_DOCS_IMPORTED_KEY = 'editorial-docs-imported'
-const LEGACY_DOCS_DISMISSED_KEY = 'editorial-docs-import-dismissed'
 const SUMMARY_REFRESH_INTERVAL_MS = 1500
 const SUMMARY_REFRESH_MAX_ATTEMPTS = 6
-
-interface LegacyDocVersion {
-  content: string
-  savedAt?: string
-  wordCount?: number
-}
-
-interface LegacyDoc {
-  title?: string
-  content?: string
-  status?: DocStatus
-  createdAt?: string
-  updatedAt?: string
-  versions?: LegacyDocVersion[]
-}
-
-function readLegacyDocs(): LegacyDoc[] {
-  if (typeof window === 'undefined') return []
-
-  try {
-    const raw = window.localStorage.getItem(LEGACY_DOCS_STORAGE_KEY)
-    if (!raw) return []
-
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-
-    return parsed.filter((doc): doc is LegacyDoc => Boolean(doc && typeof doc === 'object'))
-  } catch {
-    return []
-  }
-}
 
 export default function DocsPage() {
   const router = useRouter()
@@ -75,9 +41,6 @@ export default function DocsPage() {
   const [newTitle, setNewTitle] = React.useState('')
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [legacyDocs, setLegacyDocs] = React.useState<LegacyDoc[]>([])
-  const [importingLegacyDocs, setImportingLegacyDocs] = React.useState(false)
-  const [legacyImportMessage, setLegacyImportMessage] = React.useState<string | null>(null)
   const pendingSummaryRefreshRef = React.useRef(false)
 
   const filteredItems = React.useMemo(
@@ -103,14 +66,6 @@ export default function DocsPage() {
     }
     return c
   }, [items])
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (window.localStorage.getItem(LEGACY_DOCS_IMPORTED_KEY)) return
-    if (window.localStorage.getItem(LEGACY_DOCS_DISMISSED_KEY)) return
-
-    setLegacyDocs(readLegacyDocs())
-  }, [])
 
   React.useEffect(() => {
     if (loading || pendingSummaryRefreshRef.current) return
@@ -161,76 +116,6 @@ export default function DocsPage() {
       }
     }
   }, [loading, refresh])
-
-  const dismissLegacyImport = React.useCallback(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(LEGACY_DOCS_DISMISSED_KEY, new Date().toISOString())
-    }
-    setLegacyDocs([])
-    setLegacyImportMessage(null)
-  }, [])
-
-  const handleImportLegacyDocs = React.useCallback(async () => {
-    if (legacyDocs.length === 0) return
-
-    setImportingLegacyDocs(true)
-    setLegacyImportMessage(null)
-
-    const payload = legacyDocs
-      .map((doc) => ({
-        title: typeof doc.title === 'string' ? doc.title : 'Untitled',
-        content: typeof doc.content === 'string' ? doc.content : '',
-        status: doc.status,
-        createdAt: doc.createdAt,
-        updatedAt: doc.updatedAt,
-        versions: Array.isArray(doc.versions)
-          ? doc.versions
-              .filter(
-                (version): version is LegacyDocVersion =>
-                  Boolean(version && typeof version.content === 'string'),
-              )
-              .map((version) => ({
-                content: version.content,
-                savedAt: version.savedAt,
-                wordCount: version.wordCount,
-              }))
-          : [],
-      }))
-      .filter((doc) => doc.content.length > 0 || doc.title !== 'Untitled')
-
-    try {
-      const res = await fetch('/api/documents/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documents: payload }),
-      })
-
-      if (!res.ok) {
-        const error = await res.json().catch(() => null)
-        throw new Error(
-          typeof error?.error === 'string' ? error.error : 'Failed to import local documents',
-        )
-      }
-
-      const data = await res.json()
-      await refresh()
-
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(LEGACY_DOCS_IMPORTED_KEY, new Date().toISOString())
-      }
-
-      setLegacyDocs([])
-      setLegacyImportMessage(
-        `Imported ${data.importedCount ?? payload.length} local document${(data.importedCount ?? payload.length) === 1 ? '' : 's'}.`,
-      )
-    } catch (error) {
-      setLegacyImportMessage(
-        error instanceof Error ? error.message : 'Failed to import local documents',
-      )
-    } finally {
-      setImportingLegacyDocs(false)
-    }
-  }, [legacyDocs, refresh])
 
   const handleCreate = async () => {
     const title = newTitle.trim() || 'Untitled'
@@ -286,38 +171,6 @@ export default function DocsPage() {
       </div>
 
       {/* Status filter tabs */}
-      {legacyDocs.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border/70 bg-muted/35 px-4 py-3">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">
-              Found {legacyDocs.length} local document{legacyDocs.length === 1 ? '' : 's'} from the old editor
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Import them into your current workspace so your previous content shows up again.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={handleImportLegacyDocs}
-              disabled={importingLegacyDocs}
-            >
-              <Download className="mr-1.5 size-3.5" />
-              {importingLegacyDocs ? 'Importing…' : 'Import local docs'}
-            </Button>
-            <Button size="icon-sm" variant="ghost" onClick={dismissLegacyImport} aria-label="Dismiss import notice">
-              <X className="size-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {legacyImportMessage && (
-        <div className="mb-4 rounded-lg border border-border/70 bg-card px-4 py-3 text-sm text-muted-foreground">
-          {legacyImportMessage}
-        </div>
-      )}
-
       <div className="mb-6 flex flex-wrap items-center gap-3 border-b border-border/60 pb-3">
         <div className="flex flex-wrap items-center gap-1.5">
           {statuses.map((s) => (

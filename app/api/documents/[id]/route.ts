@@ -6,9 +6,7 @@ import {
   updateDocument,
   deleteDocument,
 } from '@/lib/queries/documents'
-
-const MAX_TITLE_LENGTH = 255
-const MAX_CONTENT_SIZE = 10 * 1024 * 1024 // 10 MB
+import { MAX_TITLE_LENGTH, MAX_CONTENT_SIZE } from '@/lib/constants'
 
 export async function GET(
   _request: NextRequest,

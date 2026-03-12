@@ -2,26 +2,23 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { listDocuments, createDocument } from '@/lib/queries/documents'
-
-const VALID_STATUSES = ['draft', 'review', 'published', 'archived'] as const
-const MAX_TITLE_LENGTH = 255
-const MAX_CONTENT_SIZE = 10 * 1024 * 1024 // 10 MB
+import { isValidStatus, MAX_TITLE_LENGTH, MAX_CONTENT_SIZE } from '@/lib/constants'
+import type { DocStatus } from '@/lib/documents'
 
 export async function GET(request: NextRequest) {
   const result = await withWorkspaceAuth('viewer')
   if ('error' in result) return result.error
 
   const { searchParams } = request.nextUrl
-  const status = searchParams.get('status')
+  const rawStatus = searchParams.get('status')
 
-  if (status && !VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])) {
-    return badRequest('Invalid status filter')
+  let statusFilter: DocStatus | undefined
+  if (rawStatus) {
+    if (!isValidStatus(rawStatus)) return badRequest('Invalid status filter')
+    statusFilter = rawStatus
   }
 
-  const docs = await listDocuments(
-    result.ctx.workspaceId,
-    (status as (typeof VALID_STATUSES)[number]) ?? undefined,
-  )
+  const docs = await listDocuments(result.ctx.workspaceId, statusFilter)
   return NextResponse.json(docs)
 }
 
