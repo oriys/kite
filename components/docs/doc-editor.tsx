@@ -44,32 +44,15 @@ import {
   type AiPreviewState,
   type DocEditorProps,
   type EditorMode,
-  type SplitPaneLeading,
-  type SplitPaneScrollSource,
-  DOC_SPLIT_RATIO_STORAGE_KEY,
-  DOC_SPLIT_LEADING_STORAGE_KEY,
-  DOC_SPLIT_RATIO_DEFAULT,
-  DOC_SPLIT_RATIO_MIN,
-  DOC_SPLIT_RATIO_MAX,
-  DOC_AI_SPLIT_RATIO_STORAGE_KEY,
-  DOC_AI_SPLIT_RATIO_DEFAULT,
-  DOC_AI_SPLIT_RATIO_MIN,
-  DOC_AI_SPLIT_RATIO_MAX,
   DEFAULT_HEATMAP_SNIPPET,
   PANE_TRANSITION,
-  clamp,
-  writeStorage,
-  readSplitPaneRatio,
-  readAiSplitRatio,
-  readSplitPaneLeading,
   hasRichEditor,
   hasSourceEditor,
   mdToHtml,
-  getScrollableProgress,
-  setScrollableProgress,
   appendAiResultToDocument,
   sourceWrap,
 } from '@/lib/editor/editor-helpers'
+import { useEditorResize } from '@/hooks/use-editor-resize'
 import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
@@ -186,18 +169,18 @@ export function DocEditor({
     requestAnimationFrame(() => setA11yAnnouncement(message))
   }, [])
 
-  // ── Layout state ─────────────────────────────────────────────────────────
-  const [documentResizeActive, setDocumentResizeActive] = React.useState(false)
-  const [splitPaneResizeActive, setSplitPaneResizeActive] = React.useState(false)
-  const [splitPaneRatio, setSplitPaneRatio] = React.useState(readSplitPaneRatio)
-  const [aiSplitRatio, setAiSplitRatio] = React.useState(readAiSplitRatio)
-  const [splitPaneLeading, setSplitPaneLeading] = React.useState<SplitPaneLeading>(readSplitPaneLeading)
+  // ── Layout (resize hook) ─────────────────────────────────────────────────
+  const resize = useEditorResize({
+    documentWidth,
+    onDocumentWidthChange,
+    aiPreviewSide,
+    onAiPreviewSideChange,
+    hasAiPreview: Boolean(ai.preview),
+  })
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const editorWrapperRef = React.useRef<HTMLDivElement>(null)
   const editorViewportRef = React.useRef<HTMLDivElement>(null)
-  const splitPaneRef = React.useRef<HTMLDivElement>(null)
-  const aiSplitPaneRef = React.useRef<HTMLDivElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const latestMdRef = React.useRef(content)
   const switchingRef = React.useRef(false)
@@ -206,34 +189,19 @@ export function DocEditor({
   const customPromptSelectionRef = React.useRef<{ from: number; to: number } | null>(null)
   const slashMenuRef = React.useRef<{ show: () => void; hide: () => void }>(null)
   const activeHeatmapPosRef = React.useRef<number | null>(null)
-  const documentResizeRef = React.useRef<{
-    startClientX: number
-    startValue: number
-    mode: 'document' | 'ai-preview'
-    dragged: boolean
-  } | null>(null)
-  const splitPaneResizeRef = React.useRef<{
-    startClientX: number
-    startRatio: number
-    dragged: boolean
-  } | null>(null)
-  const splitPaneScrollSyncRef = React.useRef<{
-    source: SplitPaneScrollSource | null
-    frame: number | null
-  }>({ source: null, frame: null })
 
   const reducedMotion = useReducedMotion()
   const editingMode: ToolbarMode = mode === 'split' ? activePane : mode
   const aiDocumentPendingAction = ai.pendingScope === 'document' ? ai.pendingAction : null
-  const wysiwygOnLeft = splitPaneLeading === 'wysiwyg'
+  const wysiwygOnLeft = resize.splitPaneLeading === 'wysiwyg'
   const aiPreviewOnLeft = Boolean(ai.preview) && aiPreviewSide === 'left'
-  const splitPaneColumns = `minmax(0, ${splitPaneRatio}fr) minmax(0, ${1 - splitPaneRatio}fr)`
+  const splitPaneColumns = `minmax(0, ${resize.splitPaneRatio}fr) minmax(0, ${1 - resize.splitPaneRatio}fr)`
   const aiSplitColumns = ai.preview
     ? aiPreviewOnLeft
-      ? `minmax(0, ${aiSplitRatio}fr) minmax(0, ${1 - aiSplitRatio}fr)`
-      : `minmax(0, ${1 - aiSplitRatio}fr) minmax(0, ${aiSplitRatio}fr)`
+      ? `minmax(0, ${resize.aiSplitRatio}fr) minmax(0, ${1 - resize.aiSplitRatio}fr)`
+      : `minmax(0, ${1 - resize.aiSplitRatio}fr) minmax(0, ${resize.aiSplitRatio}fr)`
     : null
-  const aiSplitDividerPosition = aiPreviewOnLeft ? aiSplitRatio : 1 - aiSplitRatio
+  const aiSplitDividerPosition = aiPreviewOnLeft ? resize.aiSplitRatio : 1 - resize.aiSplitRatio
 
   // ── Tiptap Editor ────────────────────────────────────────────────────────
 
@@ -427,7 +395,7 @@ export function DocEditor({
 
   React.useEffect(() => { onModeChange?.(mode) }, [mode, onModeChange])
   React.useEffect(() => { onAiPreviewVisibilityChange?.(Boolean(ai.preview)) }, [ai.preview, onAiPreviewVisibilityChange])
-  React.useEffect(() => { onDocumentResizeStateChange?.(documentResizeActive) }, [documentResizeActive, onDocumentResizeStateChange])
+  React.useEffect(() => { onDocumentResizeStateChange?.(resize.documentResizeActive) }, [resize.documentResizeActive, onDocumentResizeStateChange])
 
   const handleModeChange = React.useCallback((newMode: EditorViewMode) => {
     flushHtmlToMd()
@@ -838,145 +806,6 @@ export function DocEditor({
     [editor, onChange],
   )
 
-  // ── Split pane scroll sync ───────────────────────────────────────────────
-
-  const handleSplitPaneScroll = React.useCallback(
-    (source: SplitPaneScrollSource, scrollElement: HTMLElement, targetElement: HTMLElement) => {
-      const sync = splitPaneScrollSyncRef.current
-      if (sync.source && sync.source !== source) return
-      sync.source = source
-
-      if (sync.frame !== null) cancelAnimationFrame(sync.frame)
-      sync.frame = requestAnimationFrame(() => {
-        const progress = getScrollableProgress(scrollElement)
-        setScrollableProgress(targetElement, progress)
-        sync.source = null
-        sync.frame = null
-      })
-    },
-    [],
-  )
-
-  // ── Split pane resize ────────────────────────────────────────────────────
-
-  const handleSplitPaneResizeStart = React.useCallback((event: React.MouseEvent | React.TouchEvent) => {
-    event.preventDefault()
-    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX
-    splitPaneResizeRef.current = {
-      startClientX: clientX,
-      startRatio: splitPaneRatio,
-      dragged: false,
-    }
-    setSplitPaneResizeActive(true)
-  }, [splitPaneRatio])
-
-  React.useEffect(() => {
-    if (!splitPaneResizeActive) return
-    const onMove = (e: MouseEvent | TouchEvent) => {
-      const ref = splitPaneResizeRef.current
-      const pane = splitPaneRef.current
-      if (!ref || !pane) return
-      ref.dragged = true
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-      const dx = clientX - ref.startClientX
-      const paneWidth = pane.offsetWidth
-      if (paneWidth <= 0) return
-      const next = clamp(ref.startRatio + dx / paneWidth, DOC_SPLIT_RATIO_MIN, DOC_SPLIT_RATIO_MAX, DOC_SPLIT_RATIO_DEFAULT)
-      setSplitPaneRatio(next)
-    }
-    const onUp = () => {
-      setSplitPaneResizeActive(false)
-      const ref = splitPaneResizeRef.current
-      if (!ref?.dragged) {
-        const next: SplitPaneLeading = splitPaneLeading === 'wysiwyg' ? 'source' : 'wysiwyg'
-        setSplitPaneLeading(next)
-        writeStorage(DOC_SPLIT_LEADING_STORAGE_KEY, next)
-      } else {
-        writeStorage(DOC_SPLIT_RATIO_STORAGE_KEY, String(splitPaneRatio))
-      }
-      splitPaneResizeRef.current = null
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-    document.addEventListener('touchmove', onMove, { passive: false })
-    document.addEventListener('touchend', onUp)
-    return () => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-      document.removeEventListener('touchmove', onMove)
-      document.removeEventListener('touchend', onUp)
-    }
-  }, [splitPaneResizeActive, splitPaneLeading, splitPaneRatio])
-
-  // ── Document / AI pane resize ────────────────────────────────────────────
-
-  const handleDocumentResizeStart = React.useCallback(
-    (event: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
-      const resizingAi = Boolean(ai.preview)
-      const canResizeAi = resizingAi && Boolean(aiSplitPaneRef.current)
-      const canResizeDoc = !resizingAi && typeof documentWidth === 'number' && Boolean(onDocumentWidthChange)
-      if (!canResizeAi && !canResizeDoc) return
-
-      event.preventDefault()
-      event.stopPropagation()
-
-      const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX
-      documentResizeRef.current = {
-        startClientX: clientX,
-        startValue: canResizeAi ? aiSplitRatio : documentWidth ?? 0,
-        mode: canResizeAi ? 'ai-preview' : 'document',
-        dragged: false,
-      }
-      setDocumentResizeActive(true)
-    },
-    [ai.preview, aiSplitRatio, documentWidth, onDocumentWidthChange],
-  )
-
-  React.useEffect(() => {
-    if (!documentResizeActive) return
-    const onMove = (e: MouseEvent | TouchEvent) => {
-      const ref = documentResizeRef.current
-      if (!ref) return
-      ref.dragged = true
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-      if (ref.mode === 'ai-preview') {
-        const pane = aiSplitPaneRef.current
-        if (!pane) return
-        const dx = clientX - ref.startClientX
-        const paneWidth = pane.offsetWidth
-        if (paneWidth <= 0) return
-        const next = clamp(ref.startValue + dx / paneWidth, DOC_AI_SPLIT_RATIO_MIN, DOC_AI_SPLIT_RATIO_MAX, DOC_AI_SPLIT_RATIO_DEFAULT)
-        setAiSplitRatio(next)
-      } else {
-        const dx = clientX - ref.startClientX
-        const next = Math.max(520, ref.startValue + dx * 2)
-        onDocumentWidthChange?.(next)
-      }
-    }
-    const onUp = () => {
-      setDocumentResizeActive(false)
-      const ref = documentResizeRef.current
-      if (ref?.mode === 'ai-preview') {
-        if (!ref.dragged && onAiPreviewSideChange) {
-          onAiPreviewSideChange(aiPreviewSide === 'left' ? 'right' : 'left')
-        } else {
-          writeStorage(DOC_AI_SPLIT_RATIO_STORAGE_KEY, String(aiSplitRatio))
-        }
-      }
-      documentResizeRef.current = null
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-    document.addEventListener('touchmove', onMove, { passive: false })
-    document.addEventListener('touchend', onUp)
-    return () => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-      document.removeEventListener('touchmove', onMove)
-      document.removeEventListener('touchend', onUp)
-    }
-  }, [documentResizeActive, aiSplitRatio, aiPreviewSide, onAiPreviewSideChange, onDocumentWidthChange])
-
   // ── Source keyboard shortcuts ────────────────────────────────────────────
 
   const handleSourceKeyDown = React.useCallback(
@@ -1080,7 +909,7 @@ export function DocEditor({
 
         {/* Editor area */}
         <div
-          ref={aiSplitPaneRef}
+          ref={resize.aiSplitPaneRef}
           style={
             ai.preview && aiSplitColumns
               ? ({ '--doc-ai-split-columns': aiSplitColumns } as React.CSSProperties)
@@ -1107,7 +936,7 @@ export function DocEditor({
         >
           <div className="flex h-full min-h-0 min-w-0 flex-col">
             <div
-              ref={splitPaneRef}
+              ref={resize.splitPaneRef}
               className={cn(
                 'group/split-pane relative min-h-0 min-w-0 flex-1',
                 mode === 'split'
@@ -1143,7 +972,7 @@ export function DocEditor({
                             const viewport = editorViewportRef.current
                             const ta = textareaRef.current
                             if (viewport && ta) {
-                              handleSplitPaneScroll('rich', viewport, ta)
+                              resize.handleSplitPaneScroll('rich', viewport, ta)
                             }
                           }
                         : undefined
@@ -1249,17 +1078,17 @@ export function DocEditor({
               {mode === 'split' ? (
                 <button
                   type="button"
-                  onMouseDown={handleSplitPaneResizeStart}
-                  onTouchStart={handleSplitPaneResizeStart}
+                  onMouseDown={resize.handleSplitPaneResizeStart}
+                  onTouchStart={resize.handleSplitPaneResizeStart}
                   aria-label="Drag to resize split editors, click to swap sides"
                   title="Drag to resize split editors, click to swap sides"
                   className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center touch-none md:flex"
-                  style={{ left: `${splitPaneRatio * 100}%` }}
+                  style={{ left: `${resize.splitPaneRatio * 100}%` }}
                 >
                   <span
                     className={cn(
                       'absolute h-full w-px bg-border/60 transition-colors duration-200',
-                      splitPaneResizeActive ? 'bg-foreground/45' : 'group-hover/split-pane:bg-foreground/28',
+                      resize.splitPaneResizeActive ? 'bg-foreground/45' : 'group-hover/split-pane:bg-foreground/28',
                     )}
                   />
                 </button>
@@ -1271,8 +1100,8 @@ export function DocEditor({
           {!ai.preview && onDocumentWidthChange && typeof documentWidth === 'number' ? (
             <button
               type="button"
-              onMouseDown={handleDocumentResizeStart}
-              onTouchStart={handleDocumentResizeStart}
+              onMouseDown={resize.handleDocumentResizeStart}
+              onTouchStart={resize.handleDocumentResizeStart}
               aria-label="Resize document width"
               className={cn(
                 'absolute inset-y-0 z-40 hidden cursor-col-resize items-center justify-center touch-none xl:flex',
@@ -1282,7 +1111,7 @@ export function DocEditor({
               <span
                 className={cn(
                   'h-full w-px bg-border/60 transition-colors duration-200',
-                  documentResizeActive ? 'bg-foreground/45' : 'group-hover/document-pane:bg-foreground/28',
+                  resize.documentResizeActive ? 'bg-foreground/45' : 'group-hover/document-pane:bg-foreground/28',
                 )}
               />
             </button>
@@ -1327,8 +1156,8 @@ export function DocEditor({
         {ai.preview ? (
           <button
             type="button"
-            onMouseDown={handleDocumentResizeStart}
-            onTouchStart={handleDocumentResizeStart}
+            onMouseDown={resize.handleDocumentResizeStart}
+            onTouchStart={resize.handleDocumentResizeStart}
             aria-label="Drag to resize AI split panes, click to swap sides"
             title="Drag to resize AI split panes, click to swap sides"
             className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center touch-none xl:flex"
@@ -1337,7 +1166,7 @@ export function DocEditor({
             <span
               className={cn(
                 'absolute h-full w-px bg-border/60 transition-colors duration-200',
-                documentResizeActive ? 'bg-foreground/45' : 'group-hover/ai-split-pane:bg-foreground/28',
+                resize.documentResizeActive ? 'bg-foreground/45' : 'group-hover/ai-split-pane:bg-foreground/28',
               )}
             />
           </button>
