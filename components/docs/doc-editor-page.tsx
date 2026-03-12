@@ -25,6 +25,7 @@ import {
   DocEditor,
   type DocEditorHandle,
 } from '@/components/docs/doc-editor'
+import { EditorErrorBoundary } from '@/components/docs/editor-error-boundary'
 import { DocStatusBar, type SaveState } from '@/components/docs/doc-status-bar'
 import { type EditorViewMode } from '@/components/docs/doc-toolbar'
 
@@ -385,20 +386,22 @@ export function DocEditorPageClient() {
           className={cn(getEditorShellClassName(documentResizeActive), 'py-4 xl:h-full')}
           style={editorShellStyle}
         >
-          <DocEditor
-            key={doc.id}
-            content={content}
-            onChange={handleContentChange}
-            readOnly={isReadOnly}
-            className="min-h-[60vh] xl:h-full"
-            onModeChange={setEditorMode}
-            editorFocusRef={editorFocusRef}
-            documentWidth={documentWidth}
-            onDocumentWidthChange={setDocumentWidth}
-            onDocumentResizeStateChange={setDocumentResizeActive}
-            aiPreviewSide={aiPanelSide}
-            onAiPreviewSideChange={setAiPanelSide}
-          />
+          <EditorErrorBoundary>
+            <DocEditor
+              key={doc.id}
+              content={content}
+              onChange={handleContentChange}
+              readOnly={isReadOnly}
+              className="min-h-[60vh] xl:h-full"
+              onModeChange={setEditorMode}
+              editorFocusRef={editorFocusRef}
+              documentWidth={documentWidth}
+              onDocumentWidthChange={setDocumentWidth}
+              onDocumentResizeStateChange={setDocumentResizeActive}
+              aiPreviewSide={aiPanelSide}
+              onAiPreviewSideChange={setAiPanelSide}
+            />
+          </EditorErrorBoundary>
         </div>
       </div>
 
