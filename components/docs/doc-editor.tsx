@@ -8,11 +8,10 @@ import TableRow from '@tiptap/extension-table-row'
 import TableCell from '@tiptap/extension-table-cell'
 import TableHeader from '@tiptap/extension-table-header'
 import TiptapLink from '@tiptap/extension-link'
-import TiptapImage from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import CharacterCount from '@tiptap/extension-character-count'
 import { common, createLowlight } from 'lowlight'
-import { Node, mergeAttributes } from '@tiptap/core'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
 import {
@@ -35,16 +34,16 @@ import {
 import { type DocSnippet } from '@/lib/doc-snippets'
 import {
   createHeatmapSnippetTemplate,
-  decodeHeatmapDocument,
   HEATMAP_FENCE_LANGUAGE,
   normalizeHeatmapDocument,
-  renderHeatmapBlockFromData,
   serializeHeatmapDocument,
   type HeatmapDocument,
 } from '@/lib/heatmap'
 import { cn } from '@/lib/utils'
 import { renderMarkdown } from '@/lib/markdown'
 import { htmlToMd } from '@/lib/html-to-markdown'
+import { JsonViewerNode, SchemaViewerNode, HeatmapNode } from '@/lib/editor/custom-nodes'
+import { createImagePasteDropExtension } from '@/lib/editor/image-paste-drop'
 import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
@@ -77,169 +76,6 @@ import { wordCount } from '@/lib/utils'
 // ── Lowlight setup ─────────────────────────────────────────────────────────
 
 const lowlight = createLowlight(common)
-
-// ── Custom Tiptap Node Extensions ──────────────────────────────────────────
-
-const JsonViewerNode = Node.create({
-  name: 'jsonViewer',
-  group: 'block',
-  atom: true,
-  draggable: true,
-
-  addAttributes() {
-    return {
-      data: { default: '' },
-    }
-  },
-
-  parseHTML() {
-    return [
-      {
-        tag: 'div.doc-json-viewer',
-        getAttrs: (dom) => ({
-          data: (dom as HTMLElement).dataset.docJson || '',
-        }),
-      },
-    ]
-  },
-
-  renderHTML({ node }) {
-    return [
-      'div',
-      mergeAttributes({
-        class: 'doc-json-viewer',
-        'data-doc-json': node.attrs.data,
-        contenteditable: 'false',
-      }),
-    ]
-  },
-
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement('div')
-      dom.className = 'doc-json-viewer'
-      dom.dataset.docJson = node.attrs.data
-      dom.contentEditable = 'false'
-      try {
-        const json = decodeURIComponent(node.attrs.data)
-        const parsed = JSON.parse(json)
-        const html = renderMarkdown('```json\n' + JSON.stringify(parsed, null, 2) + '\n```')
-        const wrapper = document.createElement('div')
-        wrapper.innerHTML = html
-        const viewer = wrapper.querySelector('.doc-json-viewer')
-        if (viewer) {
-          dom.innerHTML = viewer.innerHTML
-        }
-      } catch {
-        dom.textContent = 'Invalid JSON'
-      }
-      return { dom }
-    }
-  },
-})
-
-const SchemaViewerNode = Node.create({
-  name: 'schemaViewer',
-  group: 'block',
-  atom: true,
-  draggable: true,
-
-  addAttributes() {
-    return {
-      data: { default: '' },
-    }
-  },
-
-  parseHTML() {
-    return [
-      {
-        tag: 'div.doc-schema-viewer',
-        getAttrs: (dom) => ({
-          data: (dom as HTMLElement).dataset.docSchema || '',
-        }),
-      },
-    ]
-  },
-
-  renderHTML({ node }) {
-    return [
-      'div',
-      mergeAttributes({
-        class: 'doc-schema-viewer',
-        'data-doc-schema': node.attrs.data,
-        contenteditable: 'false',
-      }),
-    ]
-  },
-
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement('div')
-      dom.className = 'doc-schema-viewer'
-      dom.dataset.docSchema = node.attrs.data
-      dom.contentEditable = 'false'
-      try {
-        const md = decodeURIComponent(node.attrs.data)
-        const html = renderMarkdown(md)
-        dom.innerHTML = html
-      } catch {
-        dom.textContent = 'Invalid schema'
-      }
-      return { dom }
-    }
-  },
-})
-
-const HeatmapNode = Node.create({
-  name: 'heatmapBlock',
-  group: 'block',
-  atom: true,
-  draggable: true,
-
-  addAttributes() {
-    return {
-      data: { default: '' },
-    }
-  },
-
-  parseHTML() {
-    return [
-      {
-        tag: 'div.doc-heatmap',
-        getAttrs: (dom) => ({
-          data: (dom as HTMLElement).dataset.docHeatmap || '',
-        }),
-      },
-    ]
-  },
-
-  renderHTML({ node }) {
-    return [
-      'div',
-      mergeAttributes({
-        class: 'doc-heatmap',
-        'data-doc-heatmap': node.attrs.data,
-        contenteditable: 'false',
-      }),
-    ]
-  },
-
-  addNodeView() {
-    return ({ node }) => {
-      const dom = document.createElement('div')
-      dom.className = 'doc-heatmap'
-      dom.dataset.docHeatmap = node.attrs.data
-      dom.contentEditable = 'false'
-      const heatmapDoc = decodeHeatmapDocument(node.attrs.data)
-      if (heatmapDoc) {
-        dom.innerHTML = renderHeatmapBlockFromData(heatmapDoc)
-      } else {
-        dom.textContent = 'Invalid heatmap data'
-      }
-      return { dom }
-    }
-  },
-})
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -412,6 +248,12 @@ export function DocEditor({
   const [showShortcuts, setShowShortcuts] = React.useState(false)
   const [heatmapEditorOpen, setHeatmapEditorOpen] = React.useState(false)
   const [heatmapDraft] = React.useState<HeatmapDocument | null>(null)
+  const [a11yAnnouncement, setA11yAnnouncement] = React.useState('')
+
+  const announce = React.useCallback((message: string) => {
+    setA11yAnnouncement('')
+    requestAnimationFrame(() => setA11yAnnouncement(message))
+  }, [])
 
   // ── Layout state ─────────────────────────────────────────────────────────
   const [documentResizeActive, setDocumentResizeActive] = React.useState(false)
@@ -471,7 +313,7 @@ export function DocEditor({
         dropcursor: { color: 'oklch(0.63 0.16 244)', width: 2 },
       }),
       TiptapTable.configure({
-        resizable: false,
+        resizable: true,
         HTMLAttributes: { class: '' },
       }),
       TableRow,
@@ -481,7 +323,7 @@ export function DocEditor({
         openOnClick: false,
         HTMLAttributes: { class: '' },
       }),
-      TiptapImage.configure({
+      createImagePasteDropExtension().configure({
         HTMLAttributes: { class: '' },
         allowBase64: true,
       }),
@@ -493,6 +335,7 @@ export function DocEditor({
         defaultLanguage: 'text',
         HTMLAttributes: {},
       }),
+      CharacterCount,
       JsonViewerNode,
       SchemaViewerNode,
       HeatmapNode,
@@ -537,11 +380,24 @@ export function DocEditor({
           return true
         }
 
-        // Link shortcut
+        // Link shortcut — toggle link via editor command
         if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
           event.preventDefault()
-          const linkBtn = document.querySelector('[aria-label="Link"]') as HTMLButtonElement
-          linkBtn?.click()
+          if (editor!.isActive('link')) {
+            editor!.chain().focus().unsetLink().run()
+          } else {
+            const url = window.prompt('Enter URL')
+            if (url) {
+              editor!.chain().focus().setLink({ href: url }).run()
+            }
+          }
+          return true
+        }
+
+        // Strikethrough shortcut
+        if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'x') {
+          event.preventDefault()
+          editor!.chain().focus().toggleStrike().run()
           return true
         }
 
@@ -607,6 +463,13 @@ export function DocEditor({
     switchingRef.current = true
     setMode(newMode)
 
+    const modeLabels: Record<EditorViewMode, string> = {
+      wysiwyg: 'Rich text editing',
+      source: 'Markdown source editing',
+      split: 'Split view',
+    }
+    announce(`Switched to ${modeLabels[newMode]} mode`)
+
     if (newMode === 'wysiwyg' || newMode === 'split') {
       if (editor) {
         const html = mdToHtml(latestMdRef.current)
@@ -623,9 +486,7 @@ export function DocEditor({
     requestAnimationFrame(() => {
       switchingRef.current = false
     })
-  }, [editor])
-
-  // ── Source editor sync ───────────────────────────────────────────────────
+  }, [editor, announce])
 
   const handleSourceChange = React.useCallback((newContent: string) => {
     latestMdRef.current = newContent
@@ -691,12 +552,14 @@ export function DocEditor({
         setAiPreview((prev) =>
           prev ? { ...prev, resultText: data.result } : null,
         )
+        announce('AI result ready for review')
       } catch (error) {
         if (requestId !== aiRequestIdRef.current) return
         toast.error('AI transform failed', {
           description: error instanceof Error ? error.message : 'An unexpected error occurred.',
         })
         setAiPreview(null)
+        announce('AI transform failed')
       } finally {
         if (requestId === aiRequestIdRef.current) {
           setAiPendingAction(null)
@@ -704,7 +567,7 @@ export function DocEditor({
         }
       }
     },
-    [aiPrompts],
+    [aiPrompts, announce],
   )
 
   const handleAiAction = React.useCallback(
@@ -1207,6 +1070,16 @@ export function DocEditor({
         className,
       )}
     >
+        {/* Screen reader announcements */}
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        >
+          {a11yAnnouncement}
+        </div>
+
         {/* Toolbar */}
         <DocToolbar
           mode={editingMode}
@@ -1319,8 +1192,15 @@ export function DocEditor({
                             editorRef={editorWrapperRef}
                             onAction={handleBubbleAction}
                             onLinkAction={() => {
-                              const linkBtn = document.querySelector('[aria-label="Link"]') as HTMLButtonElement
-                              linkBtn?.click()
+                              if (!editor) return
+                              if (editor.isActive('link')) {
+                                editor.chain().focus().unsetLink().run()
+                              } else {
+                                const url = window.prompt('Enter URL')
+                                if (url) {
+                                  editor.chain().focus().setLink({ href: url }).run()
+                                }
+                              }
                             }}
                             onAiAction={handleAiAction}
                             onOpenAiCustomPrompt={handleOpenAiCustomPrompt}
@@ -1337,7 +1217,7 @@ export function DocEditor({
                             onClose={handleSlashMenuClose}
                           />
 
-                          {selectionInfo && (
+                          {selectionInfo ? (
                             <div className="pointer-events-none absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-full border border-border/60 bg-background/90 px-3 py-1 text-[10px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
                               <span>
                                 {selectionInfo.words} {selectionInfo.words === 1 ? 'word' : 'words'}
@@ -1347,7 +1227,13 @@ export function DocEditor({
                                 {selectionInfo.chars} {selectionInfo.chars === 1 ? 'char' : 'chars'}
                               </span>
                             </div>
-                          )}
+                          ) : editor ? (
+                            <div className="pointer-events-none absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-[10px] font-medium text-muted-foreground/60 shadow-sm backdrop-blur-sm">
+                              <span>{editor.storage.characterCount?.characters() ?? 0} chars</span>
+                              <span className="opacity-40">/</span>
+                              <span>{editor.storage.characterCount?.words() ?? 0} words</span>
+                            </div>
+                          ) : null}
                         </>
                       )}
                     </div>

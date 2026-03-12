@@ -146,6 +146,7 @@ const actions: (ToolbarAction | 'separator')[] = [
   {
     icon: Strikethrough,
     label: 'Strikethrough',
+    shortcut: '⌘⇧X',
     sourceAction: (ta) => wrapSelection(ta, '~~', '~~'),
     richAction: () => richExec('strikeThrough'),
   },
@@ -648,89 +649,97 @@ export function DocToolbar({
 
   return (
     <TooltipProvider delayDuration={400}>
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-border/60 bg-muted/30 px-2 py-1.5">
-        <EditorModeMenu value={editorMode} onChange={onEditorModeChange} />
-        <Separator orientation="vertical" className="mx-1 h-5" />
-        <DocSnippetPicker
-          open={insertPickerOpen}
-          disabled={disabled || !onInsertSnippet}
-          onBeforeOpen={onBeforeOpenInsertPicker}
-          onOpenChange={onInsertPickerOpenChange}
-          onSelect={(snippet) => onInsertSnippet?.(snippet)}
-        />
-        <Separator orientation="vertical" className="mx-1 h-5" />
-        {actions.map((item, i) => {
-          if (item === 'separator') {
-            if (i === 4 && onInsertCodeBlock) {
-              return (
-                <React.Fragment key={`sep-${i}`}>
-                  <CodeBlockMenu
+      <div
+        role="toolbar"
+        aria-label="Editor formatting toolbar"
+        aria-orientation="horizontal"
+        className="flex items-center gap-2 border-b border-border/60 bg-muted/30 px-2 py-1.5"
+      >
+        <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-max items-center gap-0.5 pr-1">
+            <EditorModeMenu value={editorMode} onChange={onEditorModeChange} />
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            <DocSnippetPicker
+              open={insertPickerOpen}
+              disabled={disabled || !onInsertSnippet}
+              onBeforeOpen={onBeforeOpenInsertPicker}
+              onOpenChange={onInsertPickerOpenChange}
+              onSelect={(snippet) => onInsertSnippet?.(snippet)}
+            />
+            <Separator orientation="vertical" className="mx-1 h-5" />
+            {actions.map((item, i) => {
+              if (item === 'separator') {
+                if (i === 4 && onInsertCodeBlock) {
+                  return (
+                    <React.Fragment key={`sep-${i}`}>
+                      <CodeBlockMenu
+                        disabled={disabled}
+                        onBeforeOpen={onBeforeOpenCodeMenu}
+                        onSelect={(language) => onInsertCodeBlock(language.value)}
+                      />
+                      <Separator orientation="vertical" className="mx-1 h-5" />
+                    </React.Fragment>
+                  )
+                }
+                return <Separator key={i} orientation="vertical" className="mx-1 h-5" />
+              }
+              if (item.id === 'link') {
+                return (
+                  <LinkPopover
+                    key={item.label}
                     disabled={disabled}
-                    onBeforeOpen={onBeforeOpenCodeMenu}
-                    onSelect={(language) => onInsertCodeBlock(language.value)}
+                    mode={mode}
+                    textareaRef={textareaRef}
+                    editorRef={editorRef}
+                    tiptapEditor={tiptapEditor}
+                    onSourceChange={onSourceChange}
+                    onRichChange={onRichChange}
                   />
-                  <Separator orientation="vertical" className="mx-1 h-5" />
-                </React.Fragment>
+                )
+              }
+              if (item.id === 'image') {
+                return (
+                  <ImagePopover
+                    key={item.label}
+                    disabled={disabled}
+                    mode={mode}
+                    textareaRef={textareaRef}
+                    editorRef={editorRef}
+                    tiptapEditor={tiptapEditor}
+                    onSourceChange={onSourceChange}
+                    onRichChange={onRichChange}
+                  />
+                )
+              }
+              return (
+                <Tooltip key={item.label}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={disabled}
+                      onMouseDown={(e) => {
+                        // Prevent focus steal from editor
+                        e.preventDefault()
+                        handleClick(item)
+                      }}
+                      aria-label={item.label}
+                    >
+                      <item.icon className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    {item.label}
+                    {item.shortcut && (
+                      <span className="ml-2 text-muted-foreground">{item.shortcut}</span>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
               )
-            }
-            return <Separator key={i} orientation="vertical" className="mx-1 h-5" />
-          }
-          if (item.id === 'link') {
-            return (
-              <LinkPopover
-                key={item.label}
-                disabled={disabled}
-                mode={mode}
-                textareaRef={textareaRef}
-                editorRef={editorRef}
-                tiptapEditor={tiptapEditor}
-                onSourceChange={onSourceChange}
-                onRichChange={onRichChange}
-              />
-            )
-          }
-          if (item.id === 'image') {
-            return (
-              <ImagePopover
-                key={item.label}
-                disabled={disabled}
-                mode={mode}
-                textareaRef={textareaRef}
-                editorRef={editorRef}
-                tiptapEditor={tiptapEditor}
-                onSourceChange={onSourceChange}
-                onRichChange={onRichChange}
-              />
-            )
-          }
-          return (
-            <Tooltip key={item.label}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={disabled}
-                  onMouseDown={(e) => {
-                    // Prevent focus steal from editor
-                    e.preventDefault()
-                    handleClick(item)
-                  }}
-                  aria-label={item.label}
-                >
-                  <item.icon className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">
-                {item.label}
-                {item.shortcut && (
-                  <span className="ml-2 text-muted-foreground">{item.shortcut}</span>
-                )}
-              </TooltipContent>
-            </Tooltip>
-          )
-        })}
-        <div className="ml-auto flex items-center gap-1 pl-2">
-          <Separator orientation="vertical" className="mx-1 hidden h-5 sm:block" />
+            })}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1 border-l border-border/50 pl-2">
           <DropdownMenu modal={false}>
             <Tooltip>
               <TooltipTrigger asChild>
