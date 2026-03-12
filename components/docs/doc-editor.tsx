@@ -69,6 +69,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
 import { DocAiResultPanel } from '@/components/docs/doc-ai-result-panel'
 import { DocHeatmapEditorDialog } from '@/components/docs/doc-heatmap-editor-dialog'
+import {
+  DocNavigationRail,
+  type DocNavigationHeading,
+} from '@/components/docs/doc-navigation-rail'
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
@@ -409,6 +413,10 @@ export function DocEditor({
   // ── UI state ─────────────────────────────────────────────────────────────
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
   const [insertPickerOpen, setInsertPickerOpen] = React.useState(false)
+  const [tocOpen, setTocOpen] = React.useState(false)
+  const [minimapOpen, setMinimapOpen] = React.useState(false)
+  const [navigationScrollProgress, setNavigationScrollProgress] = React.useState(0)
+  const [navigationViewportRatio, setNavigationViewportRatio] = React.useState(0.18)
   const [showShortcuts, setShowShortcuts] = React.useState(false)
   const [heatmapEditorOpen, setHeatmapEditorOpen] = React.useState(false)
   const [heatmapDraft, _setHeatmapDraft] = React.useState<HeatmapDocument | null>(null)
@@ -453,6 +461,7 @@ export function DocEditor({
   const aiDocumentPendingAction = aiPendingScope === 'document' ? aiPendingAction : null
   const wysiwygOnLeft = splitPaneLeading === 'wysiwyg'
   const aiPreviewOnLeft = Boolean(aiPreview) && aiPreviewSide === 'left'
+  const navigationRailOpen = tocOpen || minimapOpen
   const splitPaneColumns = `minmax(0, ${splitPaneRatio}fr) minmax(0, ${1 - splitPaneRatio}fr)`
   const aiSplitColumns = aiPreview
     ? aiPreviewOnLeft
@@ -464,6 +473,7 @@ export function DocEditor({
   // ── Tiptap Editor ────────────────────────────────────────────────────────
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         codeBlock: false,
@@ -601,6 +611,51 @@ export function DocEditor({
   React.useEffect(() => { onModeChange?.(mode) }, [mode, onModeChange])
   React.useEffect(() => { onAiPreviewVisibilityChange?.(Boolean(aiPreview)) }, [aiPreview, onAiPreviewVisibilityChange])
   React.useEffect(() => { onDocumentResizeStateChange?.(documentResizeActive) }, [documentResizeActive, onDocumentResizeStateChange])
+
+  const updateNavigationViewport = React.useCallback(() => {
+    const richViewport = editorViewportRef.current
+    const sourceViewport = textareaRef.current
+    const activeViewport =
+      mode === 'source'
+        ? sourceViewport
+        : richViewport ?? sourceViewport
+
+    if (!activeViewport) {
+      setNavigationScrollProgress(0)
+      setNavigationViewportRatio(1)
+      return
+    }
+
+    setNavigationScrollProgress(getScrollableProgress(activeViewport))
+    setNavigationViewportRatio(
+      activeViewport.scrollHeight > 0
+        ? Math.min(1, activeViewport.clientHeight / activeViewport.scrollHeight)
+        : 1,
+    )
+  }, [mode])
+
+  React.useEffect(() => {
+    updateNavigationViewport()
+  }, [content, mode, updateNavigationViewport])
+
+  React.useEffect(() => {
+    const richViewport = editorViewportRef.current
+    const sourceViewport = textareaRef.current
+
+    const handleViewportChange = () => {
+      updateNavigationViewport()
+    }
+
+    richViewport?.addEventListener('scroll', handleViewportChange, { passive: true })
+    sourceViewport?.addEventListener('scroll', handleViewportChange, { passive: true })
+    window.addEventListener('resize', handleViewportChange)
+
+    return () => {
+      richViewport?.removeEventListener('scroll', handleViewportChange)
+      sourceViewport?.removeEventListener('scroll', handleViewportChange)
+      window.removeEventListener('resize', handleViewportChange)
+    }
+  }, [mode, updateNavigationViewport])
 
   const handleModeChange = React.useCallback((newMode: EditorViewMode) => {
     switchingRef.current = true
@@ -1021,6 +1076,74 @@ export function DocEditor({
     [],
   )
 
+  const scrollDocumentToProgress = React.useCallback(
+    (progress: number) => {
+      const normalized = Math.min(1, Math.max(0, progress))
+      const richViewport = hasRichEditor(mode) ? editorViewportRef.current : null
+      const sourceViewport = hasSourceEditor(mode) ? textareaRef.current : null
+
+      if (richViewport) {
+        const maxScroll = Math.max(richViewport.scrollHeight - richViewport.clientHeight, 0)
+        richViewport.scrollTo({
+          top: maxScroll * normalized,
+          behavior: 'smooth',
+        })
+      }
+
+      if (sourceViewport) {
+        const maxScroll = Math.max(sourceViewport.scrollHeight - sourceViewport.clientHeight, 0)
+        sourceViewport.scrollTo({
+          top: maxScroll * normalized,
+          behavior: 'smooth',
+        })
+      }
+
+      setNavigationScrollProgress(normalized)
+    },
+    [mode],
+  )
+
+  const handleJumpToHeading = React.useCallback(
+    (heading: DocNavigationHeading) => {
+      const richViewport = hasRichEditor(mode) ? editorViewportRef.current : null
+      const proseMirror = editorWrapperRef.current?.querySelector('.ProseMirror')
+      const headingElements = proseMirror
+        ? (Array.from(
+            proseMirror.querySelectorAll('h1, h2, h3, h4, h5, h6'),
+          ) as HTMLElement[])
+        : []
+      const targetHeading = richViewport ? headingElements[heading.index] ?? null : null
+
+      if (richViewport && targetHeading) {
+        const maxScroll = Math.max(richViewport.scrollHeight - richViewport.clientHeight, 0)
+        const top = Math.max(0, Math.min(targetHeading.offsetTop - 20, maxScroll))
+        const progress = maxScroll > 0 ? top / maxScroll : 0
+
+        richViewport.scrollTo({
+          top,
+          behavior: 'smooth',
+        })
+
+        if (hasSourceEditor(mode) && textareaRef.current) {
+          const sourceMaxScroll = Math.max(
+            textareaRef.current.scrollHeight - textareaRef.current.clientHeight,
+            0,
+          )
+          textareaRef.current.scrollTo({
+            top: sourceMaxScroll * progress,
+            behavior: 'smooth',
+          })
+        }
+
+        setNavigationScrollProgress(progress)
+        return
+      }
+
+      scrollDocumentToProgress(heading.progress)
+    },
+    [mode, scrollDocumentToProgress],
+  )
+
   // ── Split pane resize ────────────────────────────────────────────────────
 
   const handleSplitPaneResizeStart = React.useCallback((event: React.MouseEvent) => {
@@ -1215,6 +1338,10 @@ export function DocEditor({
         onInsertSnippet={handleInsertSnippet}
         onBeforeOpenCodeMenu={captureCurrentSelection}
         onInsertCodeBlock={handleInsertCodeBlock}
+        tocOpen={tocOpen}
+        onTocOpenChange={setTocOpen}
+        minimapOpen={minimapOpen}
+        onMinimapOpenChange={setMinimapOpen}
         activeAiLabel={activeModel?.label ?? activeModelId}
         aiDisabled={Boolean(aiPendingAction) || !activeModelId}
         aiDocumentPendingAction={aiDocumentPendingAction}
@@ -1239,7 +1366,6 @@ export function DocEditor({
         )}
       >
         <motion.div
-          ref={splitPaneRef}
           layout
           transition={paneTransition}
           style={
@@ -1248,158 +1374,184 @@ export function DocEditor({
               : undefined
           }
           className={cn(
-            'group/document-pane group/split-pane relative min-h-0 min-w-0',
+            'group/document-pane relative min-h-0 min-w-0',
             aiPreviewOnLeft ? 'xl:order-2' : 'xl:order-1',
-            mode === 'split'
-              ? 'grid h-full grid-cols-1 md:[grid-template-columns:var(--doc-split-columns)]'
-              : 'flex h-full flex-col',
           )}
         >
-          {/* WYSIWYG Pane */}
-          <AnimatePresence initial={false} mode="popLayout">
-            {hasRichEditor(mode) ? (
-              <motion.div
-                key="rich-pane"
-                ref={editorViewportRef}
-                layout
-                initial={reducedMotion ? false : { opacity: 0, x: -18, scale: 0.995 }}
-                animate={reducedMotion ? undefined : { opacity: 1, x: 0, scale: 1 }}
-                exit={reducedMotion ? undefined : { opacity: 0, x: -18, scale: 0.995 }}
-                transition={paneTransition}
-                className={cn(
-                  'min-h-0 overflow-auto transition-[box-shadow] duration-200',
-                  mode === 'split' && (wysiwygOnLeft ? 'md:order-1' : 'md:order-2'),
-                  mode !== 'split' && 'flex-1',
-                  mode === 'split' && 'border-b border-border/60 md:border-b-0',
-                  mode === 'split' &&
-                    activePane === 'wysiwyg' &&
-                    (wysiwygOnLeft
-                      ? 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]'
-                      : 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]'),
-                )}
-                onScroll={
-                  mode === 'split' && textareaRef.current
-                    ? () => {
-                        const viewport = editorViewportRef.current
-                        const ta = textareaRef.current
-                        if (viewport && ta) {
-                          handleSplitPaneScroll('rich', viewport, ta)
-                        }
-                      }
-                    : undefined
-                }
-              >
-                <div ref={editorWrapperRef} className="relative min-h-full">
-                  <EditorContent editor={editor} />
-
-                  {!readOnly && hasRichEditor(mode) && editor && (
-                    <>
-                      <DocBubbleMenu
-                        editorRef={editorWrapperRef}
-                        onAction={handleBubbleAction}
-                        onLinkAction={() => {
-                          const linkBtn = document.querySelector('[aria-label="Link"]') as HTMLButtonElement
-                          linkBtn?.click()
-                        }}
-                        onAiAction={handleAiAction}
-                        onOpenAiCustomPrompt={handleOpenAiCustomPrompt}
-                        aiPendingAction={aiPendingAction}
-                        enabledModels={enabledModels}
-                        activeModelId={activeModel?.id ?? activeModelId}
-                        onActiveModelChange={setActiveModelId}
-                        aiModelsLoading={aiModelsLoading}
-                      />
-                      <DocSlashMenu
-                        ref={slashMenuRef}
-                        editorRef={editorWrapperRef}
-                        onSelect={handleSlashSelect}
-                        onClose={handleSlashMenuClose}
-                      />
-
-                      {selectionInfo && (
-                        <div className="pointer-events-none absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-full border border-border/60 bg-background/90 px-3 py-1 text-[10px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
-                          <span>
-                            {selectionInfo.words} {selectionInfo.words === 1 ? 'word' : 'words'}
-                          </span>
-                          <span className="opacity-40">/</span>
-                          <span>
-                            {selectionInfo.chars} {selectionInfo.chars === 1 ? 'char' : 'chars'}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-
-          {/* Source Pane */}
-          <AnimatePresence initial={false} mode="popLayout">
-            {hasSourceEditor(mode) ? (
-              <motion.div
-                key="source-pane"
-                layout
-                initial={reducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }}
-                animate={reducedMotion ? undefined : { opacity: 1, x: 0, scale: 1 }}
-                exit={reducedMotion ? undefined : { opacity: 0, x: 18, scale: 0.995 }}
-                transition={paneTransition}
-                className={cn(
-                  'min-h-0 transition-[box-shadow] duration-200',
-                  mode === 'split' && (wysiwygOnLeft ? 'md:order-2' : 'md:order-1'),
-                  mode !== 'split' && 'flex-1',
-                  mode === 'split' && 'bg-muted/[0.14]',
-                  mode === 'split' &&
-                    activePane === 'source' &&
-                    (wysiwygOnLeft
-                      ? 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]'
-                      : 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]'),
-                )}
-              >
-                <textarea
-                  ref={textareaRef}
-                  value={content}
-                  onChange={(e) => handleSourceChange(e.target.value)}
-                  onKeyDown={handleSourceKeyDown}
-                  onFocus={() => setActivePane('source')}
-                  onSelect={captureSourceSelection}
-                  onClick={captureSourceSelection}
-                  onKeyUp={captureSourceSelection}
-                  readOnly={readOnly}
-                  spellCheck={false}
-                  aria-label="Markdown source editor"
-                  className={cn(
-                    'block w-full resize-none bg-transparent',
-                    'font-mono text-[13px] leading-7 text-foreground',
-                    'placeholder:text-muted-foreground/60',
-                    'outline-none',
-                    mode === 'split' ? 'h-full min-h-[600px] p-5 md:p-6' : 'h-full min-h-[600px] p-4',
-                    readOnly && 'cursor-default opacity-70',
-                  )}
-                  placeholder="Start writing in Markdown…"
-                />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-
-          {/* Split pane resize handle */}
-          {mode === 'split' ? (
-            <button
-              type="button"
-              onMouseDown={handleSplitPaneResizeStart}
-              aria-label="Drag to resize split editors, click to swap sides"
-              title="Drag to resize split editors, click to swap sides"
-              className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center md:flex"
-              style={{ left: `${splitPaneRatio * 100}%` }}
+          <div
+            className={cn(
+              'flex h-full min-h-0 min-w-0 flex-col',
+              navigationRailOpen && 'md:flex-row',
+            )}
+          >
+            <div
+              ref={splitPaneRef}
+              className={cn(
+                'group/split-pane relative min-h-0 min-w-0 flex-1',
+                mode === 'split'
+                  ? 'grid h-full grid-cols-1 md:[grid-template-columns:var(--doc-split-columns)]'
+                  : 'flex h-full flex-col',
+              )}
             >
-              <span
-                className={cn(
-                  'absolute h-full w-px bg-border/60 transition-colors duration-200',
-                  splitPaneResizeActive ? 'bg-foreground/45' : 'group-hover/split-pane:bg-foreground/28',
-                )}
+              {/* WYSIWYG Pane */}
+              <AnimatePresence initial={false} mode="popLayout">
+                {hasRichEditor(mode) ? (
+                  <motion.div
+                    key="rich-pane"
+                    ref={editorViewportRef}
+                    layout
+                    initial={reducedMotion ? false : { opacity: 0, x: -18, scale: 0.995 }}
+                    animate={reducedMotion ? undefined : { opacity: 1, x: 0, scale: 1 }}
+                    exit={reducedMotion ? undefined : { opacity: 0, x: -18, scale: 0.995 }}
+                    transition={paneTransition}
+                    className={cn(
+                      'min-h-0 overflow-auto transition-[box-shadow] duration-200',
+                      mode === 'split' && (wysiwygOnLeft ? 'md:order-1' : 'md:order-2'),
+                      mode !== 'split' && 'flex-1',
+                      mode === 'split' && 'border-b border-border/60 md:border-b-0',
+                      mode === 'split' &&
+                        activePane === 'wysiwyg' &&
+                        (wysiwygOnLeft
+                          ? 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]'
+                          : 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]'),
+                    )}
+                    onScroll={
+                      mode === 'split' && textareaRef.current
+                        ? () => {
+                            const viewport = editorViewportRef.current
+                            const ta = textareaRef.current
+                            if (viewport && ta) {
+                              handleSplitPaneScroll('rich', viewport, ta)
+                            }
+                          }
+                        : undefined
+                    }
+                  >
+                    <div ref={editorWrapperRef} className="relative min-h-full">
+                      <EditorContent editor={editor} />
+
+                      {!readOnly && hasRichEditor(mode) && editor && (
+                        <>
+                          <DocBubbleMenu
+                            editorRef={editorWrapperRef}
+                            onAction={handleBubbleAction}
+                            onLinkAction={() => {
+                              const linkBtn = document.querySelector('[aria-label="Link"]') as HTMLButtonElement
+                              linkBtn?.click()
+                            }}
+                            onAiAction={handleAiAction}
+                            onOpenAiCustomPrompt={handleOpenAiCustomPrompt}
+                            aiPendingAction={aiPendingAction}
+                            enabledModels={enabledModels}
+                            activeModelId={activeModel?.id ?? activeModelId}
+                            onActiveModelChange={setActiveModelId}
+                            aiModelsLoading={aiModelsLoading}
+                          />
+                          <DocSlashMenu
+                            ref={slashMenuRef}
+                            editorRef={editorWrapperRef}
+                            onSelect={handleSlashSelect}
+                            onClose={handleSlashMenuClose}
+                          />
+
+                          {selectionInfo && (
+                            <div className="pointer-events-none absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-full border border-border/60 bg-background/90 px-3 py-1 text-[10px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
+                              <span>
+                                {selectionInfo.words} {selectionInfo.words === 1 ? 'word' : 'words'}
+                              </span>
+                              <span className="opacity-40">/</span>
+                              <span>
+                                {selectionInfo.chars} {selectionInfo.chars === 1 ? 'char' : 'chars'}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+
+              {/* Source Pane */}
+              <AnimatePresence initial={false} mode="popLayout">
+                {hasSourceEditor(mode) ? (
+                  <motion.div
+                    key="source-pane"
+                    layout
+                    initial={reducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }}
+                    animate={reducedMotion ? undefined : { opacity: 1, x: 0, scale: 1 }}
+                    exit={reducedMotion ? undefined : { opacity: 0, x: 18, scale: 0.995 }}
+                    transition={paneTransition}
+                    className={cn(
+                      'min-h-0 transition-[box-shadow] duration-200',
+                      mode === 'split' && (wysiwygOnLeft ? 'md:order-2' : 'md:order-1'),
+                      mode !== 'split' && 'flex-1',
+                      mode === 'split' && 'bg-muted/[0.14]',
+                      mode === 'split' &&
+                        activePane === 'source' &&
+                        (wysiwygOnLeft
+                          ? 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_2px_0_0_0_var(--accent)]'
+                          : 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]'),
+                    )}
+                  >
+                    <textarea
+                      ref={textareaRef}
+                      value={content}
+                      onChange={(e) => handleSourceChange(e.target.value)}
+                      onKeyDown={handleSourceKeyDown}
+                      onFocus={() => setActivePane('source')}
+                      onSelect={captureSourceSelection}
+                      onClick={captureSourceSelection}
+                      onKeyUp={captureSourceSelection}
+                      readOnly={readOnly}
+                      spellCheck={false}
+                      aria-label="Markdown source editor"
+                      className={cn(
+                        'block w-full resize-none bg-transparent',
+                        'font-mono text-[13px] leading-7 text-foreground',
+                        'placeholder:text-muted-foreground/60',
+                        'outline-none',
+                        mode === 'split' ? 'h-full min-h-[600px] p-5 md:p-6' : 'h-full min-h-[600px] p-4',
+                        readOnly && 'cursor-default opacity-70',
+                      )}
+                      placeholder="Start writing in Markdown…"
+                    />
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+
+              {/* Split pane resize handle */}
+              {mode === 'split' ? (
+                <button
+                  type="button"
+                  onMouseDown={handleSplitPaneResizeStart}
+                  aria-label="Drag to resize split editors, click to swap sides"
+                  title="Drag to resize split editors, click to swap sides"
+                  className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center md:flex"
+                  style={{ left: `${splitPaneRatio * 100}%` }}
+                >
+                  <span
+                    className={cn(
+                      'absolute h-full w-px bg-border/60 transition-colors duration-200',
+                      splitPaneResizeActive ? 'bg-foreground/45' : 'group-hover/split-pane:bg-foreground/28',
+                    )}
+                  />
+                </button>
+              ) : null}
+            </div>
+
+            {navigationRailOpen ? (
+              <DocNavigationRail
+                content={content}
+                tocOpen={tocOpen}
+                minimapOpen={minimapOpen}
+                scrollProgress={navigationScrollProgress}
+                viewportRatio={navigationViewportRatio}
+                onJumpToHeading={handleJumpToHeading}
+                onJumpToProgress={scrollDocumentToProgress}
               />
-            </button>
-          ) : null}
+            ) : null}
+          </div>
 
           {/* Document width resize handle */}
           {!aiPreview && onDocumentWidthChange && typeof documentWidth === 'number' ? (

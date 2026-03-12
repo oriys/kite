@@ -14,7 +14,6 @@ import {
 import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { cn } from '@/lib/utils'
-import { formatAiContextWindow } from '@/lib/ai'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -68,7 +67,27 @@ export function DocAiManagerPage() {
     resetToDefault,
   } = useAiPreferences(items, defaultModelId)
   const [search, setSearch] = React.useState('')
+  const [providerFilter, setProviderFilter] = React.useState('all')
   const deferredSearch = React.useDeferredValue(search)
+  const providerOptions = React.useMemo(
+    () => [
+      'all',
+      ...Array.from(
+        new Set(
+          items
+            .map((model) => model.provider.trim())
+            .filter(Boolean),
+        ),
+      ).sort((left, right) => left.localeCompare(right)),
+    ],
+    [items],
+  )
+
+  React.useEffect(() => {
+    if (providerFilter !== 'all' && !providerOptions.includes(providerFilter)) {
+      setProviderFilter('all')
+    }
+  }, [providerFilter, providerOptions])
 
   const filteredItems = React.useMemo(() => {
     const normalizedSearch = deferredSearch.trim().toLowerCase()
@@ -81,13 +100,7 @@ export function DocAiManagerPage() {
 
     const visibleItems = normalizedSearch
       ? items.filter((model) => {
-          const haystack = [
-            model.id,
-            model.label,
-            model.provider,
-            model.description,
-            ...model.capabilities,
-          ]
+          const haystack = [model.id, model.label, model.provider]
             .join(' ')
             .toLowerCase()
 
@@ -95,7 +108,12 @@ export function DocAiManagerPage() {
         })
       : items
 
-    return [...visibleItems].sort((left, right) => {
+    const visibleByProvider =
+      providerFilter === 'all'
+        ? visibleItems
+        : visibleItems.filter((model) => model.provider === providerFilter)
+
+    return [...visibleByProvider].sort((left, right) => {
       if (left.id === activeModelId) return -1
       if (right.id === activeModelId) return 1
 
@@ -114,7 +132,7 @@ export function DocAiManagerPage() {
         (originalPositionById.get(right.id) ?? Number.MAX_SAFE_INTEGER)
       )
     })
-  }, [activeModelId, deferredSearch, enabledModelIds, items])
+  }, [activeModelId, deferredSearch, enabledModelIds, items, providerFilter])
 
   const activeLabel = activeModel?.label || activeModel?.id || 'Not selected'
   const enabledCount = numberFormatter.format(enabledModels.length)
@@ -208,7 +226,7 @@ export function DocAiManagerPage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <section className="editorial-surface p-4 sm:p-5 editorial-reveal">
-          <div className="grid gap-5 border-b border-border/70 pb-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,360px)] lg:items-start">
+          <div className="grid gap-4 border-b border-border/70 pb-4 xl:grid-cols-[minmax(0,1fr)_180px_minmax(260px,320px)] xl:items-start">
             <div className="flex flex-col gap-3">
               <p className="editorial-section-kicker">Search Supported AI</p>
               <InputGroup>
@@ -218,12 +236,27 @@ export function DocAiManagerPage() {
                 <InputGroupInput
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search by model, provider, or capability"
+                  placeholder="Search model or provider"
                   aria-label="Search AI models"
                 />
               </InputGroup>
             </div>
-            <div className="flex flex-col gap-2 lg:pt-0.5">
+            <div className="flex flex-col gap-2 xl:pt-0.5">
+              <p className="editorial-section-kicker">Provider</p>
+              <Select value={providerFilter} onValueChange={setProviderFilter}>
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="All providers" />
+                </SelectTrigger>
+                <SelectContent>
+                  {providerOptions.map((provider) => (
+                    <SelectItem key={provider} value={provider}>
+                      {provider === 'all' ? 'All providers' : provider}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2 xl:pt-0.5">
               <p className="editorial-section-kicker">Default AI</p>
               <Select
                 value={activeModelId ?? undefined}
@@ -242,12 +275,12 @@ export function DocAiManagerPage() {
                 </SelectContent>
               </Select>
               <p className="max-w-sm text-xs leading-5 text-muted-foreground">
-                Sets the default assistant. Model cards below only control availability.
+                Sets the default model used in the editor.
               </p>
             </div>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-4">
             {filteredItems.length === 0 ? (
               <Empty className="min-h-[420px]">
                 <EmptyHeader>
@@ -256,80 +289,58 @@ export function DocAiManagerPage() {
                   </EmptyMedia>
                   <EmptyTitle>No AI matches this search</EmptyTitle>
                   <EmptyDescription>
-                    Try a different query, or refresh the catalog from AIHubMix.
+                    Try a different query or provider filter, or refresh the catalog from AIHubMix.
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
             ) : (
-              filteredItems.map((model, index) => {
-                const isEnabled = enabledModelIds.includes(model.id)
-                const isActive = activeModelId === model.id
-                const contextWindow = formatAiContextWindow(model.contextWindow)
+              <div className="overflow-hidden rounded-2xl border border-border/75 bg-card/60">
+                <div className="divide-y divide-border/60">
+                  {filteredItems.map((model, index) => {
+                    const isEnabled = enabledModelIds.includes(model.id)
+                    const isActive = activeModelId === model.id
 
-                return (
-                  <article
-                    key={model.id}
-                    className={cn(
-                      'group relative overflow-hidden rounded-2xl border border-border/75 bg-card/70 p-3 transition-colors sm:p-3.5',
-                      isActive && 'border-primary/45 bg-primary/[0.06]',
-                    )}
-                    style={{ animationDelay: `${index * 30}ms` }}
-                  >
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <h2
-                            className="truncate text-base font-semibold tracking-tight text-foreground sm:text-[1.05rem]"
-                            title={model.label}
-                          >
-                            {model.label}
-                          </h2>
-                          <Badge variant={isActive ? 'default' : 'outline'} className="shrink-0">
-                            {isActive ? 'Active' : model.provider}
-                          </Badge>
-                          {isEnabled ? <Badge variant="secondary" className="shrink-0">Enabled</Badge> : null}
-                          {contextWindow ? (
-                            <Badge variant="outline" className="hidden shrink-0 sm:inline-flex">
-                              {contextWindow} context
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <p
-                          className="mt-1 truncate text-sm leading-6 text-muted-foreground"
-                          title={model.description}
-                        >
-                          {model.description}
-                        </p>
-                        <div className="mt-2 flex items-center gap-2 overflow-hidden">
+                    return (
+                      <article
+                        key={model.id}
+                        className={cn(
+                          'group flex items-center gap-3 px-3 py-2.5 transition-colors sm:px-4',
+                          isActive && 'bg-primary/[0.06]',
+                        )}
+                        style={{ animationDelay: `${index * 24}ms` }}
+                      >
+                        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                          <div className="min-w-0">
+                            <h2
+                              className="truncate text-sm font-semibold tracking-tight text-foreground sm:text-[0.95rem]"
+                              title={model.label}
+                            >
+                              {model.label}
+                            </h2>
+                          </div>
                           <Badge
                             variant="outline"
-                            className="max-w-full truncate font-mono text-[11px]"
-                            title={model.id}
+                            className="hidden shrink-0 text-[10px] uppercase tracking-[0.16em] text-muted-foreground sm:inline-flex"
                           >
-                            {model.id}
+                            {model.provider}
                           </Badge>
-                          {model.capabilities.slice(0, 2).map((capability) => (
-                            <Badge key={capability} variant="secondary" className="hidden shrink-0 md:inline-flex">
-                              {capability}
-                            </Badge>
-                          ))}
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2.5 self-start rounded-full border border-border/70 px-2.5 py-1.5 lg:self-center">
-                        <span className="text-xs font-medium text-foreground">Enable</span>
-                        <div className="flex h-8 items-center">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-xs text-muted-foreground sm:hidden">
+                            {model.provider}
+                          </span>
                           <Switch
                             checked={isEnabled}
                             onCheckedChange={(checked) => toggleModel(model.id, checked)}
                             aria-label={`Enable ${model.label}`}
                           />
                         </div>
-                      </div>
-                    </div>
-                  </article>
-                )
-              })
+                      </article>
+                    )
+                  })}
+                </div>
+              </div>
             )}
           </div>
         </section>
