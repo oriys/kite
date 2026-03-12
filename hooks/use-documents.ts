@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { type Doc, type DocStatus } from '@/lib/documents'
 
-export function useDocuments(statusFilter?: DocStatus) {
+export function useDocuments(statusFilter?: DocStatus, apiVersionId?: string | null) {
   const [items, setItems] = React.useState<Doc[]>([])
   const [loading, setLoading] = React.useState(true)
 
@@ -13,8 +13,11 @@ export function useDocuments(statusFilter?: DocStatus) {
     }
 
     try {
-      const params = statusFilter ? `?status=${statusFilter}` : ''
-      const res = await fetch(`/api/documents${params}`)
+      const params = new URLSearchParams()
+      if (statusFilter) params.set('status', statusFilter)
+      if (apiVersionId) params.set('api_version_id', apiVersionId)
+      const qs = params.toString()
+      const res = await fetch(`/api/documents${qs ? `?${qs}` : ''}`)
       if (res.ok) {
         const data = normalizeDocList(await res.json())
         setItems(data)
@@ -27,7 +30,7 @@ export function useDocuments(statusFilter?: DocStatus) {
         setLoading(false)
       }
     }
-  }, [statusFilter])
+  }, [statusFilter, apiVersionId])
 
   React.useEffect(() => {
     void refresh()
@@ -146,6 +149,8 @@ function normalizeDoc(raw: Record<string, unknown>): Doc {
     content: raw.content as string,
     summary: String(raw.summary ?? ''),
     status: raw.status as DocStatus,
+    visibility: (raw.visibility as Doc['visibility']) ?? 'public',
+    apiVersionId: (raw.apiVersionId as string) ?? null,
     createdAt: String(raw.createdAt),
     updatedAt: String(raw.updatedAt),
     workspaceId: raw.workspaceId as string,

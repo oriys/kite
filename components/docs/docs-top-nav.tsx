@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileText, BrainCircuit, PencilLine, Blocks, Menu } from 'lucide-react'
+import { FileText, Braces, BrainCircuit, PencilLine, Blocks, BarChart3, LinkIcon, Menu, Search } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -17,12 +17,16 @@ import {
 } from '@/components/ui/sheet'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { UserMenu } from '@/components/auth/user-menu'
+import { GlobalSearch } from '@/components/global-search'
 
 const NAV_ITEMS = [
   { href: '/docs', label: 'Documents', icon: FileText },
+  { href: '/docs/openapi', label: 'OpenAPI', icon: Braces },
   { href: '/docs/ai', label: 'AI Models', icon: BrainCircuit },
   { href: '/docs/ai/prompts', label: 'AI Prompts', icon: PencilLine },
   { href: '/docs/components', label: 'Quick Insert', icon: Blocks },
+  { href: '/docs/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/docs/link-health', label: 'Link Health', icon: LinkIcon },
 ] as const
 
 function isActive(pathname: string, href: string) {
@@ -38,6 +42,18 @@ function isActive(pathname: string, href: string) {
 export function DocsTopNav() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = React.useState(false)
+  const [searchOpen, setSearchOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen((prev) => !prev)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   return (
     <header className="shrink-0 border-b border-border/60 bg-card/50 backdrop-blur-sm">
@@ -120,12 +136,36 @@ export function DocsTopNav() {
         {/* Spacer */}
         <div className="flex-1" />
 
+        {/* Search trigger */}
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          className="hidden items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground sm:inline-flex"
+        >
+          <Search className="size-3" />
+          <span>Search docs…</span>
+          <kbd className="ml-1 rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px]">
+            ⌘K
+          </kbd>
+        </button>
+
         {/* Utilities */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="sm:hidden"
+            aria-label="Search"
+            onClick={() => setSearchOpen(true)}
+          >
+            <Search className="size-4" />
+          </Button>
           <ThemeToggle />
           <UserMenu />
         </div>
       </div>
+
+      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
   )
 }

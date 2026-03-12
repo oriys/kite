@@ -31,10 +31,14 @@ export async function listDocuments(
   statusFilter?: DocStatusValue,
   limit = 100,
   offset = 0,
+  apiVersionId?: string,
 ) {
   const conditions = [eq(documents.workspaceId, workspaceId)]
   if (statusFilter) {
     conditions.push(eq(documents.status, statusFilter))
+  }
+  if (apiVersionId) {
+    conditions.push(eq(documents.apiVersionId, apiVersionId))
   }
 
   const docs = await db.query.documents.findMany({

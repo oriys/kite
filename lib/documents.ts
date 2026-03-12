@@ -48,6 +48,8 @@ export interface Doc {
   content: string
   summary: string
   status: DocStatus
+  visibility: 'public' | 'partner' | 'private'
+  apiVersionId: string | null
   createdAt: string
   updatedAt: string
   workspaceId: string

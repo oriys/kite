@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { VersionSwitcher } from '@/components/version-switcher'
 
 const statuses: (DocStatus | 'all')[] = ['all', 'draft', 'review', 'published', 'archived']
 const SUMMARY_REFRESH_INTERVAL_MS = 1500
@@ -37,7 +38,8 @@ const SUMMARY_REFRESH_MAX_ATTEMPTS = 6
 export default function DocsPage() {
   const router = useRouter()
   const [filter, setFilter] = React.useState<DocStatus | 'all'>('all')
-  const { items, loading, create, remove, refresh } = useDocuments()
+  const [currentVersionId, setCurrentVersionId] = React.useState<string | null>(null)
+  const { items, loading, create, remove, refresh } = useDocuments(undefined, currentVersionId)
   const [newTitle, setNewTitle] = React.useState('')
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -192,6 +194,11 @@ export default function DocsPage() {
             </button>
           ))}
         </div>
+        <VersionSwitcher
+          currentVersionId={currentVersionId ?? undefined}
+          onVersionChange={setCurrentVersionId}
+          className="h-8 text-xs"
+        />
         <div className="relative ml-auto w-full sm:w-56">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input

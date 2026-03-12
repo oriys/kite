@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = request.nextUrl
   const rawStatus = searchParams.get('status')
+  const rawApiVersionId = searchParams.get('api_version_id')
 
   let statusFilter: DocStatus | undefined
   if (rawStatus) {
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     statusFilter = rawStatus
   }
 
-  const docs = await listDocuments(result.ctx.workspaceId, statusFilter)
+  const docs = await listDocuments(result.ctx.workspaceId, statusFilter, 100, 0, rawApiVersionId ?? undefined)
   return NextResponse.json(docs)
 }
 

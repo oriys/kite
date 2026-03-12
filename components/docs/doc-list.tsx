@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { VisibilityBadge } from '@/components/visibility-badge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -89,11 +90,15 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                     <CardTitle className="text-sm font-medium leading-5 line-clamp-2 transition-colors group-hover:text-accent-foreground">
                       {doc.title || 'Untitled'}
                     </CardTitle>
-                    <StatusBadge
-                      label={config.label}
-                      tone={config.tone as StatusTone}
-                      className="shrink-0"
-                    />
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {doc.visibility && doc.visibility !== 'public' && (
+                        <VisibilityBadge visibility={doc.visibility} className="text-[10px] px-1.5 py-0" />
+                      )}
+                      <StatusBadge
+                        label={config.label}
+                        tone={config.tone as StatusTone}
+                      />
+                    </div>
                   </div>
                   <CardDescription className="line-clamp-2 text-xs leading-5">
                     {doc.summary || excerpt(doc.content) || 'Empty document'}
