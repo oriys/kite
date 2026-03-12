@@ -2178,6 +2178,8 @@ export function DocEditor({
       syncSplitPaneScroll('source')
     }
 
+    const syncState = splitPaneScrollSyncRef.current
+
     richViewport.addEventListener('scroll', handleRichScroll, { passive: true })
     sourceViewport.addEventListener('scroll', handleSourceScroll, { passive: true })
 
@@ -2186,8 +2188,6 @@ export function DocEditor({
     return () => {
       richViewport.removeEventListener('scroll', handleRichScroll)
       sourceViewport.removeEventListener('scroll', handleSourceScroll)
-
-      const syncState = splitPaneScrollSyncRef.current
 
       if (syncState.frame !== null) {
         window.cancelAnimationFrame(syncState.frame)
@@ -3040,7 +3040,13 @@ export function DocEditor({
         }
       }
     },
-    [captureRichSelection, syncRichEditorToMarkdown, updateTableControls],
+    [
+      captureRichSelection,
+      getActiveTableCell,
+      handleTableAddRow,
+      handleTableDeleteRow,
+      syncRichEditorToMarkdown,
+    ],
   )
 
   // ── Source keyboard shortcuts ────────────────────────────────────────────
@@ -3151,6 +3157,7 @@ export function DocEditor({
       mode,
       openCodeBlockMenu,
       readOnly,
+      updateTableControls,
       updateCodeBlockControls,
       updateHeatmapControls,
     ],

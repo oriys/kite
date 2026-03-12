@@ -69,10 +69,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
 import { DocAiResultPanel } from '@/components/docs/doc-ai-result-panel'
 import { DocHeatmapEditorDialog } from '@/components/docs/doc-heatmap-editor-dialog'
-import {
-  DocNavigationRail,
-  type DocNavigationHeading,
-} from '@/components/docs/doc-navigation-rail'
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
@@ -413,13 +409,9 @@ export function DocEditor({
   // ── UI state ─────────────────────────────────────────────────────────────
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
   const [insertPickerOpen, setInsertPickerOpen] = React.useState(false)
-  const [tocOpen, setTocOpen] = React.useState(false)
-  const [minimapOpen, setMinimapOpen] = React.useState(false)
-  const [navigationScrollProgress, setNavigationScrollProgress] = React.useState(0)
-  const [navigationViewportRatio, setNavigationViewportRatio] = React.useState(0.18)
   const [showShortcuts, setShowShortcuts] = React.useState(false)
   const [heatmapEditorOpen, setHeatmapEditorOpen] = React.useState(false)
-  const [heatmapDraft, _setHeatmapDraft] = React.useState<HeatmapDocument | null>(null)
+  const [heatmapDraft] = React.useState<HeatmapDocument | null>(null)
 
   // ── Layout state ─────────────────────────────────────────────────────────
   const [documentResizeActive, setDocumentResizeActive] = React.useState(false)
@@ -461,7 +453,6 @@ export function DocEditor({
   const aiDocumentPendingAction = aiPendingScope === 'document' ? aiPendingAction : null
   const wysiwygOnLeft = splitPaneLeading === 'wysiwyg'
   const aiPreviewOnLeft = Boolean(aiPreview) && aiPreviewSide === 'left'
-  const navigationRailOpen = tocOpen || minimapOpen
   const splitPaneColumns = `minmax(0, ${splitPaneRatio}fr) minmax(0, ${1 - splitPaneRatio}fr)`
   const aiSplitColumns = aiPreview
     ? aiPreviewOnLeft
@@ -611,51 +602,6 @@ export function DocEditor({
   React.useEffect(() => { onModeChange?.(mode) }, [mode, onModeChange])
   React.useEffect(() => { onAiPreviewVisibilityChange?.(Boolean(aiPreview)) }, [aiPreview, onAiPreviewVisibilityChange])
   React.useEffect(() => { onDocumentResizeStateChange?.(documentResizeActive) }, [documentResizeActive, onDocumentResizeStateChange])
-
-  const updateNavigationViewport = React.useCallback(() => {
-    const richViewport = editorViewportRef.current
-    const sourceViewport = textareaRef.current
-    const activeViewport =
-      mode === 'source'
-        ? sourceViewport
-        : richViewport ?? sourceViewport
-
-    if (!activeViewport) {
-      setNavigationScrollProgress(0)
-      setNavigationViewportRatio(1)
-      return
-    }
-
-    setNavigationScrollProgress(getScrollableProgress(activeViewport))
-    setNavigationViewportRatio(
-      activeViewport.scrollHeight > 0
-        ? Math.min(1, activeViewport.clientHeight / activeViewport.scrollHeight)
-        : 1,
-    )
-  }, [mode])
-
-  React.useEffect(() => {
-    updateNavigationViewport()
-  }, [content, mode, updateNavigationViewport])
-
-  React.useEffect(() => {
-    const richViewport = editorViewportRef.current
-    const sourceViewport = textareaRef.current
-
-    const handleViewportChange = () => {
-      updateNavigationViewport()
-    }
-
-    richViewport?.addEventListener('scroll', handleViewportChange, { passive: true })
-    sourceViewport?.addEventListener('scroll', handleViewportChange, { passive: true })
-    window.addEventListener('resize', handleViewportChange)
-
-    return () => {
-      richViewport?.removeEventListener('scroll', handleViewportChange)
-      sourceViewport?.removeEventListener('scroll', handleViewportChange)
-      window.removeEventListener('resize', handleViewportChange)
-    }
-  }, [mode, updateNavigationViewport])
 
   const handleModeChange = React.useCallback((newMode: EditorViewMode) => {
     switchingRef.current = true
@@ -833,7 +779,16 @@ export function DocEditor({
 
   const handleRetryAiPreview = React.useCallback(() => {
     if (!aiPreview) return
-    const { resultText: _, ...request } = aiPreview
+    const request: AiPreviewRequest = {
+      scope: aiPreview.scope,
+      action: aiPreview.action,
+      modelId: aiPreview.modelId,
+      modelLabel: aiPreview.modelLabel,
+      originalText: aiPreview.originalText,
+      selectionRange: aiPreview.selectionRange,
+      targetLanguage: aiPreview.targetLanguage,
+      customPrompt: aiPreview.customPrompt,
+    }
     void runAiPreviewRequest(request)
   }, [aiPreview, runAiPreviewRequest])
 
@@ -1076,74 +1031,6 @@ export function DocEditor({
     [],
   )
 
-  const scrollDocumentToProgress = React.useCallback(
-    (progress: number) => {
-      const normalized = Math.min(1, Math.max(0, progress))
-      const richViewport = hasRichEditor(mode) ? editorViewportRef.current : null
-      const sourceViewport = hasSourceEditor(mode) ? textareaRef.current : null
-
-      if (richViewport) {
-        const maxScroll = Math.max(richViewport.scrollHeight - richViewport.clientHeight, 0)
-        richViewport.scrollTo({
-          top: maxScroll * normalized,
-          behavior: 'smooth',
-        })
-      }
-
-      if (sourceViewport) {
-        const maxScroll = Math.max(sourceViewport.scrollHeight - sourceViewport.clientHeight, 0)
-        sourceViewport.scrollTo({
-          top: maxScroll * normalized,
-          behavior: 'smooth',
-        })
-      }
-
-      setNavigationScrollProgress(normalized)
-    },
-    [mode],
-  )
-
-  const handleJumpToHeading = React.useCallback(
-    (heading: DocNavigationHeading) => {
-      const richViewport = hasRichEditor(mode) ? editorViewportRef.current : null
-      const proseMirror = editorWrapperRef.current?.querySelector('.ProseMirror')
-      const headingElements = proseMirror
-        ? (Array.from(
-            proseMirror.querySelectorAll('h1, h2, h3, h4, h5, h6'),
-          ) as HTMLElement[])
-        : []
-      const targetHeading = richViewport ? headingElements[heading.index] ?? null : null
-
-      if (richViewport && targetHeading) {
-        const maxScroll = Math.max(richViewport.scrollHeight - richViewport.clientHeight, 0)
-        const top = Math.max(0, Math.min(targetHeading.offsetTop - 20, maxScroll))
-        const progress = maxScroll > 0 ? top / maxScroll : 0
-
-        richViewport.scrollTo({
-          top,
-          behavior: 'smooth',
-        })
-
-        if (hasSourceEditor(mode) && textareaRef.current) {
-          const sourceMaxScroll = Math.max(
-            textareaRef.current.scrollHeight - textareaRef.current.clientHeight,
-            0,
-          )
-          textareaRef.current.scrollTo({
-            top: sourceMaxScroll * progress,
-            behavior: 'smooth',
-          })
-        }
-
-        setNavigationScrollProgress(progress)
-        return
-      }
-
-      scrollDocumentToProgress(heading.progress)
-    },
-    [mode, scrollDocumentToProgress],
-  )
-
   // ── Split pane resize ────────────────────────────────────────────────────
 
   const handleSplitPaneResizeStart = React.useCallback((event: React.MouseEvent) => {
@@ -1314,57 +1201,58 @@ export function DocEditor({
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className={cn('flex flex-col overflow-hidden rounded-md border border-border/75 bg-card/95', className)}>
-      {/* Toolbar */}
-      <DocToolbar
-        mode={editingMode}
-        editorMode={mode}
-        textareaRef={textareaRef}
-        editorRef={editorWrapperRef}
-        tiptapEditor={editor}
-        disabled={readOnly}
-        onEditorModeChange={handleModeChange}
-        onSourceChange={handleSourceChange}
-        onRichChange={() => {
-          if (!editor) return
-          const html = editor.getHTML()
-          const md = htmlToMd(html)
-          latestMdRef.current = md
-          onChange(md)
-        }}
-        insertPickerOpen={insertPickerOpen}
-        onInsertPickerOpenChange={setInsertPickerOpen}
-        onBeforeOpenInsertPicker={captureCurrentSelection}
-        onInsertSnippet={handleInsertSnippet}
-        onBeforeOpenCodeMenu={captureCurrentSelection}
-        onInsertCodeBlock={handleInsertCodeBlock}
-        tocOpen={tocOpen}
-        onTocOpenChange={setTocOpen}
-        minimapOpen={minimapOpen}
-        onMinimapOpenChange={setMinimapOpen}
-        activeAiLabel={activeModel?.label ?? activeModelId}
-        aiDisabled={Boolean(aiPendingAction) || !activeModelId}
-        aiDocumentPendingAction={aiDocumentPendingAction}
-        onAiDocumentAction={(action, options) => {
-          void handleAiDocumentAction(action, options)
-        }}
-      />
+    <div
+      className={cn(
+        'flex flex-col overflow-hidden rounded-md border border-border/75 bg-card/95',
+        className,
+      )}
+    >
+        {/* Toolbar */}
+        <DocToolbar
+          mode={editingMode}
+          editorMode={mode}
+          textareaRef={textareaRef}
+          editorRef={editorWrapperRef}
+          tiptapEditor={editor}
+          disabled={readOnly}
+          onEditorModeChange={handleModeChange}
+          onSourceChange={handleSourceChange}
+          onRichChange={() => {
+            if (!editor) return
+            const html = editor.getHTML()
+            const md = htmlToMd(html)
+            latestMdRef.current = md
+            onChange(md)
+          }}
+          insertPickerOpen={insertPickerOpen}
+          onInsertPickerOpenChange={setInsertPickerOpen}
+          onBeforeOpenInsertPicker={captureCurrentSelection}
+          onInsertSnippet={handleInsertSnippet}
+          onBeforeOpenCodeMenu={captureCurrentSelection}
+          onInsertCodeBlock={handleInsertCodeBlock}
+          activeAiLabel={activeModel?.label ?? activeModelId}
+          aiDisabled={Boolean(aiPendingAction) || !activeModelId}
+          aiDocumentPendingAction={aiDocumentPendingAction}
+          onAiDocumentAction={(action, options) => {
+            void handleAiDocumentAction(action, options)
+          }}
+        />
 
-      {/* Editor area */}
-      <div
-        ref={aiSplitPaneRef}
-        style={
-          aiPreview && aiSplitColumns
-            ? ({ '--doc-ai-split-columns': aiSplitColumns } as React.CSSProperties)
-            : undefined
-        }
-        className={cn(
-          'group/ai-split-pane relative flex-1 min-h-0 grid grid-cols-1 motion-reduce:transition-none xl:transition-[grid-template-columns] xl:duration-300 xl:ease-[cubic-bezier(0.22,1,0.36,1)]',
-          aiPreview
-            ? 'xl:[grid-template-columns:var(--doc-ai-split-columns)]'
-            : 'xl:[grid-template-columns:minmax(0,1fr)]',
-        )}
-      >
+        {/* Editor area */}
+        <div
+          ref={aiSplitPaneRef}
+          style={
+            aiPreview && aiSplitColumns
+              ? ({ '--doc-ai-split-columns': aiSplitColumns } as React.CSSProperties)
+              : undefined
+          }
+          className={cn(
+            'group/ai-split-pane relative flex-1 min-h-0 grid grid-cols-1 motion-reduce:transition-none xl:transition-[grid-template-columns] xl:duration-300 xl:ease-[cubic-bezier(0.22,1,0.36,1)]',
+            aiPreview
+              ? 'xl:[grid-template-columns:var(--doc-ai-split-columns)]'
+              : 'xl:[grid-template-columns:minmax(0,1fr)]',
+          )}
+        >
         <motion.div
           layout
           transition={paneTransition}
@@ -1378,12 +1266,7 @@ export function DocEditor({
             aiPreviewOnLeft ? 'xl:order-2' : 'xl:order-1',
           )}
         >
-          <div
-            className={cn(
-              'flex h-full min-h-0 min-w-0 flex-col',
-              navigationRailOpen && 'md:flex-row',
-            )}
-          >
+          <div className="flex h-full min-h-0 min-w-0 flex-col">
             <div
               ref={splitPaneRef}
               className={cn(
@@ -1539,18 +1422,6 @@ export function DocEditor({
                 </button>
               ) : null}
             </div>
-
-            {navigationRailOpen ? (
-              <DocNavigationRail
-                content={content}
-                tocOpen={tocOpen}
-                minimapOpen={minimapOpen}
-                scrollProgress={navigationScrollProgress}
-                viewportRatio={navigationViewportRatio}
-                onJumpToHeading={handleJumpToHeading}
-                onJumpToProgress={scrollDocumentToProgress}
-              />
-            ) : null}
           </div>
 
           {/* Document width resize handle */}

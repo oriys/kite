@@ -8,13 +8,11 @@ import { Button, ButtonProps } from '@/components/ui/button'
 
 interface CopyButtonProps extends ButtonProps {
   value: string
-  src?: string
 }
 
 export function CopyButton({
   value,
   className,
-  src,
   variant = 'ghost',
   ...props
 }: CopyButtonProps) {

@@ -113,7 +113,7 @@ export function DocEditorPageClient() {
   const retryTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const retryCountRef = React.useRef(0)
   const pendingSaveRef = React.useRef<{ title: string; content: string } | null>(null)
-  const [_isOnline, setIsOnline] = React.useState(
+  const [, setIsOnline] = React.useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   )
   const editorFocusRef = React.useRef<DocEditorHandle | null>(null)

@@ -10,7 +10,6 @@ import {
   Columns2,
   Italic,
   Loader2,
-  Map,
   Sparkles,
   Strikethrough,
   FileCode,
@@ -26,11 +25,10 @@ import {
   Quote,
   Code,
   Link2,
-  Image,
+  Image as ImageIcon,
   Minus,
   PenLine,
   Table,
-  TableOfContents,
 } from 'lucide-react'
 import { AI_ACTION_LABELS, type AiTransformAction } from '@/lib/ai'
 import { type DocSnippet } from '@/lib/doc-snippets'
@@ -207,7 +205,7 @@ const actions: (ToolbarAction | 'separator')[] = [
   },
   {
     id: 'image',
-    icon: Image,
+    icon: ImageIcon,
     label: 'Image',
     sourceAction: (ta) => insertBlock(ta, '![alt](url)\n'),
     richAction: () => {},
@@ -363,7 +361,7 @@ function ImagePopover({ disabled, mode, textareaRef, editorRef, tiptapEditor, on
               onMouseDown={(e) => e.preventDefault()}
               aria-label="Image"
             >
-              <Image className="size-3.5" />
+              <ImageIcon aria-hidden="true" className="size-3.5" />
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
@@ -564,10 +562,6 @@ interface DocToolbarProps {
   onInsertSnippet?: (snippet: DocSnippet) => void
   onBeforeOpenCodeMenu?: () => void
   onInsertCodeBlock?: (language: string) => void
-  tocOpen?: boolean
-  onTocOpenChange?: (open: boolean) => void
-  minimapOpen?: boolean
-  onMinimapOpenChange?: (open: boolean) => void
   activeAiLabel?: string | null
   aiDisabled?: boolean
   aiDocumentPendingAction?: AiTransformAction | null
@@ -607,10 +601,6 @@ export function DocToolbar({
   onInsertSnippet,
   onBeforeOpenCodeMenu,
   onInsertCodeBlock,
-  tocOpen,
-  onTocOpenChange,
-  minimapOpen,
-  onMinimapOpenChange,
   activeAiLabel,
   aiDisabled,
   aiDocumentPendingAction,
@@ -740,48 +730,6 @@ export function DocToolbar({
           )
         })}
         <div className="ml-auto flex items-center gap-1 pl-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Table of Contents"
-                aria-pressed={tocOpen}
-                data-state={tocOpen ? 'on' : 'off'}
-                className={cn(tocOpen && 'bg-accent/15 text-accent-foreground')}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  onTocOpenChange?.(!tocOpen)
-                }}
-              >
-                <TableOfContents className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              Table of Contents
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Minimap"
-                aria-pressed={minimapOpen}
-                data-state={minimapOpen ? 'on' : 'off'}
-                className={cn(minimapOpen && 'bg-accent/15 text-accent-foreground')}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  onMinimapOpenChange?.(!minimapOpen)
-                }}
-              >
-                <Map className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              Minimap
-            </TooltipContent>
-          </Tooltip>
           <Separator orientation="vertical" className="mx-1 hidden h-5 sm:block" />
           <DropdownMenu modal={false}>
             <Tooltip>
