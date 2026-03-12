@@ -2,7 +2,9 @@
 
 import * as React from 'react'
 import * as PopoverPrimitive from '@radix-ui/react-popover'
+import { Slot } from '@radix-ui/react-slot'
 
+import { useHydrated } from '@/components/ui/use-hydrated'
 import { cn } from '@/lib/utils'
 
 function Popover({
@@ -12,9 +14,25 @@ function Popover({
 }
 
 function PopoverTrigger({
+  asChild,
+  children,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
+  const hydrated = useHydrated()
+
+  if (asChild && !hydrated) {
+    return (
+      <Slot data-slot="popover-trigger" {...props}>
+        {children}
+      </Slot>
+    )
+  }
+
+  return (
+    <PopoverPrimitive.Trigger data-slot="popover-trigger" asChild={asChild} {...props}>
+      {children}
+    </PopoverPrimitive.Trigger>
+  )
 }
 
 function PopoverContent({

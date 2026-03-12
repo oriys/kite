@@ -2,8 +2,10 @@
 
 import * as React from 'react'
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
+import { Slot } from '@radix-ui/react-slot'
 import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react'
 
+import { useHydrated } from '@/components/ui/use-hydrated'
 import { cn } from '@/lib/utils'
 
 function DropdownMenu({
@@ -21,13 +23,28 @@ function DropdownMenuPortal({
 }
 
 function DropdownMenuTrigger({
+  asChild,
+  children,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
+  const hydrated = useHydrated()
+
+  if (asChild && !hydrated) {
+    return (
+      <Slot data-slot="dropdown-menu-trigger" {...props}>
+        {children}
+      </Slot>
+    )
+  }
+
   return (
     <DropdownMenuPrimitive.Trigger
       data-slot="dropdown-menu-trigger"
+      asChild={asChild}
       {...props}
-    />
+    >
+      {children}
+    </DropdownMenuPrimitive.Trigger>
   )
 }
 

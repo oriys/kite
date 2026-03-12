@@ -2,8 +2,10 @@
 
 import * as React from 'react'
 import * as SheetPrimitive from '@radix-ui/react-dialog'
+import { Slot } from '@radix-ui/react-slot'
 import { XIcon } from 'lucide-react'
 
+import { useHydrated } from '@/components/ui/use-hydrated'
 import { cn } from '@/lib/utils'
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
@@ -11,9 +13,25 @@ function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
 }
 
 function SheetTrigger({
+  asChild,
+  children,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
-  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />
+  const hydrated = useHydrated()
+
+  if (asChild && !hydrated) {
+    return (
+      <Slot data-slot="sheet-trigger" {...props}>
+        {children}
+      </Slot>
+    )
+  }
+
+  return (
+    <SheetPrimitive.Trigger data-slot="sheet-trigger" asChild={asChild} {...props}>
+      {children}
+    </SheetPrimitive.Trigger>
+  )
 }
 
 function SheetClose({

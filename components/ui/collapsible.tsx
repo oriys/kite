@@ -1,6 +1,10 @@
 'use client'
 
+import * as React from 'react'
 import * as CollapsiblePrimitive from '@radix-ui/react-collapsible'
+import { Slot } from '@radix-ui/react-slot'
+
+import { useHydrated } from '@/components/ui/use-hydrated'
 
 function Collapsible({
   ...props
@@ -9,13 +13,28 @@ function Collapsible({
 }
 
 function CollapsibleTrigger({
+  asChild,
+  children,
   ...props
 }: React.ComponentProps<typeof CollapsiblePrimitive.CollapsibleTrigger>) {
+  const hydrated = useHydrated()
+
+  if (asChild && !hydrated) {
+    return (
+      <Slot data-slot="collapsible-trigger" {...props}>
+        {children}
+      </Slot>
+    )
+  }
+
   return (
     <CollapsiblePrimitive.CollapsibleTrigger
       data-slot="collapsible-trigger"
+      asChild={asChild}
       {...props}
-    />
+    >
+      {children}
+    </CollapsiblePrimitive.CollapsibleTrigger>
   )
 }
 

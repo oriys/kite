@@ -2,7 +2,9 @@
 
 import * as React from 'react'
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog'
+import { Slot } from '@radix-ui/react-slot'
 
+import { useHydrated } from '@/components/ui/use-hydrated'
 import { cn } from '@/lib/utils'
 import { buttonVariants } from '@/components/ui/button'
 
@@ -13,10 +15,28 @@ function AlertDialog({
 }
 
 function AlertDialogTrigger({
+  asChild,
+  children,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Trigger>) {
+  const hydrated = useHydrated()
+
+  if (asChild && !hydrated) {
+    return (
+      <Slot data-slot="alert-dialog-trigger" {...props}>
+        {children}
+      </Slot>
+    )
+  }
+
   return (
-    <AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props} />
+    <AlertDialogPrimitive.Trigger
+      data-slot="alert-dialog-trigger"
+      asChild={asChild}
+      {...props}
+    >
+      {children}
+    </AlertDialogPrimitive.Trigger>
   )
 }
 
