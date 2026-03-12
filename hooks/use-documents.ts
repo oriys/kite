@@ -150,6 +150,7 @@ function normalizeDoc(raw: Record<string, unknown>): Doc {
     summary: String(raw.summary ?? ''),
     status: raw.status as DocStatus,
     visibility: (raw.visibility as Doc['visibility']) ?? 'public',
+    locale: (raw.locale as string) ?? null,
     apiVersionId: (raw.apiVersionId as string) ?? null,
     createdAt: String(raw.createdAt),
     updatedAt: String(raw.updatedAt),

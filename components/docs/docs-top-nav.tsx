@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileText, Braces, BrainCircuit, PencilLine, Blocks, BarChart3, LinkIcon, Menu, Search } from 'lucide-react'
+import { FileText, Braces, BrainCircuit, PencilLine, Blocks, BarChart3, LinkIcon, Menu, Search, Shield, Webhook, Palette, LayoutTemplate, ClipboardCheck } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import {
 import { ThemeToggle } from '@/components/theme-toggle'
 import { UserMenu } from '@/components/auth/user-menu'
 import { GlobalSearch } from '@/components/global-search'
+import { NotificationBell } from '@/components/notification-bell'
 
 const NAV_ITEMS = [
   { href: '/docs', label: 'Documents', icon: FileText },
@@ -27,6 +28,11 @@ const NAV_ITEMS = [
   { href: '/docs/components', label: 'Quick Insert', icon: Blocks },
   { href: '/docs/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/docs/link-health', label: 'Link Health', icon: LinkIcon },
+  { href: '/docs/templates', label: 'Templates', icon: LayoutTemplate },
+  { href: '/docs/approvals', label: 'Approvals', icon: ClipboardCheck },
+  { href: '/docs/webhooks', label: 'Webhooks', icon: Webhook },
+  { href: '/docs/branding', label: 'Branding', icon: Palette },
+  { href: '/docs/audit-logs', label: 'Audit Logs', icon: Shield },
 ] as const
 
 function isActive(pathname: string, href: string) {
@@ -160,6 +166,7 @@ export function DocsTopNav() {
           >
             <Search className="size-4" />
           </Button>
+          <NotificationBell />
           <ThemeToggle />
           <UserMenu />
         </div>

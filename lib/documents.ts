@@ -49,6 +49,7 @@ export interface Doc {
   summary: string
   status: DocStatus
   visibility: 'public' | 'partner' | 'private'
+  locale: string | null
   apiVersionId: string | null
   createdAt: string
   updatedAt: string

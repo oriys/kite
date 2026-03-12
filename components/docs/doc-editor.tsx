@@ -11,6 +11,7 @@ import TiptapLink from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import CharacterCount from '@tiptap/extension-character-count'
+import { TextSelection } from '@tiptap/pm/state'
 import { common, createLowlight } from 'lowlight'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
@@ -403,14 +404,18 @@ export function DocEditor({
       editorFocusRef.current = {
         focus: () => editor?.commands.focus(),
         applyCommentMark: (from: number, to: number, commentId: string) => {
-          if (!editor) return
-          editor
-            .chain()
-            .focus()
-            .setTextSelection({ from, to })
-            .setMark('comment', { commentId })
-            .setTextSelection(to)
-            .run()
+          if (!editor || from >= to) return
+          const commentMark = editor.schema.marks.comment
+          if (!commentMark) return
+
+          const tr = editor.state.tr.addMark(
+            from,
+            to,
+            commentMark.create({ commentId }),
+          )
+          tr.setSelection(TextSelection.create(tr.doc, to))
+
+          editor.view.dispatch(tr)
         },
       }
     }

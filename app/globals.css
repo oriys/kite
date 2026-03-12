@@ -777,33 +777,57 @@
 
 /* Inline comment highlight marks */
 .comment-highlight {
-  background-color: oklch(0.95 0.05 85);
-  border-bottom: 2px solid oklch(0.75 0.1 85);
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+  background-color: transparent;
+  box-shadow:
+    inset 0 -0.52em 0 oklch(0.95 0.04 86 / 0.92),
+    inset 0 -1px 0 oklch(0.73 0.08 84 / 0.78);
   cursor: pointer;
-  border-radius: 1px;
-  transition: background-color 0.15s ease;
+  border-radius: 0.16em;
+  padding-inline: 0.02em;
+  margin-inline: -0.02em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: box-shadow 0.15s ease;
 }
 
 .comment-highlight:hover {
-  background-color: oklch(0.91 0.07 85);
+  box-shadow:
+    inset 0 -0.56em 0 oklch(0.93 0.055 86 / 0.96),
+    inset 0 -1px 0 oklch(0.69 0.1 84 / 0.9);
 }
 
-@media (prefers-color-scheme: dark) {
-  .search-match {
-    background-color: oklch(0.45 0.1 85);
-  }
+.comment-highlight::selection {
+  background-color: oklch(0.91 0.05 86);
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
 
-  .search-match-current {
-    background-color: oklch(0.55 0.14 55);
-    outline-color: oklch(0.55 0.14 55 / 0.4);
-  }
+.dark .search-match {
+  background-color: oklch(0.45 0.1 85);
+}
 
-  .comment-highlight {
-    background-color: oklch(0.25 0.03 85);
-    border-bottom-color: oklch(0.5 0.08 85);
-  }
+.dark .search-match-current {
+  background-color: oklch(0.55 0.14 55);
+  outline-color: oklch(0.55 0.14 55 / 0.4);
+}
 
-  .comment-highlight:hover {
-    background-color: oklch(0.3 0.04 85);
-  }
+.dark .comment-highlight {
+  background-color: transparent;
+  box-shadow:
+    inset 0 -0.5em 0 oklch(0.42 0.045 86 / 0.62),
+    inset 0 -1px 0 oklch(0.62 0.09 84 / 0.86);
+}
+
+.dark .comment-highlight:hover {
+  box-shadow:
+    inset 0 -0.56em 0 oklch(0.48 0.05 86 / 0.72),
+    inset 0 -1px 0 oklch(0.69 0.11 84 / 0.96);
+}
+
+.dark .comment-highlight::selection {
+  background-color: oklch(0.46 0.05 86);
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
 }

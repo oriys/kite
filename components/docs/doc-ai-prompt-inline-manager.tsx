@@ -11,7 +11,6 @@ import {
   type AiTransformAction,
 } from '@/lib/ai'
 import {
-  AI_PROMPT_LANGUAGE_TOKEN,
   MAX_AI_ACTION_PROMPT_LENGTH,
   MAX_AI_SYSTEM_PROMPT_LENGTH,
   countCustomizedAiPrompts,
@@ -40,67 +39,43 @@ interface DocAiPromptInlineManagerProps {
 
 const PROMPT_META: Record<
   PromptTarget,
-  { title: string; description: string; note: string }
+  { title: string }
 > = {
   system: {
     title: 'System prompt',
-    description: 'Shared guardrail sent before every AI request in this browser.',
-    note: 'Use this for tone, formatting rules, and hard constraints that should apply to every action.',
   },
   polish: {
     title: 'Polish',
-    description: 'Used when refining selected text without changing intent.',
-    note: 'Great for testing tone, clarity, and house style on a short selection.',
   },
   shorten: {
     title: 'Shorten',
-    description: 'Used when compressing text while preserving meaning.',
-    note: 'Keep it direct. Short prompts make it easier to compare output changes.',
   },
   expand: {
     title: 'Expand',
-    description: 'Used when adding useful detail without inventing facts.',
-    note: 'Good for testing how much supporting context the model adds.',
   },
   translate: {
     title: 'Translate',
-    description: 'Used when translating content while preserving markdown.',
-    note: `Use ${AI_PROMPT_LANGUAGE_TOKEN} where the chosen language should be inserted.`,
   },
   explain: {
     title: 'Explain',
-    description: 'Used when clarifying technical text for a broader audience.',
-    note: 'Useful for checking whether the assistant adds enough context without drifting.',
   },
   review: {
     title: 'Review',
-    description: 'Used for editorial review reports on the current draft.',
-    note: 'Keep the structure stable so it is easy to compare runs.',
   },
   score: {
     title: 'Score',
-    description: 'Used when grading the document against a rubric.',
-    note: 'Small rubric edits are easy to validate on the same passage repeatedly.',
   },
   summarize: {
     title: 'Summarize',
-    description: 'Used when producing a quick executive summary.',
-    note: 'Ideal for testing brevity and emphasis on key takeaways.',
   },
   outline: {
     title: 'Outline',
-    description: 'Used when extracting the real structure of the draft.',
-    note: 'Good for testing hierarchy and markdown list formatting.',
   },
   checklist: {
     title: 'Checklist',
-    description: 'Used when turning text into concrete follow-up tasks.',
-    note: 'Tight instructions help keep the output actionable instead of generic.',
   },
   custom: {
     title: 'Custom Prompt',
-    description: 'Base instruction prepended before the user’s one-off custom request.',
-    note: 'Keep this broad. The inline custom prompt adds the task-specific instruction later.',
   },
 }
 
@@ -291,9 +266,6 @@ export function DocAiPromptInlineManager({
                 <p className="text-sm font-medium text-foreground">
                   {selectedMeta.title}
                 </p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {selectedMeta.description}
-                </p>
               </div>
               <Badge variant={selectedIsDefault ? 'outline' : 'secondary'}>
                 {selectedIsDefault ? 'Default' : 'Custom'}
@@ -324,21 +296,20 @@ export function DocAiPromptInlineManager({
                     onChange={(event) => handleValueChange(event.target.value)}
                     maxLength={selectedMaxLength}
                     className="min-h-[14rem] text-[13px] leading-6"
-                    placeholder={selectedDefaultValue}
+                    placeholder={
+                      selectedTarget === 'system'
+                        ? 'Leave blank to use the default system prompt'
+                        : 'Leave blank to use the default action prompt'
+                    }
                   />
                   <FieldDescription>
-                    {selectedMeta.note}
+                    {selectedTarget === 'system'
+                      ? 'Leave blank to use the default system prompt.'
+                      : 'Leave blank to use the default action prompt.'}
                   </FieldDescription>
                 </FieldContent>
               </Field>
             </FieldGroup>
-
-            {selectedTarget === 'translate' ? (
-              <div className="mt-4 rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-xs leading-5 text-muted-foreground">
-                The selected language is injected into <code>{AI_PROMPT_LANGUAGE_TOKEN}</code> at
-                runtime, so you can adjust the wording without hardcoding a language.
-              </div>
-            ) : null}
           </div>
 
           <div className="flex items-center justify-between gap-3 border-t border-border/70 px-3 py-3">

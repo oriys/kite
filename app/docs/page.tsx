@@ -30,6 +30,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { VersionSwitcher } from '@/components/version-switcher'
+import { TemplatePicker } from '@/components/template-picker'
 
 const statuses: (DocStatus | 'all')[] = ['all', 'draft', 'review', 'published', 'archived']
 const SUMMARY_REFRESH_INTERVAL_MS = 1500
@@ -138,6 +139,7 @@ export default function DocsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
+          <TemplatePicker />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-8">

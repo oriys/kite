@@ -187,8 +187,8 @@ export function DocAiManagerPage() {
   return (
     <DocsAdminShell
       kicker="AI Models"
-      title="Keep the editor on a small, trusted model set."
-      description="Sync the catalog, enable only the models writers should see, and keep one default route ready for every new editor session."
+      title="Manage AI models"
+      description="Enable models and choose the editor default."
       actions={(
         <Button
           size="sm"

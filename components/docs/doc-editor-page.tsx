@@ -35,6 +35,9 @@ import { DocCommentSidebar } from '@/components/docs/doc-comment-sidebar'
 import { VisibilitySelector } from '@/components/visibility-selector'
 import { VisibilityBadge } from '@/components/visibility-badge'
 import { DocFeedback } from '@/components/doc-feedback'
+import { ExportMenu } from '@/components/export-menu'
+import { PresenceAvatars } from '@/components/presence-avatars'
+import { LocaleSwitcher } from '@/components/locale-switcher'
 
 function getEditorShellClassName(resizing = false) {
   return cn(
@@ -420,6 +423,12 @@ export function DocEditorPageClient() {
                 className="shrink-0"
               />
             )}
+            <ExportMenu documentId={doc.id} documentTitle={title} />
+            <LocaleSwitcher
+              currentLocale={doc.locale ?? 'en'}
+              onLocaleChange={() => {}}
+            />
+            <PresenceAvatars documentId={doc.id} currentUserId={doc.createdBy ?? ''} />
             <Button
               variant="ghost"
               size="icon"

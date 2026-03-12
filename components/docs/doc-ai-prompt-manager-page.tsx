@@ -15,13 +15,11 @@ import {
   type AiTransformAction,
 } from '@/lib/ai'
 import {
-  AI_PROMPT_LANGUAGE_TOKEN,
   MAX_AI_ACTION_PROMPT_LENGTH,
   MAX_AI_SYSTEM_PROMPT_LENGTH,
   countCustomizedAiPrompts,
   createDefaultAiPromptSettings,
   resolveAiActionModel,
-  resolveAiPromptTemplate,
   sanitizeAiPromptSettings,
   type AiPromptSettings,
 } from '@/lib/ai-prompts'
@@ -52,56 +50,6 @@ import { Textarea } from '@/components/ui/textarea'
 
 const numberFormatter = new Intl.NumberFormat('en-US')
 const DEFAULT_MODEL_VALUE = '__workspace-default__'
-
-const ACTION_META: Record<
-  AiTransformAction,
-  { description: string; helper: string }
-> = {
-  polish: {
-    description: 'Refine selected text without changing the intent or structure.',
-    helper: 'Useful when drafts need editorial cleanup before review.',
-  },
-  shorten: {
-    description: 'Compress verbose sections into a tighter, clearer version.',
-    helper: 'Keep key facts, trim repetition, and preserve ordering.',
-  },
-  expand: {
-    description: 'Add explanation and supporting detail without inventing facts.',
-    helper: 'Best for shallow sections that need more clarity or context.',
-  },
-  translate: {
-    description: 'Translate while preserving markdown, code blocks, and terminology.',
-    helper: `Use ${AI_PROMPT_LANGUAGE_TOKEN} anywhere the target language should appear.`,
-  },
-  explain: {
-    description: 'Explain technical text in plainer language for wider audiences.',
-    helper: 'Use when a section needs more context, not just rewriting.',
-  },
-  review: {
-    description: 'Produce a technical-editor review report for the full draft.',
-    helper: 'Great for coverage checks, clarity issues, and concrete fix recommendations.',
-  },
-  score: {
-    description: 'Grade the document with a rubric and a short final verdict.',
-    helper: 'Useful when you want an at-a-glance quality signal before review.',
-  },
-  summarize: {
-    description: 'Generate an executive summary of the document.',
-    helper: 'Best for turning long drafts into a fast review briefing.',
-  },
-  outline: {
-    description: 'Extract the real structure as a clean hierarchical outline.',
-    helper: 'Use when the draft needs structure review or navigation scaffolding.',
-  },
-  checklist: {
-    description: 'Convert the draft into a practical checklist of next actions.',
-    helper: 'Useful for launch readiness, QA sweeps, or implementation follow-ups.',
-  },
-  custom: {
-    description: 'Run a one-off instruction that the user writes against the selected text.',
-    helper: 'The runtime prompt from the editor dialog is appended after this base instruction.',
-  },
-}
 
 function arePromptSettingsEqual(
   left: AiPromptSettings,
@@ -233,8 +181,8 @@ export function DocAiPromptManagerPage() {
   return (
     <DocsAdminShell
       kicker="AI Prompts"
-      title="Override only the actions that need special handling."
-      description="Keep shared guardrails in one place, then open a single action only when it truly needs a different model or a custom instruction."
+      title="Manage AI prompts"
+      description="Edit shared defaults and per-action overrides."
       actions={(
         <>
           <Button
@@ -271,7 +219,6 @@ export function DocAiPromptManagerPage() {
           <Badge variant="outline" className="max-w-full truncate sm:max-w-[20rem]">
             Default {defaultModelLabel}
           </Badge>
-          <Badge variant="outline">Token {AI_PROMPT_LANGUAGE_TOKEN}</Badge>
         </>
       )}
       notice={(
@@ -342,18 +289,17 @@ export function DocAiPromptManagerPage() {
                     }
                     maxLength={MAX_AI_SYSTEM_PROMPT_LENGTH}
                     className="min-h-32 leading-6"
-                    placeholder={defaults.systemPrompt}
+                    placeholder="Leave blank to use the default system prompt"
                   />
                   <FieldDescription>
-                    Leave empty to fall back to the default system prompt when you save.
+                    Leave blank to use the default system prompt.
                   </FieldDescription>
                 </FieldContent>
               </Field>
             </FieldGroup>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 px-4 py-3 text-xs text-muted-foreground sm:px-5">
-            <span>Shapes tone, formatting discipline, and output constraints.</span>
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/70 px-4 py-3 text-xs text-muted-foreground sm:px-5">
             <span>
               {formatCharacterCount(draftPrompts.systemPrompt)} /{' '}
               {numberFormatter.format(MAX_AI_SYSTEM_PROMPT_LENGTH)}
@@ -413,9 +359,6 @@ export function DocAiPromptManagerPage() {
                           <Badge variant="outline">Resets on save</Badge>
                         ) : null}
                       </div>
-                      <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-                        {ACTION_META[action].description}
-                      </p>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pb-5">
@@ -501,14 +444,6 @@ export function DocAiPromptManagerPage() {
                           </div>
                         </div>
 
-                        <Alert className="border-border/80 bg-muted/25">
-                          <Sparkles />
-                          <AlertTitle>Writing note</AlertTitle>
-                          <AlertDescription>
-                            {ACTION_META[action].helper} Leave the field empty to restore the
-                            default instruction when you save.
-                          </AlertDescription>
-                        </Alert>
                       </div>
 
                       <div className="space-y-4">
@@ -522,28 +457,14 @@ export function DocAiPromptManagerPage() {
                                 onChange={(event) => setActionPrompt(action, event.target.value)}
                                 maxLength={MAX_AI_ACTION_PROMPT_LENGTH}
                                 className="min-h-36 leading-6"
-                                placeholder={defaults.actionPrompts[action]}
+                                placeholder="Leave blank to use the default action prompt"
                               />
                               <FieldDescription>
-                                Keep it short, task-specific, and compatible with the shared
-                                system guardrails.
+                                Leave blank to use the default action prompt.
                               </FieldDescription>
                             </FieldContent>
                           </Field>
                         </FieldGroup>
-
-                        {action === 'translate' ? (
-                          <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                            <p className="editorial-section-kicker">Resolved preview</p>
-                            <p className="mt-2 text-sm leading-6 text-foreground">
-                              {resolveAiPromptTemplate(
-                                draftPrompts.actionPrompts.translate ||
-                                  defaults.actionPrompts.translate,
-                                'Simplified Chinese',
-                              )}
-                            </p>
-                          </div>
-                        ) : null}
 
                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                           <div className="flex flex-wrap items-center gap-2">
