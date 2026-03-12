@@ -32,12 +32,10 @@ export function extractJsonSchemas(
 
     if (s.type === 'object' || s.properties) {
       schemas[name] = s
-      counter++
     } else if (s.type === 'array' && s.items) {
       const itemName = `${name}Item`
       extractSchema(s.items, itemName)
       schemas[name] = s
-      counter++
     }
   }
 
