@@ -39,6 +39,8 @@ import { htmlToMd } from '@/lib/html-to-markdown'
 import { type DocSnippet } from '@/lib/doc-snippets'
 import { JsonViewerNode, SchemaViewerNode, HeatmapNode } from '@/lib/editor/custom-nodes'
 import { createImagePasteDropExtension } from '@/lib/editor/image-paste-drop'
+import { SearchReplace } from '@/lib/editor/search-replace'
+import { DocFindReplace } from '@/components/docs/doc-find-replace'
 import {
   type AiPreviewRequest,
   type AiPreviewState,
@@ -162,6 +164,7 @@ export function DocEditor({
   const [heatmapEditorOpen, setHeatmapEditorOpen] = React.useState(false)
   const [linkInputOpen, setLinkInputOpen] = React.useState(false)
   const [linkInputUrl, setLinkInputUrl] = React.useState('')
+  const [findReplaceOpen, setFindReplaceOpen] = React.useState(false)
   const [a11yAnnouncement, setA11yAnnouncement] = React.useState('')
 
   const announce = React.useCallback((message: string) => {
@@ -236,6 +239,7 @@ export function DocEditor({
         HTMLAttributes: {},
       }),
       CharacterCount,
+      SearchReplace,
       JsonViewerNode,
       SchemaViewerNode,
       HeatmapNode,
@@ -292,6 +296,13 @@ export function DocEditor({
         if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'x') {
           event.preventDefault()
           editor!.chain().focus().toggleStrike().run()
+          return true
+        }
+
+        // Find/Replace shortcut
+        if ((event.metaKey || event.ctrlKey) && event.key === 'f') {
+          event.preventDefault()
+          setFindReplaceOpen(true)
           return true
         }
 
@@ -907,6 +918,15 @@ export function DocEditor({
             void handleAiDocumentAction(action, options)
           }}
         />
+
+        {/* Find/Replace bar */}
+        {editor && (
+          <DocFindReplace
+            editor={editor}
+            open={findReplaceOpen}
+            onOpenChange={setFindReplaceOpen}
+          />
+        )}
 
         {/* Editor area */}
         <div
