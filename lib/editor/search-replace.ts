@@ -205,7 +205,8 @@ export const SearchReplace = Extension.create<Record<string, never>, SearchRepla
   },
 
   addProseMirrorPlugins() {
-    const extensionThis = this
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ext = this
 
     return [
       new Plugin({
@@ -219,7 +220,7 @@ export const SearchReplace = Extension.create<Record<string, never>, SearchRepla
               return oldSet.map(tr.mapping, tr.doc)
             }
 
-            const storage = extensionThis.storage as SearchReplaceStorage
+            const storage = ext.storage as SearchReplaceStorage
             if (!storage.searchTerm || storage.results.length === 0) {
               return DecorationSet.empty
             }
