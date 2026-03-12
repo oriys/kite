@@ -94,6 +94,33 @@ tokenPatterns.typescript = tokenPatterns.javascript
 tokenPatterns.jsx = tokenPatterns.javascript
 tokenPatterns.tsx = tokenPatterns.javascript
 
+tokenPatterns.python = [
+  { pattern: /#.*/g, className: 'doc-code-comment' },
+  { pattern: /"""[\s\S]*?"""|'''[\s\S]*?'''/g, className: 'doc-code-string' },
+  { pattern: /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, className: 'doc-code-string' },
+  {
+    pattern:
+      /\b(import|from|def|class|return|if|elif|else|for|while|with|as|try|except|finally|raise|pass|break|continue|and|or|not|in|is|lambda|yield|async|await)\b/g,
+    className: 'doc-code-keyword',
+  },
+  { pattern: /\b(True|False|None)\b/g, className: 'doc-code-constant' },
+  { pattern: /\b-?\d+\.?\d*(?:[eE][+-]?\d+)?\b/g, className: 'doc-code-number' },
+  { pattern: /\b(print|len|range|str|int|float|list|dict|set|tuple|type|isinstance)\b/g, className: 'doc-code-type' },
+]
+
+tokenPatterns.go = [
+  { pattern: /\/\/.*|\/\*[\s\S]*?\*\//g, className: 'doc-code-comment' },
+  { pattern: /"(?:\\.|[^"\\])*"|`[^`]*`/g, className: 'doc-code-string' },
+  {
+    pattern:
+      /\b(package|import|func|return|if|else|for|range|switch|case|default|break|continue|go|defer|select|chan|map|struct|interface|type|var|const)\b/g,
+    className: 'doc-code-keyword',
+  },
+  { pattern: /\b(true|false|nil|iota)\b/g, className: 'doc-code-constant' },
+  { pattern: /\b-?\d+\.?\d*(?:[eE][+-]?\d+)?\b/g, className: 'doc-code-number' },
+  { pattern: /\b(string|int|int64|float64|bool|byte|error|any)\b/g, className: 'doc-code-type' },
+]
+
 export const CODE_LANGUAGE_OPTIONS: CodeLanguageOption[] = [
   { value: 'text', label: 'Plain Text', hint: 'txt', sample: 'code' },
   { value: 'bash', label: 'Bash', hint: 'sh', sample: 'echo "hello"' },

@@ -9,6 +9,8 @@ import {
   AlertCircle,
   Clock,
   ArrowRightLeft,
+  Code,
+  ChevronDown,
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -25,6 +27,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { CodeSnippetTabs } from '@/components/code-snippet-tabs'
 import {
   HttpRequest,
   type HttpMethod,
@@ -64,6 +67,7 @@ export function ApiPlayground({
     size: string
   } | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+  const [showCode, setShowCode] = React.useState(false)
 
   const handleSend = async () => {
     setLoading(true)
@@ -205,14 +209,33 @@ export function ApiPlayground({
             aria-label="Request URL"
           />
         </div>
-        <Button onClick={handleSend} disabled={loading} className="w-full sm:w-auto">
-          {loading ? (
-            <Loader2 className="mr-2 size-4 motion-safe:animate-spin" />
-          ) : (
-            <Play className="mr-2 size-4" />
-          )}
-          Send
-        </Button>
+        <div className="flex w-full gap-2 sm:w-auto">
+          <Button onClick={handleSend} disabled={loading} className="flex-1 sm:flex-initial">
+            {loading ? (
+              <Loader2 className="mr-2 size-4 motion-safe:animate-spin" />
+            ) : (
+              <Play className="mr-2 size-4" />
+            )}
+            Send
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowCode((prev) => !prev)}
+            className={cn(
+              'flex-1 sm:flex-initial',
+              showCode && 'bg-accent text-accent-foreground',
+            )}
+          >
+            <Code className="mr-2 size-4" />
+            Code
+            <ChevronDown
+              className={cn(
+                'ml-1 size-3 transition-transform',
+                showCode && 'rotate-180',
+              )}
+            />
+          </Button>
+        </div>
       </div>
 
       {/* Request Details Tabs */}
@@ -396,6 +419,34 @@ export function ApiPlayground({
               </div>
             )
           )}
+        </div>
+      )}
+      {/* Code Snippets Panel */}
+      {showCode && (
+        <div className="border-t border-border/75 bg-background/80 p-4">
+          <h3 className="mb-3 text-sm font-medium text-muted-foreground">Generated Code</h3>
+          <CodeSnippetTabs
+            config={{
+              method,
+              url: (() => {
+                try {
+                  const urlObj = new URL(url)
+                  params.forEach((p) => {
+                    if (p.enabled && p.key) {
+                      urlObj.searchParams.append(p.key, p.value)
+                    }
+                  })
+                  return urlObj.toString()
+                } catch {
+                  return url
+                }
+              })(),
+              headers: headers
+                .filter((h) => h.enabled && h.key && h.value)
+                .map((h) => ({ key: h.key, value: h.value })),
+              body: body || undefined,
+            }}
+          />
         </div>
       )}
     </HttpRequest>
