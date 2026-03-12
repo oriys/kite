@@ -222,6 +222,7 @@ export const DocSlashMenu = React.forwardRef<
         e.preventDefault()
         e.stopPropagation()
         onClose()
+        editorRef.current?.focus()
         return
       }
 
@@ -260,7 +261,7 @@ export const DocSlashMenu = React.forwardRef<
     <div
       ref={menuRef}
       data-slash-menu
-      className="absolute z-50 w-80 overflow-hidden rounded-xl border border-border/80 bg-background/95 shadow-[0_24px_60px_-36px_rgba(15,23,42,0.35)] backdrop-blur-md animate-in fade-in slide-in-from-top-1"
+      className="absolute z-50 w-80 overflow-hidden rounded-xl border border-border/80 bg-background/95 shadow-[0_24px_60px_-36px_rgba(15,23,42,0.35)] backdrop-blur-md motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
@@ -271,6 +272,7 @@ export const DocSlashMenu = React.forwardRef<
           value={query}
           onValueChange={setQuery}
           placeholder="Search blocks, headings, tables, or /h1"
+          aria-label="Search slash commands"
           autoFocus
         />
         <CommandList className="max-h-[320px]">

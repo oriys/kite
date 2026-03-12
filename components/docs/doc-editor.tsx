@@ -249,8 +249,9 @@ export function DocEditor({
           readOnly && 'cursor-default opacity-70',
         ),
         role: 'textbox',
-        'aria-label': 'Rich text editor',
+        'aria-label': readOnly ? 'Rich text editor (read-only)' : 'Rich text editor',
         'aria-multiline': 'true',
+        ...(readOnly ? { 'aria-readonly': 'true' } : {}),
       },
       handleKeyDown: (_view, event) => {
         // Slash menu trigger
