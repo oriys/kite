@@ -22,6 +22,7 @@ import {
   type AiTransformAction,
 } from '@/lib/ai'
 import { cn } from '@/lib/utils'
+import { DocAiPromptInlineManager } from '@/components/docs/doc-ai-prompt-inline-manager'
 import { DocAiGlyph } from '@/components/docs/doc-ai-glyph'
 import { Button } from '@/components/ui/button'
 import {
@@ -58,7 +59,7 @@ interface BubbleMenuPosition {
   left: number
 }
 
-type AiFlyoutPanel = 'models' | 'languages' | null
+type AiFlyoutPanel = 'models' | 'languages' | 'prompts' | null
 
 const MENU_VIEWPORT_PADDING = 8
 const MENU_SELECTION_GAP = 12
@@ -68,6 +69,7 @@ const MENU_HORIZONTAL_PADDING = 24
 const AI_MENU_FLYOUT_GAP = 8
 const AI_MENU_MODELS_WIDTH = 288
 const AI_MENU_LANGUAGES_WIDTH = 224
+const AI_MENU_PROMPTS_WIDTH = 416
 const AI_MENU_OPEN_DELAY = 140
 const AI_MENU_CLOSE_DELAY = 110
 
@@ -222,6 +224,17 @@ function AiMenuItemContent({
       {trailing}
     </>
   )
+}
+
+function getAiFlyoutWidth(panel: Exclude<AiFlyoutPanel, null>) {
+  switch (panel) {
+    case 'models':
+      return AI_MENU_MODELS_WIDTH
+    case 'languages':
+      return AI_MENU_LANGUAGES_WIDTH
+    case 'prompts':
+      return AI_MENU_PROMPTS_WIDTH
+  }
 }
 
 export function DocBubbleMenu({
@@ -416,8 +429,7 @@ export function DocBubbleMenu({
       return
     }
 
-    const panelWidth =
-      aiFlyoutPanel === 'models' ? AI_MENU_MODELS_WIDTH : AI_MENU_LANGUAGES_WIDTH
+    const panelWidth = getAiFlyoutWidth(aiFlyoutPanel)
 
     const updateFlyoutDirection = () => {
       const rect = aiMenuRootRef.current?.getBoundingClientRect()
@@ -811,14 +823,21 @@ export function DocBubbleMenu({
 
                     <DropdownMenuItem
                       className="rounded-lg px-2 py-2"
-                      onSelect={() => {
-                        closeAiMenu()
-                        router.push('/docs/ai/prompts')
+                      onMouseEnter={(event) =>
+                        openAiFlyoutDelayed('prompts', event.currentTarget as HTMLElement)
+                      }
+                      onFocus={(event) =>
+                        openAiFlyoutImmediate('prompts', event.currentTarget as HTMLElement)
+                      }
+                      onSelect={(event) => {
+                        event.preventDefault()
+                        openAiFlyoutImmediate('prompts', event.currentTarget as HTMLElement)
                       }}
                     >
                       <AiMenuItemContent
                         icon={<PencilLine className="size-4" />}
                         title="Manage AI prompts"
+                        trailing={<ChevronRight className="size-4 text-muted-foreground" />}
                       />
                     </DropdownMenuItem>
                   </AiMenuCard>
@@ -861,6 +880,30 @@ export function DocBubbleMenu({
                         />
                       </DropdownMenuItem>
                     ))}
+                  </AiMenuCard>
+                ) : null}
+
+                {aiFlyoutPanel === 'prompts' ? (
+                  <AiMenuCard
+                    style={
+                      aiFlyoutDirection === 'bottom'
+                        ? undefined
+                        : { top: `${aiFlyoutOffsetTop}px` }
+                    }
+                    className={cn(
+                      'absolute top-0 z-10 w-[26rem] max-w-[calc(100vw-16px)] animate-in fade-in duration-180',
+                      aiFlyoutDirection === 'right' &&
+                        'left-[calc(100%+8px)] slide-in-from-left-1',
+                      aiFlyoutDirection === 'left' &&
+                        'right-[calc(100%+8px)] slide-in-from-right-1',
+                      aiFlyoutDirection === 'bottom' &&
+                        'left-0 top-[calc(100%+8px)] slide-in-from-top-1',
+                    )}
+                  >
+                    <DocAiPromptInlineManager
+                      activeModelId={activeModel?.id ?? activeModelId}
+                      enabledModels={enabledModels}
+                    />
                   </AiMenuCard>
                 ) : null}
               </div>

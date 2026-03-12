@@ -4,7 +4,6 @@ import * as React from 'react'
 import { toast } from 'sonner'
 import {
   Bot,
-  PencilLine,
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
@@ -29,6 +28,8 @@ import {
 import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { DocsAdminShell } from '@/components/docs/docs-admin-shell'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -239,408 +240,336 @@ export function DocAiPromptManagerPage() {
   }, [resetPrompts])
 
   return (
-    <div className="mx-auto flex max-w-[1500px] flex-col gap-6 px-4 py-8 sm:px-6">
-      <header className="editorial-surface overflow-hidden editorial-reveal">
-        <div className="grid gap-6 border-b border-border/70 px-5 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.35fr)_auto] lg:items-start">
-          <div className="flex flex-col gap-4">
-            <p className="editorial-section-kicker">AI Action Studio</p>
-            <div className="max-w-3xl">
-              <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                Route every AI action through its own model and instruction set.
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-                Pin each rewrite, review, translation, or custom action to different enabled
-                models, then tune the prompt each one receives.
-                Unassigned actions fall back to the current default AI automatically.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Managed Actions
-                </p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                  {numberFormatter.format(AI_TRANSFORM_ACTIONS.length)}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Custom Overrides
-                </p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                  {numberFormatter.format(draftCustomizedCount)}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Enabled Models
-                </p>
-                <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-                  {aiModelsLoading ? 'Syncing...' : numberFormatter.format(enabledModels.length)}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-start gap-3 lg:justify-end">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleResetAll}
-                disabled={!isDirty && draftCustomizedCount === 0}
-              >
-                <RefreshCw data-icon="inline-start" />
-                Restore defaults
-              </Button>
-              <Button size="sm" onClick={handleSave} disabled={!isDirty}>
-                <Sparkles data-icon="inline-start" />
-                Save actions
-              </Button>
-          </div>
-        </div>
-        <div className="grid gap-3 px-5 py-4 sm:px-6">
+    <DocsAdminShell
+      kicker="AI Prompts"
+      title="Override only the actions that need special handling."
+      description="Keep shared guardrails in one place, then open a single action only when it truly needs a different model or a custom instruction."
+      actions={(
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleResetAll}
+            disabled={!isDirty && draftCustomizedCount === 0}
+          >
+            <RefreshCw data-icon="inline-start" />
+            Restore defaults
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={!isDirty}>
+            <Sparkles data-icon="inline-start" />
+            Save changes
+          </Button>
+        </>
+      )}
+      meta={(
+        <>
+          <Badge variant={isDirty ? 'secondary' : 'outline'}>
+            {isDirty ? 'Unsaved changes' : 'Saved'}
+          </Badge>
+          <Badge variant="outline">
+            {numberFormatter.format(AI_TRANSFORM_ACTIONS.length)} actions
+          </Badge>
+          <Badge variant="outline">
+            {numberFormatter.format(draftCustomizedCount)} customized
+          </Badge>
+          <Badge variant="outline">
+            {aiModelsLoading
+              ? 'Syncing models'
+              : `${numberFormatter.format(enabledModels.length)} enabled models`}
+          </Badge>
+          <Badge variant="outline" className="max-w-full truncate sm:max-w-[20rem]">
+            Default {defaultModelLabel}
+          </Badge>
+          <Badge variant="outline">Token {AI_PROMPT_LANGUAGE_TOKEN}</Badge>
+        </>
+      )}
+      notice={(
+        <div className="grid gap-3">
           <Alert>
             <Bot />
-            <AlertTitle>Browser-local action routing</AlertTitle>
+            <AlertTitle>Browser-local routing</AlertTitle>
             <AlertDescription>
-              Model and prompt overrides are stored in local storage and sent with each
-              editor request from this browser. If a dedicated model is removed or not
-              set, the action falls back to the current default AI.
+              Overrides live in local storage on this browser. If a dedicated model disappears,
+              the action quietly falls back to the current workspace default when you save.
             </AlertDescription>
           </Alert>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="secondary">{numberFormatter.format(draftCustomizedCount)} customized</Badge>
-            <Badge variant="outline">Per-action model routing</Badge>
-            <Badge variant="outline">Token: {AI_PROMPT_LANGUAGE_TOKEN}</Badge>
-          </div>
           {enabledModels.length === 0 ? (
             <Alert className="border-destructive/25">
               <Sparkles />
               <AlertTitle>No enabled models yet</AlertTitle>
               <AlertDescription>
-                Open AI Models first and enable at least one model. You can still edit
-                prompts now, but dedicated model routing stays disabled until the editor
-                has a model pool to choose from.
+                Open AI Models first and enable at least one model. You can still edit prompts
+                now, but per-action routing will stay inactive until the editor has a model pool.
               </AlertDescription>
             </Alert>
           ) : null}
         </div>
-      </header>
+      )}
+    >
+      <div className="grid gap-4">
+        <Card className="editorial-reveal">
+          <CardHeader className="border-b border-border/70">
+            <CardTitle>System prompt</CardTitle>
+            <CardDescription>
+              Shared guardrails sent before every AI request, regardless of action.
+            </CardDescription>
+            <CardAction>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setDraftPrompts((current) => ({
+                    ...current,
+                    systemPrompt: defaults.systemPrompt,
+                  }))
+                }
+              >
+                Reset
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="py-5">
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="ai-system-prompt">Shared instruction</FieldLabel>
+                <FieldContent>
+                  <Textarea
+                    id="ai-system-prompt"
+                    value={draftPrompts.systemPrompt}
+                    onChange={(event) =>
+                      setDraftPrompts((current) => ({
+                        ...current,
+                        systemPrompt: event.target.value,
+                      }))
+                    }
+                    maxLength={MAX_AI_SYSTEM_PROMPT_LENGTH}
+                    className="min-h-32 leading-6"
+                    placeholder={defaults.systemPrompt}
+                  />
+                  <FieldDescription>
+                    Leave empty to fall back to the default system prompt when you save.
+                  </FieldDescription>
+                </FieldContent>
+              </Field>
+            </FieldGroup>
+          </CardContent>
+          <CardFooter className="justify-between border-t border-border/70 pt-4 text-xs text-muted-foreground">
+            <span>Shapes tone, formatting discipline, and output constraints.</span>
+            <span>
+              {formatCharacterCount(draftPrompts.systemPrompt)} /{' '}
+              {numberFormatter.format(MAX_AI_SYSTEM_PROMPT_LENGTH)}
+            </span>
+          </CardFooter>
+        </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.28fr)]">
-        <aside className="editorial-surface p-4 sm:p-5 editorial-reveal">
-          <div className="flex flex-col gap-4">
-            <div>
-              <p className="editorial-section-kicker">Coverage</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-foreground">
-                What this page controls
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                The system prompt sets shared guardrails for every request. Each action can
-                then choose its own enabled model and action-specific instruction.
-              </p>
-            </div>
-
-            <Card className="py-0">
-              <CardHeader className="border-b border-border/70 py-4">
-                <CardTitle className="text-base">Route map</CardTitle>
-                <CardDescription>
-                  Review which actions are still inheriting the workspace default route.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 py-4">
-                <div className="rounded-lg border border-border/75 bg-muted/35 px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <PencilLine className="size-4 text-muted-foreground" />
-                      <span className="text-sm font-medium text-foreground">System prompt</span>
-                    </div>
-                    <Badge
-                      variant={
-                        preparedDraft.systemPrompt === defaults.systemPrompt
-                          ? 'outline'
-                          : 'secondary'
-                      }
-                    >
-                      {preparedDraft.systemPrompt === defaults.systemPrompt ? 'Default' : 'Custom'}
-                    </Badge>
-                  </div>
-                </div>
-                {AI_TRANSFORM_ACTIONS.map((action) => {
-                  const rawModelId = draftPrompts.actionModelIds[action]?.trim() ?? ''
-                  const hasUnavailableModel =
-                    Boolean(rawModelId) && !enabledModelIds.includes(rawModelId)
-                  const resolvedModelId = resolveAiActionModel(
-                    action,
-                    preparedDraft,
-                    activeModelId,
-                    enabledModelIds,
-                  )
-
-                  return (
-                    <div
-                      key={action}
-                      className="rounded-lg border border-border/75 bg-card/70 px-3 py-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">
-                            {AI_ACTION_LABELS[action]}
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <Badge
-                              variant={
-                                preparedDraft.actionPrompts[action] === defaults.actionPrompts[action]
-                                  ? 'outline'
-                                  : 'secondary'
-                              }
-                            >
-                              {preparedDraft.actionPrompts[action] === defaults.actionPrompts[action]
-                                ? 'Prompt default'
-                                : 'Prompt custom'}
-                            </Badge>
-                            <Badge
-                              variant={
-                                preparedDraft.actionModelIds[action] === defaults.actionModelIds[action]
-                                  ? 'outline'
-                                  : 'secondary'
-                              }
-                            >
-                              {preparedDraft.actionModelIds[action]
-                                ? `Model ${getModelCaption(
-                                    resolvedModelId,
-                                    enabledModelById,
-                                    defaultModelLabel,
-                                  )}`
-                                : `Model ${defaultModelLabel}`}
-                            </Badge>
-                            {hasUnavailableModel ? (
-                              <Badge variant="outline">Unavailable model cleared on save</Badge>
-                            ) : null}
-                          </div>
-                        </div>
-                        <span className="max-w-[13rem] text-right text-[11px] leading-5 text-muted-foreground">
-                          {ACTION_META[action].description}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
-
-            <Alert className="border-border/80 bg-muted/30">
-              <Sparkles />
-              <AlertTitle>Translation token</AlertTitle>
-              <AlertDescription>
-                Use <code>{AI_PROMPT_LANGUAGE_TOKEN}</code> in the translate prompt to
-                inject the language chosen in the editor menu.
-              </AlertDescription>
-            </Alert>
+        <section className="editorial-surface overflow-hidden editorial-reveal">
+          <div className="border-b border-border/70 px-4 py-4 sm:px-5">
+            <p className="editorial-section-kicker">Action Overrides</p>
+            <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
+              Per-action model and prompt routing
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Most actions should stay on the shared defaults. Expand only the ones that
+              genuinely need a different model or a more specific instruction.
+            </p>
           </div>
-        </aside>
 
-        <div className="grid gap-4">
-          <Card className="editorial-reveal">
-            <CardHeader className="border-b border-border/70">
-              <CardTitle>System prompt</CardTitle>
-              <CardDescription>
-                Shared guardrails sent before every AI request, regardless of action.
-              </CardDescription>
-              <CardAction>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    setDraftPrompts((current) => ({
-                      ...current,
-                      systemPrompt: defaults.systemPrompt,
-                    }))
-                  }
-                >
-                  Reset
-                </Button>
-              </CardAction>
-            </CardHeader>
-            <CardContent className="py-5">
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="ai-system-prompt">Shared instruction</FieldLabel>
-                  <FieldContent>
-                    <Textarea
-                      id="ai-system-prompt"
-                      value={draftPrompts.systemPrompt}
-                      onChange={(event) =>
-                        setDraftPrompts((current) => ({
-                          ...current,
-                          systemPrompt: event.target.value,
-                        }))
-                      }
-                      maxLength={MAX_AI_SYSTEM_PROMPT_LENGTH}
-                      className="min-h-36 leading-6"
-                      placeholder={defaults.systemPrompt}
-                    />
-                    <FieldDescription>
-                      Leave empty to fall back to the default system prompt when you save.
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-              </FieldGroup>
-            </CardContent>
-            <CardFooter className="justify-between border-t border-border/70 pt-4 text-xs text-muted-foreground">
-              <span>Shapes tone, formatting discipline, and output constraints.</span>
-              <span>
-                {formatCharacterCount(draftPrompts.systemPrompt)} / {numberFormatter.format(MAX_AI_SYSTEM_PROMPT_LENGTH)}
-              </span>
-            </CardFooter>
-          </Card>
+          <Accordion type="single" collapsible className="px-4 sm:px-5">
+            {AI_TRANSFORM_ACTIONS.map((action) => {
+              const rawModelId = draftPrompts.actionModelIds[action]?.trim() ?? ''
+              const hasUnavailableModel =
+                Boolean(rawModelId) && !enabledModelIds.includes(rawModelId)
+              const resolvedModelId = resolveAiActionModel(
+                action,
+                preparedDraft,
+                activeModelId,
+                enabledModelIds,
+              )
+              const promptIsDefault =
+                preparedDraft.actionPrompts[action] === defaults.actionPrompts[action]
+              const modelIsDefault =
+                preparedDraft.actionModelIds[action] === defaults.actionModelIds[action]
 
-          {AI_TRANSFORM_ACTIONS.map((action) => {
-            const rawModelId = draftPrompts.actionModelIds[action]?.trim() ?? ''
-            const hasUnavailableModel =
-              Boolean(rawModelId) && !enabledModelIds.includes(rawModelId)
-            const resolvedModelId = resolveAiActionModel(
-              action,
-              preparedDraft,
-              activeModelId,
-              enabledModelIds,
-            )
-
-            return (
-              <Card key={action} className="editorial-reveal">
-                <CardHeader className="border-b border-border/70">
-                  <CardTitle>{AI_ACTION_LABELS[action]} action</CardTitle>
-                  <CardDescription>{ACTION_META[action].description}</CardDescription>
-                  <CardAction>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        setDraftPrompts((current) => ({
-                          ...current,
-                          actionPrompts: {
-                            ...current.actionPrompts,
-                            [action]: defaults.actionPrompts[action],
-                          },
-                          actionModelIds: {
-                            ...current.actionModelIds,
-                            [action]: defaults.actionModelIds[action],
-                          },
-                        }))
-                      }
-                    >
-                      Reset
-                    </Button>
-                  </CardAction>
-                </CardHeader>
-                <CardContent className="grid gap-5 py-5">
-                  <FieldGroup>
-                    <Field>
-                      <FieldLabel htmlFor={`ai-model-${action}`}>Dedicated model</FieldLabel>
-                      <FieldContent>
-                        <Select
-                          value={
-                            rawModelId && enabledModelIds.includes(rawModelId)
-                              ? rawModelId
-                              : DEFAULT_MODEL_VALUE
-                          }
-                          onValueChange={(value) => setActionModelId(action, value)}
-                          disabled={enabledModels.length === 0}
-                        >
-                          <SelectTrigger id={`ai-model-${action}`} className="h-11 w-full">
-                            <SelectValue placeholder="Choose a model for this action" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value={DEFAULT_MODEL_VALUE}>
-                                Use workspace default ({defaultModelLabel})
-                              </SelectItem>
-                              {enabledModels.map((model) => (
-                                <SelectItem key={model.id} value={model.id}>
-                                  {model.label}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        <FieldDescription>
-                          {rawModelId && !hasUnavailableModel
-                            ? `This action is pinned to ${getModelCaption(
+              return (
+                <AccordionItem key={action} value={action}>
+                  <AccordionTrigger className="py-4 hover:no-underline">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold tracking-tight text-foreground">
+                          {AI_ACTION_LABELS[action]}
+                        </span>
+                        <Badge variant={promptIsDefault ? 'outline' : 'secondary'}>
+                          {promptIsDefault ? 'Prompt default' : 'Prompt custom'}
+                        </Badge>
+                        <Badge variant={modelIsDefault ? 'outline' : 'secondary'}>
+                          {modelIsDefault
+                            ? `Model ${defaultModelLabel}`
+                            : `Model ${getModelCaption(
                                 resolvedModelId,
                                 enabledModelById,
                                 defaultModelLabel,
-                              )}.`
-                            : `When unset, this action uses the current default AI: ${defaultModelLabel}.`}
-                        </FieldDescription>
-                      </FieldContent>
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor={`ai-action-${action}`}>Instruction</FieldLabel>
-                      <FieldContent>
-                        <Textarea
-                          id={`ai-action-${action}`}
-                          value={draftPrompts.actionPrompts[action]}
-                          onChange={(event) => setActionPrompt(action, event.target.value)}
-                          maxLength={MAX_AI_ACTION_PROMPT_LENGTH}
-                          className="min-h-32 leading-6"
-                          placeholder={defaults.actionPrompts[action]}
-                        />
-                        <FieldDescription>
-                          {ACTION_META[action].helper} Leave empty to fall back to the default
-                          instruction when you save.
-                        </FieldDescription>
-                      </FieldContent>
-                    </Field>
-                  </FieldGroup>
-
-                  {action === 'translate' ? (
-                    <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                      <p className="editorial-section-kicker">Resolved preview</p>
-                      <p className="mt-2 text-sm leading-6 text-foreground">
-                        {resolveAiPromptTemplate(
-                          draftPrompts.actionPrompts.translate || defaults.actionPrompts.translate,
-                          'Simplified Chinese',
-                        )}
+                              )}`}
+                        </Badge>
+                        {hasUnavailableModel ? (
+                          <Badge variant="outline">Resets on save</Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+                        {ACTION_META[action].description}
                       </p>
                     </div>
-                  ) : null}
-                </CardContent>
-                <CardFooter className="justify-between border-t border-border/70 pt-4 text-xs text-muted-foreground">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant={
-                        preparedDraft.actionPrompts[action] === defaults.actionPrompts[action]
-                          ? 'outline'
-                          : 'secondary'
-                      }
-                    >
-                      {preparedDraft.actionPrompts[action] === defaults.actionPrompts[action]
-                        ? 'Prompt default'
-                        : 'Prompt custom'}
-                    </Badge>
-                    <Badge
-                      variant={
-                        preparedDraft.actionModelIds[action] === defaults.actionModelIds[action]
-                          ? 'outline'
-                          : 'secondary'
-                      }
-                    >
-                      {preparedDraft.actionModelIds[action] ? 'Model custom' : 'Model default'}
-                    </Badge>
-                    {hasUnavailableModel ? (
-                      <Badge variant="outline">Unavailable model will reset on save</Badge>
-                    ) : null}
-                  </div>
-                  <span>
-                    {formatCharacterCount(draftPrompts.actionPrompts[action])} / {numberFormatter.format(MAX_AI_ACTION_PROMPT_LENGTH)}
-                  </span>
-                </CardFooter>
-              </Card>
-            )
-          })}
-        </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-5">
+                    <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+                      <div className="space-y-4">
+                        <div className="rounded-lg border border-border/75 bg-muted/30 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Route</p>
+                              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                Choose a dedicated model only when the action benefits from a
+                                different default.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                setDraftPrompts((current) => ({
+                                  ...current,
+                                  actionPrompts: {
+                                    ...current.actionPrompts,
+                                    [action]: defaults.actionPrompts[action],
+                                  },
+                                  actionModelIds: {
+                                    ...current.actionModelIds,
+                                    [action]: defaults.actionModelIds[action],
+                                  },
+                                }))
+                              }
+                            >
+                              Reset
+                            </Button>
+                          </div>
+                          <div className="mt-3">
+                            <FieldGroup>
+                              <Field>
+                                <FieldLabel htmlFor={`ai-model-${action}`}>
+                                  Dedicated model
+                                </FieldLabel>
+                                <FieldContent>
+                                  <Select
+                                    value={
+                                      rawModelId && enabledModelIds.includes(rawModelId)
+                                        ? rawModelId
+                                        : DEFAULT_MODEL_VALUE
+                                    }
+                                    onValueChange={(value) => setActionModelId(action, value)}
+                                    disabled={enabledModels.length === 0}
+                                  >
+                                    <SelectTrigger
+                                      id={`ai-model-${action}`}
+                                      className="h-10 w-full"
+                                    >
+                                      <SelectValue placeholder="Choose a model for this action" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectGroup>
+                                        <SelectItem value={DEFAULT_MODEL_VALUE}>
+                                          Use workspace default ({defaultModelLabel})
+                                        </SelectItem>
+                                        {enabledModels.map((model) => (
+                                          <SelectItem key={model.id} value={model.id}>
+                                            {model.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectGroup>
+                                    </SelectContent>
+                                  </Select>
+                                  <FieldDescription>
+                                    {rawModelId && !hasUnavailableModel
+                                      ? `Pinned to ${getModelCaption(
+                                          resolvedModelId,
+                                          enabledModelById,
+                                          defaultModelLabel,
+                                        )}.`
+                                      : `Falls back to the current default AI: ${defaultModelLabel}.`}
+                                  </FieldDescription>
+                                </FieldContent>
+                              </Field>
+                            </FieldGroup>
+                          </div>
+                        </div>
+
+                        <Alert className="border-border/80 bg-muted/25">
+                          <Sparkles />
+                          <AlertTitle>Writing note</AlertTitle>
+                          <AlertDescription>
+                            {ACTION_META[action].helper} Leave the field empty to restore the
+                            default instruction when you save.
+                          </AlertDescription>
+                        </Alert>
+                      </div>
+
+                      <div className="space-y-4">
+                        <FieldGroup>
+                          <Field>
+                            <FieldLabel htmlFor={`ai-action-${action}`}>Instruction</FieldLabel>
+                            <FieldContent>
+                              <Textarea
+                                id={`ai-action-${action}`}
+                                value={draftPrompts.actionPrompts[action]}
+                                onChange={(event) => setActionPrompt(action, event.target.value)}
+                                maxLength={MAX_AI_ACTION_PROMPT_LENGTH}
+                                className="min-h-36 leading-6"
+                                placeholder={defaults.actionPrompts[action]}
+                              />
+                              <FieldDescription>
+                                Keep it short, task-specific, and compatible with the shared
+                                system guardrails.
+                              </FieldDescription>
+                            </FieldContent>
+                          </Field>
+                        </FieldGroup>
+
+                        {action === 'translate' ? (
+                          <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
+                            <p className="editorial-section-kicker">Resolved preview</p>
+                            <p className="mt-2 text-sm leading-6 text-foreground">
+                              {resolveAiPromptTemplate(
+                                draftPrompts.actionPrompts.translate ||
+                                  defaults.actionPrompts.translate,
+                                'Simplified Chinese',
+                              )}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={promptIsDefault ? 'outline' : 'secondary'}>
+                              {promptIsDefault ? 'Prompt default' : 'Prompt custom'}
+                            </Badge>
+                            <Badge variant={modelIsDefault ? 'outline' : 'secondary'}>
+                              {modelIsDefault ? 'Model default' : 'Model custom'}
+                            </Badge>
+                          </div>
+                          <span>
+                            {formatCharacterCount(draftPrompts.actionPrompts[action])} /{' '}
+                            {numberFormatter.format(MAX_AI_ACTION_PROMPT_LENGTH)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              )
+            })}
+          </Accordion>
+        </section>
       </div>
-    </div>
+    </DocsAdminShell>
   )
 }

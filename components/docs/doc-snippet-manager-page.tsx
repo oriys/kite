@@ -21,6 +21,7 @@ import {
 } from '@/lib/doc-snippets'
 import { useDocSnippets } from '@/hooks/use-doc-snippets'
 import { cn } from '@/lib/utils'
+import { DocsAdminShell } from '@/components/docs/docs-admin-shell'
 import { MarkdownPreview } from '@/components/docs/markdown-preview'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -35,13 +36,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -78,14 +72,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
@@ -279,65 +265,42 @@ export function DocSnippetManagerPage() {
   }, [deleteTarget, remove])
 
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col gap-6 px-4 py-8 sm:px-6">
-      <header className="editorial-surface overflow-hidden">
-        <div className="grid gap-6 border-b border-border/70 px-5 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-start">
-          <div className="flex flex-col gap-4">
-            <p className="editorial-section-kicker">Quick Insert Library</p>
-            <div className="max-w-3xl">
-              <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                Manage the components exposed in quick insert.
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-                Create, revise, and remove reusable markdown blocks without touching code.
-                The editor reads this library each time the Insert picker opens.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Total Items
-                </p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                  {totalSnippetCount}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Active Groups
-                </p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                  {categoryCount}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Last Sync
-                </p>
-                <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-                  {loading ? 'Syncing…' : formatUpdatedAt(latestUpdate)}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-start gap-3 lg:justify-end">
-              <Button size="sm" onClick={openCreateDialog}>
-                <Plus data-icon="inline-start" />
-                New Component
-              </Button>
-          </div>
-        </div>
-        <div className="px-5 py-4 sm:px-6">
+    <DocsAdminShell
+      kicker="Quick Insert"
+      title="Keep the insert library small, clear, and easy to scan."
+      description="Manage reusable markdown blocks without touching code, then preview exactly what the editor will insert before you ship changes."
+      actions={(
+        <>
+          <Button size="sm" variant="outline" onClick={() => void refresh()}>
+            Refresh
+          </Button>
+          <Button size="sm" onClick={openCreateDialog}>
+            <Plus data-icon="inline-start" />
+            New component
+          </Button>
+        </>
+      )}
+      meta={(
+        <>
+          <Badge variant="outline">{totalSnippetCount} items</Badge>
+          <Badge variant="outline">{categoryCount} active groups</Badge>
+          <Badge variant="outline">
+            {loading ? 'Syncing library' : `Last sync ${formatUpdatedAt(latestUpdate)}`}
+          </Badge>
+        </>
+      )}
+      notice={(
+        <div className="grid gap-3">
           <Alert>
             <Sparkles />
             <AlertTitle>Live source for Insert</AlertTitle>
             <AlertDescription>
-              Changes here feed the quick insert picker in the editor. If another tab is
-              already open, reopen the picker to refresh the library.
+              Changes here feed the quick insert picker in the editor. Reopen the picker in
+              any already-open tab to pull in the refreshed library.
             </AlertDescription>
           </Alert>
           {error ? (
-            <Alert className="mt-3 border-destructive/30">
+            <Alert className="border-destructive/30">
               <Blocks />
               <AlertTitle>Library fallback is active</AlertTitle>
               <AlertDescription>
@@ -347,14 +310,14 @@ export function DocSnippetManagerPage() {
             </Alert>
           ) : null}
         </div>
-      </header>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.85fr)]">
-        <section className="editorial-surface p-4 sm:p-5">
-          <div className="flex flex-col gap-5 border-b border-border/70 pb-5">
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(28rem,auto)] xl:items-end">
-              <div className="flex flex-col gap-3">
-                <p className="editorial-section-kicker">Find Components</p>
+      )}
+    >
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="editorial-surface overflow-hidden editorial-reveal">
+          <div className="grid gap-3 border-b border-border/70 px-4 py-4 sm:px-5">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className="flex flex-col gap-2">
+                <p className="editorial-section-kicker">Search</p>
                 <InputGroup>
                   <InputGroupAddon align="inline-start">
                     <Search />
@@ -367,54 +330,55 @@ export function DocSnippetManagerPage() {
                   />
                 </InputGroup>
               </div>
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="editorial-section-kicker">Filter by Category</p>
-                  <Button variant="ghost" size="sm" onClick={() => void refresh()}>
-                    Refresh
-                  </Button>
-                </div>
-                <div className="overflow-x-auto pb-1">
-                  <ToggleGroup
-                    type="single"
-                    variant="outline"
-                    size="sm"
-                    value={categoryFilter}
-                    className="w-max rounded-xl border border-border/75 bg-card/80 p-1"
-                    onValueChange={(value) => {
-                      if (value) {
-                        setCategoryFilter(value as CategoryFilter)
-                      }
-                    }}
-                  >
-                    <ToggleGroupItem value="all" className="flex-none px-4 sm:px-5">
-                      All
-                    </ToggleGroupItem>
-                    {DOC_SNIPPET_CATEGORIES.map((category) => (
-                      <ToggleGroupItem
-                        key={category}
-                        value={category}
-                        className="flex-none px-4 sm:px-5"
-                      >
-                        {category}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </div>
+              <div className="text-xs text-muted-foreground">
+                {numberFormatter.format(filteredItems.length)} visible
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
-              {DOC_SNIPPET_CATEGORIES.map((category) => (
-                <Badge key={category} variant="outline">
-                  {category} {getCategoryCount(items, category)}
-                </Badge>
-              ))}
+
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="editorial-section-kicker">Category</p>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => setCategoryFilter('all')}
+                >
+                  Clear filter
+                </button>
+              </div>
+              <div className="overflow-x-auto pb-1">
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={categoryFilter}
+                  className="w-max rounded-xl border border-border/75 bg-card/80 p-1"
+                  onValueChange={(value) => {
+                    if (value) {
+                      setCategoryFilter(value as CategoryFilter)
+                    }
+                  }}
+                >
+                  <ToggleGroupItem value="all" className="flex-none px-4 sm:px-5">
+                    All
+                  </ToggleGroupItem>
+                  {DOC_SNIPPET_CATEGORIES.map((category) => (
+                    <ToggleGroupItem
+                      key={category}
+                      value={category}
+                      className="flex-none px-4 sm:px-5"
+                    >
+                      {category}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
             </div>
           </div>
 
-          <div className="pt-4">
+          <div className="p-2 sm:p-3">
             {filteredItems.length === 0 ? (
-              <Empty className="min-h-[380px]">
+              <Empty className="min-h-[320px]">
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
                     <Blocks />
@@ -427,129 +391,139 @@ export function DocSnippetManagerPage() {
                 <EmptyContent>
                   <Button onClick={openCreateDialog}>
                     <Plus data-icon="inline-start" />
-                    Create Component
+                    Create component
                   </Button>
                 </EmptyContent>
               </Empty>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Component</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Updated</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems.map((snippet) => (
-                    <TableRow
+              <div className="space-y-2">
+                {filteredItems.map((snippet) => {
+                  const isSelected = selectedId === snippet.id
+
+                  return (
+                    <article
                       key={snippet.id}
-                      data-state={selectedId === snippet.id ? 'selected' : undefined}
                       className={cn(
-                        'cursor-pointer',
-                        selectedId === snippet.id && 'bg-accent/35 hover:bg-accent/45',
+                        'grid gap-3 rounded-xl border border-border/75 bg-card/70 p-3 transition-colors md:grid-cols-[minmax(0,1fr)_auto] md:items-start',
+                        isSelected
+                          ? 'border-primary/40 bg-primary/[0.06]'
+                          : 'hover:bg-muted/25',
                       )}
-                      onClick={() => setSelectedId(snippet.id)}
                     >
-                      <TableCell className="w-full min-w-0 max-w-0 whitespace-normal">
-                        <div className="flex min-w-0 flex-col gap-1">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="truncate font-medium text-foreground">
-                              {snippet.label}
-                            </span>
-                            <Badge variant="secondary" className="uppercase">
-                              {snippet.keywords.length}
-                            </Badge>
-                          </div>
-                          <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-                            {snippet.description}
-                          </p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(snippet.id)}
+                        className="min-w-0 text-left"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                            {snippet.label}
+                          </span>
+                          <Badge variant="outline">{snippet.category}</Badge>
+                          {isSelected ? <Badge variant="secondary">Selected</Badge> : null}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{snippet.category}</Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatUpdatedAt(snippet.updatedAt)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openEditDialog(snippet)
-                            }}
-                          >
-                            <PencilLine data-icon="inline-start" />
-                            Edit
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setDeleteTarget(snippet)
-                            }}
-                          >
-                            <Trash2 data-icon="inline-start" />
-                            Delete
-                          </Button>
+                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                          {snippet.description}
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span>Updated {formatUpdatedAt(snippet.updatedAt)}</span>
+                          <span>{snippet.keywords.length} keywords</span>
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </button>
+
+                      <div className="flex flex-wrap items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditDialog(snippet)}
+                        >
+                          <PencilLine data-icon="inline-start" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteTarget(snippet)}
+                        >
+                          <Trash2 data-icon="inline-start" />
+                          Delete
+                        </Button>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
             )}
           </div>
         </section>
 
-        <aside className="flex flex-col gap-6">
-          <Card className="border-border/80 bg-card/95 shadow-[0_24px_60px_-36px_rgba(15,23,42,0.24)]">
-            <CardHeader className="border-b border-border/70">
-              <CardTitle>Selection Preview</CardTitle>
-              <CardDescription>
-                Review the exact content the editor will insert for the selected component.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-5 pt-5">
-              {selectedSnippet ? (
-                <>
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-xl font-semibold tracking-tight text-foreground">
+        <aside className="editorial-reveal xl:sticky xl:top-4 xl:self-start">
+          <section className="editorial-surface overflow-hidden">
+            {selectedSnippet ? (
+              <>
+                <div className="border-b border-border/70 px-4 py-4 sm:px-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="editorial-section-kicker">Selection</p>
+                      <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
                         {selectedSnippet.label}
                       </h2>
-                      <Badge variant="outline">{selectedSnippet.category}</Badge>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        {selectedSnippet.description}
+                      </p>
                     </div>
-                    <p className="text-sm leading-7 text-muted-foreground">
-                      {selectedSnippet.description}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditDialog(selectedSnippet)}
+                      >
+                        <PencilLine data-icon="inline-start" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleteTarget(selectedSnippet)}
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{selectedSnippet.category}</Badge>
+                    <Badge variant="secondary">
+                      {selectedSnippet.keywords.length} keywords
+                    </Badge>
+                    <Badge variant="outline">
+                      Updated {formatUpdatedAt(selectedSnippet.updatedAt)}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-4 sm:p-5">
+                  {selectedSnippet.keywords.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
                       {selectedSnippet.keywords.map((keyword) => (
                         <Badge key={keyword} variant="secondary">
                           {keyword}
                         </Badge>
                       ))}
                     </div>
-                  </div>
+                  ) : null}
 
                   <div className="rounded-lg border border-border/75 bg-muted/20 p-4">
-                    <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      Rendered Preview
-                    </p>
+                    <p className="editorial-section-kicker">Rendered preview</p>
                     <MarkdownPreview
                       content={selectedSnippet.template}
-                      className="min-h-[220px] max-w-none"
+                      className="mt-3 min-h-[220px] max-w-none"
                     />
                   </div>
 
                   <FieldGroup className="gap-4">
                     <Field>
-                      <FieldLabel htmlFor="snippet-source">Markdown Source</FieldLabel>
+                      <FieldLabel htmlFor="snippet-source">Markdown source</FieldLabel>
                       <Textarea
                         id="snippet-source"
                         readOnly
@@ -561,37 +535,23 @@ export function DocSnippetManagerPage() {
                       </FieldDescription>
                     </Field>
                   </FieldGroup>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => openEditDialog(selectedSnippet)}>
-                      <PencilLine data-icon="inline-start" />
-                      Edit Selected
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setDeleteTarget(selectedSnippet)}
-                    >
-                      <Trash2 data-icon="inline-start" />
-                      Delete Selected
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <Empty className="min-h-[420px]">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <Blocks />
-                    </EmptyMedia>
-                    <EmptyTitle>Select a component</EmptyTitle>
-                    <EmptyDescription>
-                      Pick an item from the library to inspect its rendered output and raw
-                      markdown template.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </CardContent>
-          </Card>
+                </div>
+              </>
+            ) : (
+              <Empty className="min-h-[420px]">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Blocks />
+                  </EmptyMedia>
+                  <EmptyTitle>Select a component</EmptyTitle>
+                  <EmptyDescription>
+                    Pick an item from the library to inspect its rendered output and raw
+                    markdown template.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </section>
         </aside>
       </div>
 
@@ -781,6 +741,6 @@ export function DocSnippetManagerPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </DocsAdminShell>
   )
 }

@@ -14,6 +14,7 @@ import {
 import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { cn } from '@/lib/utils'
+import { DocsAdminShell } from '@/components/docs/docs-admin-shell'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -139,82 +140,53 @@ export function DocAiManagerPage() {
   const totalCount = numberFormatter.format(items.length)
 
   return (
-    <div className="mx-auto flex max-w-[1480px] flex-col gap-6 px-4 py-8 sm:px-6">
-      <header className="editorial-surface overflow-hidden editorial-reveal">
-        <div className="grid gap-6 border-b border-border/70 px-5 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.35fr)_auto] lg:items-start">
-          <div className="flex flex-col gap-4">
-            <p className="editorial-section-kicker">AI Control Center</p>
-            <div className="max-w-3xl">
-              <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                Curate which AI models the editor is allowed to use.
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-                Fetch the AIHubMix catalog, enable the models your workspace trusts, and
-                choose the default assistant that appears in the editor bubble menu.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Supported AI
-                </p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                  {loading ? '…' : totalCount}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Enabled in Editor
-                </p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-                  {loading ? '…' : enabledCount}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Active AI
-                </p>
-                <p className="mt-2 truncate text-lg font-semibold tracking-tight text-foreground">
-                  {loading ? 'Syncing…' : activeLabel}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-start gap-3 lg:justify-end">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void refresh()}
-                disabled={loading}
-              >
-                <RefreshCw
-                  data-icon="inline-start"
-                  className={cn(loading && 'animate-spin')}
-                />
-                Fetch models
-              </Button>
-          </div>
-        </div>
-        <div className="grid gap-3 px-5 py-4 sm:px-6">
+    <DocsAdminShell
+      kicker="AI Models"
+      title="Keep the editor on a small, trusted model set."
+      description="Sync the catalog, enable only the models writers should see, and keep one default route ready for every new editor session."
+      actions={(
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void refresh()}
+          disabled={loading}
+        >
+          <RefreshCw
+            data-icon="inline-start"
+            className={cn(loading && 'animate-spin')}
+          />
+          Sync catalog
+        </Button>
+      )}
+      meta={(
+        <>
+          <Badge variant={configured ? 'secondary' : 'outline'}>
+            {configured ? 'Configured' : 'Fallback'}
+          </Badge>
+          <Badge variant="outline">{providerName || 'AIHubMix'}</Badge>
+          <Badge variant="outline">
+            {loading ? 'Syncing catalog' : `${enabledCount}/${totalCount} enabled`}
+          </Badge>
+          <Badge variant="outline" className="max-w-full truncate sm:max-w-[22rem]">
+            Default {activeLabel}
+          </Badge>
+          <Badge variant="outline">Last fetch {formatFetchedAt(fetchedAt)}</Badge>
+        </>
+      )}
+      notice={(
+        <div className="grid gap-3">
           <Alert>
             <Bot />
             <AlertTitle>{providerName || 'AIHubMix'} catalog</AlertTitle>
             <AlertDescription>
-              The editor bubble menu only exposes models you enable here. Selecting a model
-              in the floating AI menu will switch among this enabled subset.
+              Only enabled models appear in the editor bubble menu, so the fastest setup is
+              usually a short, trusted list.
             </AlertDescription>
           </Alert>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant={configured ? 'secondary' : 'outline'}>
-              {configured ? 'Configured' : 'Fallback'}
-            </Badge>
-            <Badge variant="outline">{baseUrl || 'No endpoint'}</Badge>
-            <Badge variant="outline">Last fetch {formatFetchedAt(fetchedAt)}</Badge>
-          </div>
           {error ? (
             <Alert className="border-destructive/25">
               <Sparkles />
-              <AlertTitle>Catalog is using a safe fallback</AlertTitle>
+              <AlertTitle>Catalog fallback is active</AlertTitle>
               <AlertDescription>
                 {error} The page still works, but the list may only show the current default
                 model until the provider key is configured.
@@ -222,13 +194,13 @@ export function DocAiManagerPage() {
             </Alert>
           ) : null}
         </div>
-      </header>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-        <section className="editorial-surface p-4 sm:p-5 editorial-reveal">
-          <div className="grid gap-4 border-b border-border/70 pb-4 xl:grid-cols-[minmax(0,1fr)_180px_minmax(260px,320px)] xl:items-start">
-            <div className="flex flex-col gap-3">
-              <p className="editorial-section-kicker">Search Supported AI</p>
+      )}
+    >
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="editorial-surface overflow-hidden editorial-reveal">
+          <div className="grid gap-3 border-b border-border/70 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="flex flex-col gap-2">
+              <p className="editorial-section-kicker">Search</p>
               <InputGroup>
                 <InputGroupAddon align="inline-start">
                   <Search />
@@ -241,10 +213,10 @@ export function DocAiManagerPage() {
                 />
               </InputGroup>
             </div>
-            <div className="flex flex-col gap-2 xl:pt-0.5">
+            <div className="flex flex-col gap-2">
               <p className="editorial-section-kicker">Provider</p>
               <Select value={providerFilter} onValueChange={setProviderFilter}>
-                <SelectTrigger className="h-11">
+                <SelectTrigger className="h-10">
                   <SelectValue placeholder="All providers" />
                 </SelectTrigger>
                 <SelectContent>
@@ -256,169 +228,175 @@ export function DocAiManagerPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col gap-2 xl:pt-0.5">
-              <p className="editorial-section-kicker">Default AI</p>
-              <Select
-                value={activeModelId ?? undefined}
-                onValueChange={(value) => setActiveModelId(value)}
-                disabled={items.length === 0}
-              >
-                <SelectTrigger className="h-11">
-                  <SelectValue placeholder="Select the default AI" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[22rem]">
-                  {items.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="max-w-sm text-xs leading-5 text-muted-foreground">
-                Sets the default model used in the editor.
-              </p>
+          </div>
+
+          {filteredItems.length === 0 ? (
+            <Empty className="min-h-[300px]">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <BrainCircuit />
+                </EmptyMedia>
+                <EmptyTitle>No models match this view</EmptyTitle>
+                <EmptyDescription>
+                  Try a different search, clear the provider filter, or sync the catalog again.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className="divide-y divide-border/60">
+              {filteredItems.map((model, index) => {
+                const isEnabled = enabledModelIds.includes(model.id)
+                const isActive = activeModelId === model.id
+
+                return (
+                  <article
+                    key={model.id}
+                    className={cn(
+                      'grid gap-3 px-4 py-3 transition-colors sm:px-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center',
+                      isActive && 'bg-primary/[0.06]',
+                    )}
+                    style={{ animationDelay: `${index * 20}ms` }}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2
+                          className="truncate text-sm font-semibold tracking-tight text-foreground"
+                          title={model.label}
+                        >
+                          {model.label}
+                        </h2>
+                        <Badge variant="outline">{model.provider}</Badge>
+                        {isActive ? <Badge variant="secondary">Default</Badge> : null}
+                      </div>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {model.id}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 md:justify-end">
+                      <span className="text-xs text-muted-foreground">
+                        {isEnabled ? 'Enabled in editor' : 'Hidden from editor'}
+                      </span>
+                      <Switch
+                        checked={isEnabled}
+                        onCheckedChange={(checked) => toggleModel(model.id, checked)}
+                        aria-label={`Enable ${model.label}`}
+                      />
+                    </div>
+                  </article>
+                )
+              })}
             </div>
-          </div>
-
-          <div className="mt-4">
-            {filteredItems.length === 0 ? (
-              <Empty className="min-h-[420px]">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <BrainCircuit />
-                  </EmptyMedia>
-                  <EmptyTitle>No AI matches this search</EmptyTitle>
-                  <EmptyDescription>
-                    Try a different query or provider filter, or refresh the catalog from AIHubMix.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <div className="overflow-hidden rounded-2xl border border-border/75 bg-card/60">
-                <div className="divide-y divide-border/60">
-                  {filteredItems.map((model, index) => {
-                    const isEnabled = enabledModelIds.includes(model.id)
-                    const isActive = activeModelId === model.id
-
-                    return (
-                      <article
-                        key={model.id}
-                        className={cn(
-                          'group flex items-center gap-3 px-3 py-2.5 transition-colors sm:px-4',
-                          isActive && 'bg-primary/[0.06]',
-                        )}
-                        style={{ animationDelay: `${index * 24}ms` }}
-                      >
-                        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                          <div className="min-w-0">
-                            <h2
-                              className="truncate text-sm font-semibold tracking-tight text-foreground sm:text-[0.95rem]"
-                              title={model.label}
-                            >
-                              {model.label}
-                            </h2>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="hidden shrink-0 text-[10px] uppercase tracking-[0.16em] text-muted-foreground sm:inline-flex"
-                          >
-                            {model.provider}
-                          </Badge>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-xs text-muted-foreground sm:hidden">
-                            {model.provider}
-                          </span>
-                          <Switch
-                            checked={isEnabled}
-                            onCheckedChange={(checked) => toggleModel(model.id, checked)}
-                            aria-label={`Enable ${model.label}`}
-                          />
-                        </div>
-                      </article>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+          )}
         </section>
 
-        <aside className="space-y-6 editorial-reveal">
-          <section className="editorial-surface p-5">
-            <p className="editorial-section-kicker">Enabled in Floating AI Menu</p>
-            <div className="mt-3 flex items-start justify-between gap-4">
+        <aside className="grid gap-4 editorial-reveal xl:self-start">
+          <section className="editorial-surface p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                  {enabledCount} model{enabledModels.length === 1 ? '' : 's'} live
+                <p className="editorial-section-kicker">Default Route</p>
+                <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
+                  Pick the model new sessions start with
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  These are the only models shown in the editor bubble menu. Pick a smaller,
-                  trusted subset so switching stays fast.
-                </p>
               </div>
-              <Button variant="ghost" size="sm" onClick={resetToDefault}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetToDefault}
+                disabled={enabledModels.length === 0}
+              >
                 Reset
               </Button>
             </div>
 
-            <div className="mt-5 space-y-3">
-              {enabledModels.length === 0 ? (
-                <Empty className="min-h-[220px]">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <SwitchCamera />
-                    </EmptyMedia>
-                    <EmptyTitle>No enabled AI yet</EmptyTitle>
-                    <EmptyDescription>
-                      Enable at least one model on the left. The editor menu will then let
-                      you switch among them inline.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                enabledModels.map((model) => (
-                  <button
-                    key={model.id}
-                    type="button"
-                    onClick={() => setActiveModelId(model.id)}
-                    className={cn(
-                      'w-full rounded-2xl border border-border/75 px-4 py-3 text-left transition-colors',
-                      activeModelId === model.id
-                        ? 'border-primary/45 bg-primary/[0.06]'
-                        : 'bg-card/70 hover:bg-muted/35',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{model.label}</p>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {model.id}
-                        </p>
-                      </div>
-                      {activeModelId === model.id ? (
-                        <Badge variant="default">Current</Badge>
-                      ) : (
-                        <Badge variant="outline">Enabled</Badge>
-                      )}
-                    </div>
-                  </button>
-                ))
-              )}
+            <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <p className="editorial-section-kicker">Default AI</p>
+                <Select
+                  value={activeModelId ?? undefined}
+                  onValueChange={(value) => setActiveModelId(value)}
+                  disabled={items.length === 0}
+                >
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Select the default AI" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[22rem]">
+                    {items.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Writers can still switch to any enabled model from the floating AI menu.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="editorial-section-kicker">Enabled subset</p>
+                  <span className="text-xs text-muted-foreground">
+                    {enabledCount} live
+                  </span>
+                </div>
+                {enabledModels.length === 0 ? (
+                  <Empty className="min-h-[180px]">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <SwitchCamera />
+                      </EmptyMedia>
+                      <EmptyTitle>No enabled models yet</EmptyTitle>
+                      <EmptyDescription>
+                        Enable at least one model to make it available inside the editor.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  <div className="space-y-2">
+                    {enabledModels.map((model) => (
+                      <button
+                        key={model.id}
+                        type="button"
+                        onClick={() => setActiveModelId(model.id)}
+                        className={cn(
+                          'w-full rounded-lg border border-border/75 px-3 py-3 text-left transition-colors',
+                          activeModelId === model.id
+                            ? 'border-primary/40 bg-primary/[0.06]'
+                            : 'bg-card/70 hover:bg-muted/35',
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {model.label}
+                            </p>
+                            <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {model.id}
+                            </p>
+                          </div>
+                          <Badge variant={activeModelId === model.id ? 'secondary' : 'outline'}>
+                            {activeModelId === model.id ? 'Default' : 'Enabled'}
+                          </Badge>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
-          <section className="editorial-surface p-5">
-            <p className="editorial-section-kicker">Provider Notes</p>
+          <section className="editorial-surface p-4 sm:p-5">
+            <p className="editorial-section-kicker">Catalog source</p>
             <div className="mt-3 space-y-3 text-sm leading-6 text-muted-foreground">
+              <div>
+                <p className="font-medium text-foreground">Endpoint</p>
+                <p className="mt-1 break-all">{baseUrl || 'No endpoint configured'}</p>
+              </div>
               <p>
-                Model discovery is fetched server-side from AIHubMix, so keys stay on the
-                server and never touch the browser.
-              </p>
-              <p>
-                The active AI selected here becomes the default for new editor sessions, but
-                writers can still switch to any enabled model from the floating AI menu.
+                Model discovery stays server-side, so provider credentials never reach the
+                browser.
               </p>
               <a
                 href="https://docs.aihubmix.com/en"
@@ -433,6 +411,6 @@ export function DocAiManagerPage() {
           </section>
         </aside>
       </div>
-    </div>
+    </DocsAdminShell>
   )
 }
