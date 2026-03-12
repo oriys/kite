@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import type { Editor } from '@tiptap/react'
 import {
   BadgeCheck,
   Bold,
@@ -233,11 +234,12 @@ interface LinkPopoverProps {
   mode: ToolbarMode
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   editorRef?: React.RefObject<HTMLDivElement | null>
+  tiptapEditor?: Editor | null
   onSourceChange?: (content: string) => void
   onRichChange?: () => void
 }
 
-function LinkPopover({ disabled, mode, textareaRef, editorRef, onSourceChange, onRichChange }: LinkPopoverProps) {
+function LinkPopover({ disabled, mode, textareaRef, editorRef, tiptapEditor, onSourceChange, onRichChange }: LinkPopoverProps) {
   const [open, setOpen] = React.useState(false)
   const [url, setUrl] = React.useState('')
   const inputRef = React.useRef<HTMLInputElement>(null)
@@ -249,6 +251,9 @@ function LinkPopover({ disabled, mode, textareaRef, editorRef, onSourceChange, o
     if (mode === 'source' && textareaRef?.current) {
       wrapSelection(textareaRef.current, '[', `](${trimmed})`)
       onSourceChange?.(textareaRef.current.value)
+    } else if (tiptapEditor) {
+      tiptapEditor.chain().focus().setLink({ href: trimmed }).run()
+      requestAnimationFrame(() => onRichChange?.())
     } else {
       editorRef?.current?.focus()
       richExec('createLink', trimmed)
@@ -309,11 +314,12 @@ interface ImagePopoverProps {
   mode: ToolbarMode
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   editorRef?: React.RefObject<HTMLDivElement | null>
+  tiptapEditor?: Editor | null
   onSourceChange?: (content: string) => void
   onRichChange?: () => void
 }
 
-function ImagePopover({ disabled, mode, textareaRef, editorRef, onSourceChange, onRichChange }: ImagePopoverProps) {
+function ImagePopover({ disabled, mode, textareaRef, editorRef, tiptapEditor, onSourceChange, onRichChange }: ImagePopoverProps) {
   const [open, setOpen] = React.useState(false)
   const [url, setUrl] = React.useState('')
   const [alt, setAlt] = React.useState('')
@@ -327,6 +333,9 @@ function ImagePopover({ disabled, mode, textareaRef, editorRef, onSourceChange, 
     if (mode === 'source' && textareaRef?.current) {
       insertBlock(textareaRef.current, `![${altText}](${trimmed})\n`)
       onSourceChange?.(textareaRef.current.value)
+    } else if (tiptapEditor) {
+      tiptapEditor.chain().focus().setImage({ src: trimmed, alt: altText }).run()
+      requestAnimationFrame(() => onRichChange?.())
     } else {
       editorRef?.current?.focus()
       richInsertBlock(`<img src="${trimmed}" alt="${altText}" />`)
@@ -542,6 +551,7 @@ interface DocToolbarProps {
   editorMode: EditorViewMode
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   editorRef?: React.RefObject<HTMLDivElement | null>
+  tiptapEditor?: Editor | null
   disabled?: boolean
   onEditorModeChange: (mode: EditorViewMode) => void
   onSourceChange?: (content: string) => void
@@ -580,6 +590,7 @@ export function DocToolbar({
   editorMode,
   textareaRef,
   editorRef,
+  tiptapEditor,
   disabled,
   onEditorModeChange,
   onSourceChange,
@@ -601,6 +612,24 @@ export function DocToolbar({
         item.sourceAction(textareaRef.current)
         onSourceChange?.(textareaRef.current.value)
       }
+    } else if (tiptapEditor) {
+      const chain = tiptapEditor.chain().focus()
+      switch (item.label) {
+        case 'Bold': chain.toggleBold().run(); break
+        case 'Italic': chain.toggleItalic().run(); break
+        case 'Strikethrough': chain.toggleStrike().run(); break
+        case 'Inline Code': chain.toggleCode().run(); break
+        case 'Heading 1': chain.toggleHeading({ level: 1 }).run(); break
+        case 'Heading 2': chain.toggleHeading({ level: 2 }).run(); break
+        case 'Heading 3': chain.toggleHeading({ level: 3 }).run(); break
+        case 'Bullet List': chain.toggleBulletList().run(); break
+        case 'Numbered List': chain.toggleOrderedList().run(); break
+        case 'Blockquote': chain.toggleBlockquote().run(); break
+        case 'Table': chain.insertTable({ rows: 2, cols: 3, withHeaderRow: true }).run(); break
+        case 'Horizontal Rule': chain.setHorizontalRule().run(); break
+        default: item.richAction(); break
+      }
+      requestAnimationFrame(() => { onRichChange?.() })
     } else {
       editorRef?.current?.focus()
       item.richAction()
@@ -654,6 +683,7 @@ export function DocToolbar({
                 mode={mode}
                 textareaRef={textareaRef}
                 editorRef={editorRef}
+                tiptapEditor={tiptapEditor}
                 onSourceChange={onSourceChange}
                 onRichChange={onRichChange}
               />
@@ -667,6 +697,7 @@ export function DocToolbar({
                 mode={mode}
                 textareaRef={textareaRef}
                 editorRef={editorRef}
+                tiptapEditor={tiptapEditor}
                 onSourceChange={onSourceChange}
                 onRichChange={onRichChange}
               />

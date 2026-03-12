@@ -26,11 +26,14 @@ export default async function SignInPage(props: {
     <div className="flex min-h-dvh items-center justify-center px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
+          <p className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
+            Kite
+          </p>
           <CardTitle className="text-lg font-semibold tracking-tight">
             Sign in
           </CardTitle>
           <CardDescription>
-            Sign in to access your documents and workspaces.
+            API documentation, edited with care.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3">

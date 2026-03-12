@@ -40,7 +40,7 @@ export default function RootLayout({
           <SessionProvider>
             {children}
           </SessionProvider>
-          <Toaster richColors closeButton position="bottom-right" />
+          <Toaster richColors closeButton position="top-right" />
         </ThemeProvider>
         {shouldRenderAnalytics ? <Analytics /> : null}
       </body>

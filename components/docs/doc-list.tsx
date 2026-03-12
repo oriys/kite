@@ -64,9 +64,9 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
         <div className="rounded-full bg-muted/60 p-4 mb-4">
           <FileText className="size-8 text-muted-foreground" />
         </div>
-        <p className="text-sm font-medium text-foreground mb-1">No documents yet</p>
-        <p className="text-sm text-muted-foreground">
-          Create your first document to get started.
+        <p className="text-sm font-medium text-foreground mb-1">No documents found</p>
+        <p className="text-sm text-muted-foreground max-w-xs">
+          Create a new document to start writing, or adjust your filters above.
         </p>
       </div>
     )

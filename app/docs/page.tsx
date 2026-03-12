@@ -1,9 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Download, Plus, X } from 'lucide-react'
+import { Download, Plus, Search, X } from 'lucide-react'
 
 import {
   isDocumentTitleMissing,
@@ -17,8 +16,6 @@ import {
 import { useDocuments } from '@/hooks/use-documents'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { DocsAiMenu } from '@/components/docs/docs-ai-menu'
-import { DocsHeaderUtilities } from '@/components/docs/docs-header-utilities'
 import { DocList } from '@/components/docs/doc-list'
 import { getDocEditorHref } from '@/lib/docs-url'
 import {
@@ -77,14 +74,26 @@ export default function DocsPage() {
   const { items, loading, create, remove, refresh } = useDocuments()
   const [newTitle, setNewTitle] = React.useState('')
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState('')
   const [legacyDocs, setLegacyDocs] = React.useState<LegacyDoc[]>([])
   const [importingLegacyDocs, setImportingLegacyDocs] = React.useState(false)
   const [legacyImportMessage, setLegacyImportMessage] = React.useState<string | null>(null)
   const pendingSummaryRefreshRef = React.useRef(false)
 
   const filteredItems = React.useMemo(
-    () => (filter === 'all' ? items : items.filter((doc) => doc.status === filter)),
-    [filter, items],
+    () => {
+      let result = filter === 'all' ? items : items.filter((doc) => doc.status === filter)
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase()
+        result = result.filter(
+          (doc) =>
+            doc.title.toLowerCase().includes(q) ||
+            doc.content.toLowerCase().includes(q),
+        )
+      }
+      return result
+    },
+    [filter, items, searchQuery],
   )
 
   const counts = React.useMemo(() => {
@@ -242,11 +251,6 @@ export default function DocsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" className="h-8" asChild>
-            <Link href="/docs/components">Quick Insert</Link>
-          </Button>
-          <DocsAiMenu buttonClassName="h-8" />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-8">
@@ -278,8 +282,6 @@ export default function DocsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          </div>
-          <DocsHeaderUtilities className="sm:ml-1 sm:border-l sm:border-border/60 sm:pl-3" />
         </div>
       </div>
 
@@ -316,25 +318,36 @@ export default function DocsPage() {
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap items-center gap-1.5 border-b border-border/60 pb-3">
-        {statuses.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setFilter(s)}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-              filter === s
-                ? 'bg-accent/50 text-foreground'
-                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-            )}
-          >
-            {s === 'all' ? 'All' : STATUS_CONFIG[s].label}
-            <Badge variant="secondary" className="ml-0.5 h-4 min-w-[1rem] px-1 text-[10px]">
-              {counts[s] ?? 0}
-            </Badge>
-          </button>
-        ))}
+      <div className="mb-6 flex flex-wrap items-center gap-3 border-b border-border/60 pb-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {statuses.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setFilter(s)}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+                filter === s
+                  ? 'bg-accent/50 text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+              )}
+            >
+              {s === 'all' ? 'All' : STATUS_CONFIG[s].label}
+              <Badge variant="secondary" className="ml-0.5 h-4 min-w-[1rem] px-1 text-[10px]">
+                {counts[s] ?? 0}
+              </Badge>
+            </button>
+          ))}
+        </div>
+        <div className="relative ml-auto w-full sm:w-56">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search documents…"
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
       </div>
 
       {/* Document grid */}

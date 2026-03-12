@@ -43,7 +43,7 @@ function getEditorShellStyle(documentWidth: number) {
 
 function EditorSkeleton() {
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-full flex-col">
       <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
         <div className="mx-auto max-w-5xl">
           <Skeleton className="h-7 w-64" />
@@ -110,6 +110,12 @@ export function DocEditorPageClient() {
   const [backBusy, setBackBusy] = React.useState(false)
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedFeedbackRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryCountRef = React.useRef(0)
+  const pendingSaveRef = React.useRef<{ title: string; content: string } | null>(null)
+  const [_isOnline, setIsOnline] = React.useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  )
   const editorFocusRef = React.useRef<DocEditorHandle | null>(null)
   const { documentWidth, setDocumentWidth } = useDocEditorWidth()
   const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
@@ -134,24 +140,84 @@ export function DocEditorPageClient() {
     }
   }, [docId, initializedDocId])
 
+  // ── Online/offline detection ────────────────────────────────────────────
+
+  React.useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true)
+      // Retry pending save when coming back online
+      if (pendingSaveRef.current) {
+        const { title: t, content: c } = pendingSaveRef.current
+        retryCountRef.current = 0
+        performSave(t, c)
+      }
+    }
+    const handleOffline = () => {
+      setIsOnline(false)
+      setSaveState('offline')
+    }
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Auto-save with retry ──────────────────────────────────────────────────
+
+  const performSave = React.useCallback(
+    async (saveTitle: string, saveContent: string) => {
+      if (!navigator.onLine) {
+        pendingSaveRef.current = { title: saveTitle, content: saveContent }
+        setSaveState('offline')
+        return
+      }
+
+      setSaveState('saving')
+      try {
+        await update({ title: saveTitle, content: saveContent })
+        pendingSaveRef.current = null
+        retryCountRef.current = 0
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+        setSaveState('saved')
+        savedFeedbackRef.current = setTimeout(() => setSaveState('idle'), 2000)
+      } catch {
+        pendingSaveRef.current = { title: saveTitle, content: saveContent }
+        retryCountRef.current += 1
+        setSaveState('error')
+
+        // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+        const delay = Math.min(2000 * Math.pow(2, retryCountRef.current - 1), 30_000)
+        retryTimerRef.current = setTimeout(() => {
+          if (pendingSaveRef.current) {
+            void performSave(pendingSaveRef.current.title, pendingSaveRef.current.content)
+          }
+        }, delay)
+      }
+    },
+    [update],
+  )
+
   const scheduleAutoSave = React.useCallback(
     (newTitle: string, newContent: string) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       if (savedFeedbackRef.current) clearTimeout(savedFeedbackRef.current)
+      pendingSaveRef.current = { title: newTitle, content: newContent }
       setSaveState('saving')
-      saveTimerRef.current = setTimeout(async () => {
-        await update({ title: newTitle, content: newContent })
-        setSaveState('saved')
-        savedFeedbackRef.current = setTimeout(() => setSaveState('idle'), 2000)
+      saveTimerRef.current = setTimeout(() => {
+        void performSave(newTitle, newContent)
       }, 800)
     },
-    [update],
+    [performSave],
   )
 
   React.useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       if (savedFeedbackRef.current) clearTimeout(savedFeedbackRef.current)
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
   }, [])
 
@@ -289,7 +355,7 @@ export function DocEditorPageClient() {
   const editorShellStyle = getEditorShellStyle(documentWidth)
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-full flex-col">
       <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
         <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
           <Input
@@ -346,6 +412,10 @@ export function DocEditorPageClient() {
         onTransition={handleTransition}
         onDelete={handleDelete}
         onDuplicate={handleDuplicate}
+        onRestoreVersion={(versionContent) => {
+          setContent(versionContent)
+          scheduleAutoSave(title, versionContent)
+        }}
       />
     </div>
   )

@@ -1,5 +1,7 @@
 'use client'
+import * as React from 'react'
 import {
+  AlertCircle,
   ArrowLeft,
   Check,
   ChevronRight,
@@ -9,6 +11,7 @@ import {
   Loader2,
   RotateCcw,
   Trash2,
+  WifiOff,
 } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
@@ -41,7 +44,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 
-export type SaveState = 'idle' | 'saving' | 'saved'
+export type SaveState = 'idle' | 'saving' | 'saved' | 'error' | 'offline'
 
 interface DocStatusBarProps {
   doc: Doc
@@ -51,6 +54,7 @@ interface DocStatusBarProps {
   onTransition: (status: DocStatus) => void
   onDelete: () => void
   onDuplicate: () => void
+  onRestoreVersion?: (content: string) => void
   className?: string
 }
 
@@ -70,6 +74,57 @@ function summarizeVersion(content: string) {
   if (!normalized) return 'Empty snapshot'
   if (normalized.length <= 88) return normalized
   return `${normalized.slice(0, 87).trimEnd()}…`
+}
+
+// Simple line-based diff for version comparison
+interface DiffLine {
+  type: 'added' | 'removed' | 'unchanged'
+  text: string
+}
+
+function computeLineDiff(oldText: string, newText: string): DiffLine[] {
+  const oldLines = oldText.split('\n')
+  const newLines = newText.split('\n')
+  const result: DiffLine[] = []
+
+  // Simple LCS-based diff for reasonable performance
+  const lcs = new Array(oldLines.length + 1)
+  for (let i = 0; i <= oldLines.length; i++) {
+    lcs[i] = new Array(newLines.length + 1).fill(0)
+  }
+  for (let i = 1; i <= oldLines.length; i++) {
+    for (let j = 1; j <= newLines.length; j++) {
+      if (oldLines[i - 1] === newLines[j - 1]) {
+        lcs[i][j] = lcs[i - 1][j - 1] + 1
+      } else {
+        lcs[i][j] = Math.max(lcs[i - 1][j], lcs[i][j - 1])
+      }
+    }
+  }
+
+  // Backtrack to produce diff
+  let i = oldLines.length
+  let j = newLines.length
+  const stack: DiffLine[] = []
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+      stack.push({ type: 'unchanged', text: oldLines[i - 1] })
+      i--
+      j--
+    } else if (j > 0 && (i === 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
+      stack.push({ type: 'added', text: newLines[j - 1] })
+      j--
+    } else {
+      stack.push({ type: 'removed', text: oldLines[i - 1] })
+      i--
+    }
+  }
+
+  // Reverse the stack and limit context lines for readability
+  for (let k = stack.length - 1; k >= 0; k--) {
+    result.push(stack[k])
+  }
+  return result
 }
 
 function AnimatedMetricNumber({ value }: { value: number }) {
@@ -97,6 +152,87 @@ function AnimatedMetricNumber({ value }: { value: number }) {
   )
 }
 
+// ── Version diff view ──────────────────────────────────────────────────────
+
+import { type DocVersion } from '@/lib/documents'
+
+function VersionDiffView({
+  currentContent,
+  version,
+  onBack,
+  onRestore,
+}: {
+  currentContent: string
+  version: DocVersion
+  onBack: () => void
+  onRestore?: (content: string) => void
+}) {
+  const diff = React.useMemo(
+    () => computeLineDiff(version.content, currentContent),
+    [version.content, currentContent],
+  )
+  const changes = diff.filter((l) => l.type !== 'unchanged')
+  const added = changes.filter((l) => l.type === 'added').length
+  const removed = changes.filter((l) => l.type === 'removed').length
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 border-b border-border/70 px-3 py-2">
+        <button type="button" onClick={onBack} className="rounded p-0.5 transition-colors hover:bg-muted/60">
+          <ArrowLeft className="size-3.5" />
+        </button>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-foreground">
+            {timeAgo(version.savedAt)}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {version.wordCount.toLocaleString()} words
+            {changes.length > 0 && (
+              <>
+                {' · '}
+                {added > 0 && <span className="text-emerald-600 dark:text-emerald-400">+{added}</span>}
+                {added > 0 && removed > 0 && ' '}
+                {removed > 0 && <span className="text-rose-600 dark:text-rose-400">-{removed}</span>}
+                {' lines changed'}
+              </>
+            )}
+            {changes.length === 0 && ' · No changes'}
+          </p>
+        </div>
+        {onRestore && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 px-2.5 text-xs"
+            onClick={() => onRestore(version.content)}
+          >
+            <RotateCcw className="size-3" />
+            Restore
+          </Button>
+        )}
+      </div>
+      <div className="max-h-80 overflow-auto font-mono text-[11px] leading-5">
+        {diff.map((line, i) => (
+          <div
+            key={i}
+            className={cn(
+              'whitespace-pre-wrap px-3 py-px',
+              line.type === 'added' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+              line.type === 'removed' && 'bg-rose-500/10 text-rose-700 dark:text-rose-300',
+              line.type === 'unchanged' && 'text-muted-foreground/70',
+            )}
+          >
+            <span className="mr-2 inline-block w-3 select-none text-right opacity-50">
+              {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+            </span>
+            {line.text || '\u00A0'}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function DocStatusBar({
   doc,
   backBusy = false,
@@ -105,12 +241,14 @@ export function DocStatusBar({
   onTransition,
   onDelete,
   onDuplicate,
+  onRestoreVersion,
   className,
 }: DocStatusBarProps) {
   const router = useRouter()
   const config = STATUS_CONFIG[doc.status]
   const wc = wordCount(doc.content)
   const recentVersions = doc.versions.slice(0, 6)
+  const [diffVersionId, setDiffVersionId] = React.useState<string | null>(null)
 
   return (
     <div className={cn(
@@ -152,6 +290,16 @@ export function DocStatusBar({
               <Check className="size-3 text-emerald-500" />
               <span className="text-emerald-600 dark:text-emerald-400">Saved</span>
             </>
+          ) : saveState === 'error' ? (
+            <>
+              <AlertCircle className="size-3 text-amber-500" />
+              <span className="text-amber-600 dark:text-amber-400">Save failed · retrying</span>
+            </>
+          ) : saveState === 'offline' ? (
+            <>
+              <WifiOff className="size-3 text-amber-500" />
+              <span className="text-amber-600 dark:text-amber-400">Offline · will retry</span>
+            </>
           ) : (
             <>
               <Clock className="size-3" />
@@ -161,7 +309,7 @@ export function DocStatusBar({
         </span>
 
         {doc.versions.length > 0 ? (
-          <Popover>
+          <Popover onOpenChange={(open) => { if (!open) setDiffVersionId(null) }}>
             <PopoverTrigger asChild>
               <button
                 type="button"
@@ -171,36 +319,55 @@ export function DocStatusBar({
                 <span>{doc.versions.length === 1 ? 'revision' : 'revisions'}</span>
               </button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-80 p-1.5">
-              <div className="border-b border-border/70 px-3 py-2">
-                <p className="text-sm font-medium text-foreground">Recent revisions</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Quick snapshots from autosave. Open a card to compare content next.
-                </p>
-              </div>
-              <div className="max-h-72 overflow-y-auto py-1">
-                {recentVersions.map((version, index) => (
-                  <div
-                    key={version.id}
-                    className={cn(
-                      'space-y-1.5 px-3 py-2.5',
-                      index > 0 && 'border-t border-border/60',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                        {timeAgo(version.savedAt)}
-                      </span>
-                      <span className="font-mono text-[11px] text-muted-foreground">
-                        {version.wordCount.toLocaleString()} words
-                      </span>
-                    </div>
-                    <p className="text-sm leading-6 text-foreground/90">
-                      {summarizeVersion(version.content)}
+            <PopoverContent align="start" className={cn('p-0', diffVersionId ? 'w-[540px]' : 'w-80')}>
+              {diffVersionId ? (
+                <VersionDiffView
+                  currentContent={doc.content}
+                  version={doc.versions.find((v) => v.id === diffVersionId)!}
+                  onBack={() => setDiffVersionId(null)}
+                  onRestore={onRestoreVersion ? (content) => {
+                    onRestoreVersion(content)
+                    setDiffVersionId(null)
+                  } : undefined}
+                />
+              ) : (
+                <>
+                  <div className="border-b border-border/70 px-3 py-2">
+                    <p className="text-sm font-medium text-foreground">Recent revisions</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Click a revision to see changes and optionally restore.
                     </p>
                   </div>
-                ))}
-              </div>
+                  <div className="max-h-72 overflow-y-auto py-1">
+                    {recentVersions.map((version, index) => (
+                      <button
+                        key={version.id}
+                        type="button"
+                        onClick={() => setDiffVersionId(version.id)}
+                        className={cn(
+                          'w-full space-y-1.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/40',
+                          index > 0 && 'border-t border-border/60',
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                            {timeAgo(version.savedAt)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] text-muted-foreground">
+                              {version.wordCount.toLocaleString()} words
+                            </span>
+                            <ChevronRight className="size-3 text-muted-foreground/50" />
+                          </div>
+                        </div>
+                        <p className="text-sm leading-6 text-foreground/90">
+                          {summarizeVersion(version.content)}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </PopoverContent>
           </Popover>
         ) : null}
@@ -210,15 +377,33 @@ export function DocStatusBar({
       <div className="flex items-center gap-2">
         {/* Revert to draft (from review/published/archived) */}
         {doc.status !== 'draft' && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            onClick={() => onTransition('draft')}
-          >
-            <RotateCcw className="mr-1.5 size-3" />
-            Revert to Draft
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+              >
+                <RotateCcw className="mr-1.5 size-3" />
+                Revert to Draft
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Revert to Draft</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will move &ldquo;{doc.title}&rdquo; back to Draft. You
+                  can promote it again later.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onTransition('draft')}>
+                  Revert to Draft
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
 
         {/* More actions */}
