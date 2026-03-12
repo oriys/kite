@@ -775,6 +775,19 @@
   outline: 2px solid oklch(0.72 0.16 55 / 0.4);
 }
 
+/* Inline comment highlight marks */
+.comment-highlight {
+  background-color: oklch(0.95 0.05 85);
+  border-bottom: 2px solid oklch(0.75 0.1 85);
+  cursor: pointer;
+  border-radius: 1px;
+  transition: background-color 0.15s ease;
+}
+
+.comment-highlight:hover {
+  background-color: oklch(0.91 0.07 85);
+}
+
 @media (prefers-color-scheme: dark) {
   .search-match {
     background-color: oklch(0.45 0.1 85);
@@ -783,5 +796,14 @@
   .search-match-current {
     background-color: oklch(0.55 0.14 55);
     outline-color: oklch(0.55 0.14 55 / 0.4);
+  }
+
+  .comment-highlight {
+    background-color: oklch(0.25 0.03 85);
+    border-bottom-color: oklch(0.5 0.08 85);
+  }
+
+  .comment-highlight:hover {
+    background-color: oklch(0.3 0.04 85);
   }
 }
