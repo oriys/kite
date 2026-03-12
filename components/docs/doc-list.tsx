@@ -90,13 +90,14 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                     <CardTitle className="text-sm font-medium leading-5 line-clamp-2 transition-colors group-hover:text-accent-foreground">
                       {doc.title || 'Untitled'}
                     </CardTitle>
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                       {doc.visibility && doc.visibility !== 'public' && (
-                        <VisibilityBadge visibility={doc.visibility} className="text-[10px] px-1.5 py-0" />
+                        <VisibilityBadge visibility={doc.visibility} compact />
                       )}
                       <StatusBadge
                         label={config.label}
                         tone={config.tone as StatusTone}
+                        compact
                       />
                     </div>
                   </div>

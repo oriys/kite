@@ -21,7 +21,8 @@ interface OpenApiSource {
   sourceType: 'upload' | 'url'
   sourceUrl: string | null
   createdAt: string
-  updatedAt: string
+  lastSyncedAt?: string | null
+  updatedAt?: string | null
 }
 
 interface Endpoint {
@@ -46,6 +47,18 @@ interface EndpointDiff {
     method: string
     changes: { field: string; from: unknown; to: unknown }[]
   }[]
+}
+
+function formatSourceTimestamp(source: OpenApiSource) {
+  const rawValue = source.lastSyncedAt ?? source.updatedAt ?? source.createdAt
+  if (!rawValue) return source.sourceType === 'url' ? 'Sync time unavailable' : 'Import time unavailable'
+
+  const date = new Date(rawValue)
+  if (Number.isNaN(date.getTime())) {
+    return source.sourceType === 'url' ? 'Sync time unavailable' : 'Import time unavailable'
+  }
+
+  return formatDistanceToNow(date, { addSuffix: true })
 }
 
 export default function OpenApiPage() {
@@ -227,9 +240,7 @@ export default function OpenApiPage() {
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                       <Clock className="size-3" />
-                      {formatDistanceToNow(new Date(source.updatedAt), {
-                        addSuffix: true,
-                      })}
+                      {formatSourceTimestamp(source)}
                     </span>
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                       {source.sourceType === 'url' && (

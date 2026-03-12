@@ -397,13 +397,15 @@ export function DocEditorPageClient() {
               placeholder="Untitled document…"
               className="flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
             />
-            <VisibilityBadge visibility={visibility} className="shrink-0" />
-            <VisibilitySelector
-              value={visibility}
-              onChange={handleVisibilityChange}
-              disabled={isReadOnly}
-              className="shrink-0"
-            />
+            {isReadOnly ? (
+              <VisibilityBadge visibility={visibility} className="shrink-0" />
+            ) : (
+              <VisibilitySelector
+                value={visibility}
+                onChange={handleVisibilityChange}
+                className="shrink-0"
+              />
+            )}
             <Button
               variant="ghost"
               size="icon"

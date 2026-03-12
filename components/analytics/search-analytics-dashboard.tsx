@@ -8,8 +8,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import { Search, TrendingUp, AlertTriangle } from 'lucide-react'
 import {
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -31,11 +31,6 @@ interface SearchAnalyticsData {
   topQueries: QueryCount[]
   zeroResultQueries: QueryCount[]
 }
-
-const PIE_COLORS = [
-  'oklch(0.65 0.15 244)',
-  'oklch(0.65 0.2 15)',
-]
 
 export function SearchAnalyticsDashboard() {
   const [data, setData] = useState<SearchAnalyticsData | null>(null)
@@ -65,9 +60,15 @@ export function SearchAnalyticsDashboard() {
 
   if (!data) {
     return (
-      <p className="py-10 text-center text-sm text-muted-foreground">
-        Failed to load search analytics.
-      </p>
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="mb-4 rounded-full bg-muted/60 p-4">
+          <Search className="size-8 text-muted-foreground" />
+        </div>
+        <p className="mb-1 text-sm font-medium text-foreground">No analytics data</p>
+        <p className="max-w-xs text-sm text-muted-foreground">
+          Search analytics will appear here once users start searching your documentation.
+        </p>
+      </div>
     )
   }
 
@@ -79,22 +80,13 @@ export function SearchAnalyticsDashboard() {
     { name: 'Zero results', value: Math.round(data.totalSearches * data.zeroResultRate) },
   ]
 
-  // Build a simple trend from top queries as a stand-in for time series
-  const trendData = data.topQueries.slice(0, 10).map((q, i) => ({
+  const barData = data.topQueries.slice(0, 10).map((q) => ({
     name: q.query.length > 15 ? q.query.slice(0, 15) + '…' : q.query,
     searches: q.count,
-    index: i,
   }))
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Search Analytics</h2>
-        <p className="text-sm text-muted-foreground">
-          Understand how users search your documentation.
-        </p>
-      </div>
-
       {/* Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
@@ -104,7 +96,7 @@ export function SearchAnalyticsDashboard() {
           <CardContent>
             <div className="flex items-center gap-2">
               <Search className="h-4 w-4 text-muted-foreground" />
-              <span className="text-2xl font-bold tabular-nums">{data.totalSearches}</span>
+              <span className="text-2xl font-semibold tabular-nums">{data.totalSearches}</span>
             </div>
           </CardContent>
         </Card>
@@ -117,13 +109,13 @@ export function SearchAnalyticsDashboard() {
               <AlertTriangle
                 className={cn(
                   'h-4 w-4',
-                  data.zeroResultRate > 0.2 ? 'text-rose-600' : 'text-amber-500',
+                  data.zeroResultRate > 0.2 ? 'text-tone-error-text' : 'text-tone-caution-text',
                 )}
               />
               <span
                 className={cn(
-                  'text-2xl font-bold tabular-nums',
-                  data.zeroResultRate > 0.2 ? 'text-rose-600' : 'text-amber-500',
+                  'text-2xl font-semibold tabular-nums',
+                  data.zeroResultRate > 0.2 ? 'text-tone-error-text' : 'text-tone-caution-text',
                 )}
               >
                 {zeroResultPct}%
@@ -137,8 +129,8 @@ export function SearchAnalyticsDashboard() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-emerald-600" />
-              <span className="text-2xl font-bold tabular-nums text-emerald-600">
+              <TrendingUp className="h-4 w-4 text-tone-success-text" />
+              <span className="text-2xl font-semibold tabular-nums text-tone-success-text">
                 {successPct}%
               </span>
             </div>
@@ -165,20 +157,26 @@ export function SearchAnalyticsDashboard() {
                     paddingAngle={2}
                     dataKey="value"
                   >
-                    {pieData.map((_entry, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i]} />
-                    ))}
+                    <Cell fill="var(--chart-1)" />
+                    <Cell fill="var(--chart-5)" />
                   </Pie>
-                  <Tooltip />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: '0.375rem',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card)',
+                      fontSize: '0.75rem',
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="mt-2 flex justify-center gap-4 text-xs">
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full" style={{ background: PIE_COLORS[0] }} />
+              <div className="mt-2 flex justify-center gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-chart-1" />
                   With results
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full" style={{ background: PIE_COLORS[1] }} />
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-chart-5" />
                   Zero results
                 </span>
               </div>
@@ -186,26 +184,32 @@ export function SearchAnalyticsDashboard() {
           </Card>
         )}
 
-        {trendData.length > 0 && (
+        {barData.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium">Top Queries by Volume</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="searches"
-                    stroke="oklch(0.65 0.15 244)"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
+                <BarChart data={barData} layout="vertical" margin={{ left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={110} className="fill-muted-foreground" />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: '0.375rem',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card)',
+                      fontSize: '0.75rem',
+                    }}
                   />
-                </LineChart>
+                  <Bar
+                    dataKey="searches"
+                    fill="var(--chart-3)"
+                    radius={[0, 3, 3, 0]}
+                    barSize={16}
+                  />
+                </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
@@ -232,8 +236,8 @@ export function SearchAnalyticsDashboard() {
                 <TableBody>
                   {data.topQueries.map((q) => (
                     <TableRow key={q.query}>
-                      <TableCell className="font-mono text-sm">{q.query}</TableCell>
-                      <TableCell className="text-right tabular-nums">{q.count}</TableCell>
+                      <TableCell className="font-mono text-sm text-foreground">{q.query}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{q.count}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -262,11 +266,14 @@ export function SearchAnalyticsDashboard() {
                   {data.zeroResultQueries.map((q) => (
                     <TableRow key={q.query}>
                       <TableCell>
-                        <Badge variant="outline" className="border-amber-300 text-amber-700">
+                        <Badge
+                          variant="outline"
+                          className="border-tone-caution-border bg-tone-caution-bg text-tone-caution-text"
+                        >
                           {q.query}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{q.count}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{q.count}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

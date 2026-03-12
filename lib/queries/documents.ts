@@ -4,11 +4,13 @@ import {
   documents,
   documentVersions,
   type docStatusEnum,
+  type visibilityEnum,
 } from '../schema'
 import { verifyWorkspaceMembership } from './workspaces'
 import { wordCount } from '../utils'
 
 type DocStatusValue = (typeof docStatusEnum.enumValues)[number]
+type VisibilityValue = (typeof visibilityEnum.enumValues)[number]
 
 interface ImportDocumentVersionInput {
   content: string
@@ -142,7 +144,7 @@ export async function importDocuments(
 export async function updateDocument(
   id: string,
   workspaceId: string,
-  patch: { title?: string; content?: string },
+  patch: { title?: string; content?: string; visibility?: VisibilityValue },
 ) {
   const existing = await getDocument(id, workspaceId)
   if (!existing) return null

@@ -7,7 +7,7 @@ import { BarChart3, MessageSquare } from 'lucide-react'
 
 export default function AnalyticsPage() {
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <div className="mb-6">
         <h1 className="text-lg font-semibold tracking-tight text-foreground">
           Analytics
@@ -21,7 +21,7 @@ export default function AnalyticsPage() {
         <TabsList>
           <TabsTrigger value="search" className="gap-1.5">
             <BarChart3 className="size-3.5" />
-            Search Analytics
+            Search
           </TabsTrigger>
           <TabsTrigger value="feedback" className="gap-1.5">
             <MessageSquare className="size-3.5" />

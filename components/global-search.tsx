@@ -45,50 +45,64 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [hasSearched, setHasSearched] = useState(false)
+  const [settledQuery, setSettledQuery] = useState('')
   const abortRef = useRef<AbortController | null>(null)
+  const trimmedQuery = query.trim()
+  const isQueryDirty = trimmedQuery.length > 0 && trimmedQuery !== settledQuery
+  const showIdleState = trimmedQuery.length === 0 && !isLoading
+  const showSearchingState = isQueryDirty && results.length === 0
+  const showEmptyState = !isQueryDirty && settledQuery.length > 0 && results.length === 0
 
   // Reset state when dialog closes
   useEffect(() => {
     if (!open) {
+      abortRef.current?.abort()
       setQuery('')
       setResults([])
-      setHasSearched(false)
+      setSettledQuery('')
       setIsLoading(false)
     }
   }, [open])
 
   // Debounced search
   useEffect(() => {
-    if (!query.trim()) {
+    if (!trimmedQuery) {
+      abortRef.current?.abort()
       setResults([])
-      setHasSearched(false)
+      setSettledQuery('')
+      setIsLoading(false)
       return
     }
+
+    setIsLoading(true)
 
     const timer = setTimeout(async () => {
       abortRef.current?.abort()
       const controller = new AbortController()
       abortRef.current = controller
+      const requestQuery = trimmedQuery
 
-      setIsLoading(true)
       try {
         const res = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}`,
+          `/api/search?q=${encodeURIComponent(requestQuery)}`,
           { signal: controller.signal },
         )
-        if (res.ok) {
+        if (!controller.signal.aborted && res.ok) {
           const data = await res.json()
           setResults(data.results)
+          setSettledQuery(requestQuery)
+        } else if (!controller.signal.aborted) {
+          setResults([])
+          setSettledQuery(requestQuery)
         }
       } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
+        if (!controller.signal.aborted && (err as Error).name !== 'AbortError') {
           setResults([])
+          setSettledQuery(requestQuery)
         }
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false)
-          setHasSearched(true)
         }
       }
     }, 300)
@@ -97,7 +111,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
       clearTimeout(timer)
       abortRef.current?.abort()
     }
-  }, [query])
+  }, [trimmedQuery])
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -125,38 +139,50 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
         >
           {/* Search input */}
           <div className="flex h-12 items-center gap-2 border-b px-3">
-            {isLoading ? (
-              <Loader2 className="size-4 shrink-0 animate-spin opacity-50" />
-            ) : (
-              <Search className="size-4 shrink-0 opacity-50" />
-            )}
+            <Search className="size-4 shrink-0 opacity-50" />
             <CommandPrimitive.Input
               placeholder="Search documents…"
               value={query}
               onValueChange={setQuery}
               className="flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
+            {isLoading && (
+              <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground/70" />
+            )}
           </div>
 
           {/* Results list */}
-          <CommandPrimitive.List className="max-h-[360px] scroll-py-1 overflow-x-hidden overflow-y-auto">
-            {hasSearched && results.length === 0 && !isLoading && (
+          <CommandPrimitive.List
+            className="min-h-[240px] max-h-[360px] scroll-py-1 overflow-x-hidden overflow-y-auto"
+            aria-busy={isLoading}
+          >
+            {showSearchingState && (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                No documents found for &ldquo;{query}&rdquo;
+                Searching documents…
+              </div>
+            )}
+
+            {showEmptyState && (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No documents found for &ldquo;{settledQuery}&rdquo;
               </div>
             )}
 
             {results.length > 0 && (
               <CommandPrimitive.Group
                 heading="Documents"
-                className="overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
+                className={cn(
+                  'overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground',
+                  isQueryDirty && 'opacity-60',
+                )}
               >
                 {results.map((result) => (
                   <CommandPrimitive.Item
                     key={result.id}
                     value={result.id}
+                    disabled={isQueryDirty}
                     onSelect={() => handleSelect(result.id)}
-                    className="group relative flex cursor-default items-start gap-3 rounded-sm px-2 py-2.5 text-sm outline-hidden select-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
+                    className="group relative flex cursor-default items-start gap-3 rounded-sm px-2 py-2.5 text-sm outline-hidden select-none data-[disabled=true]:opacity-100 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
                   >
                     <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1 space-y-1">
@@ -186,7 +212,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
               </CommandPrimitive.Group>
             )}
 
-            {!hasSearched && !isLoading && (
+            {showIdleState && (
               <div className="py-8 text-center text-sm text-muted-foreground">
                 Type to search across all documents
               </div>

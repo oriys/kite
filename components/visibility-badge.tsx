@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 interface VisibilityBadgeProps {
   visibility: 'public' | 'partner' | 'private'
   className?: string
+  compact?: boolean
 }
 
 const config = {
@@ -30,11 +31,22 @@ const config = {
   },
 } as const
 
-export function VisibilityBadge({ visibility, className }: VisibilityBadgeProps) {
+export function VisibilityBadge({
+  visibility,
+  className,
+  compact = false,
+}: VisibilityBadgeProps) {
   const { label, icon: Icon, classes } = config[visibility]
 
   return (
-    <Badge variant="outline" className={cn(classes, className)}>
+    <Badge
+      variant="outline"
+      className={cn(
+        classes,
+        compact && 'rounded-full px-2 py-0.5 text-[10px] font-semibold normal-case tracking-[0.08em] [&>svg]:size-2.5',
+        className,
+      )}
+    >
       <Icon className="size-3" />
       {label}
     </Badge>

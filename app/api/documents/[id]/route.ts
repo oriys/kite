@@ -7,6 +7,7 @@ import {
   deleteDocument,
 } from '@/lib/queries/documents'
 import { MAX_TITLE_LENGTH, MAX_CONTENT_SIZE } from '@/lib/constants'
+import { visibilityEnum } from '@/lib/schema'
 
 export async function GET(
   _request: NextRequest,
@@ -33,9 +34,23 @@ export async function PATCH(
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
 
-  const patch: { title?: string; content?: string } = {}
+  const patch: {
+    title?: string
+    content?: string
+    visibility?: (typeof visibilityEnum.enumValues)[number]
+  } = {}
   if (typeof body.title === 'string') patch.title = body.title
   if (typeof body.content === 'string') patch.content = body.content
+  if (body.visibility !== undefined) {
+    if (
+      typeof body.visibility !== 'string'
+      || !visibilityEnum.enumValues.includes(body.visibility as (typeof visibilityEnum.enumValues)[number])
+    ) {
+      return badRequest('Invalid visibility')
+    }
+
+    patch.visibility = body.visibility as (typeof visibilityEnum.enumValues)[number]
+  }
 
   if (Object.keys(patch).length === 0) return badRequest('No valid fields')
   if (patch.title !== undefined && patch.title.length > MAX_TITLE_LENGTH) return badRequest('Title too long')

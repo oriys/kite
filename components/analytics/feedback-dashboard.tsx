@@ -40,6 +40,13 @@ interface FeedbackData {
   recentComments: FeedbackComment[]
 }
 
+const tooltipStyle = {
+  borderRadius: '0.375rem',
+  border: '1px solid var(--border)',
+  background: 'var(--card)',
+  fontSize: '0.75rem',
+}
+
 export function FeedbackDashboard() {
   const [data, setData] = useState<FeedbackData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,9 +75,15 @@ export function FeedbackDashboard() {
 
   if (!data) {
     return (
-      <p className="py-10 text-center text-sm text-muted-foreground">
-        Failed to load feedback analytics.
-      </p>
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="mb-4 rounded-full bg-muted/60 p-4">
+          <MessageSquare className="size-8 text-muted-foreground" />
+        </div>
+        <p className="mb-1 text-sm font-medium text-foreground">No feedback data</p>
+        <p className="max-w-xs text-sm text-muted-foreground">
+          Feedback analytics will appear here once readers start rating your documentation.
+        </p>
+      </div>
     )
   }
 
@@ -85,18 +98,10 @@ export function FeedbackDashboard() {
     name: r.title.length > 20 ? r.title.slice(0, 20) + '…' : r.title,
     helpful: r.helpful,
     notHelpful: r.notHelpful,
-    ratio: r.ratio,
   }))
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Feedback Analytics</h2>
-        <p className="text-sm text-muted-foreground">
-          Understand how helpful your documentation is to readers.
-        </p>
-      </div>
-
       {/* Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
@@ -106,7 +111,7 @@ export function FeedbackDashboard() {
           <CardContent>
             <div className="flex items-center gap-2">
               <MessageSquare className="h-4 w-4 text-muted-foreground" />
-              <span className="text-2xl font-bold tabular-nums">{totalFeedback}</span>
+              <span className="text-2xl font-semibold tabular-nums">{totalFeedback}</span>
             </div>
           </CardContent>
         </Card>
@@ -116,8 +121,8 @@ export function FeedbackDashboard() {
           </CardHeader>
           <CardContent>
             <div className="mb-2 flex items-center gap-2">
-              <ThumbsUp className="h-4 w-4 text-emerald-600" />
-              <span className="text-2xl font-bold tabular-nums text-emerald-600">
+              <ThumbsUp className="h-4 w-4 text-tone-success-text" />
+              <span className="text-2xl font-semibold tabular-nums text-tone-success-text">
                 {(overallRatio * 100).toFixed(1)}%
               </span>
             </div>
@@ -129,7 +134,7 @@ export function FeedbackDashboard() {
             <CardDescription>Documents Rated</CardDescription>
           </CardHeader>
           <CardContent>
-            <span className="text-2xl font-bold tabular-nums">{data.ranking.length}</span>
+            <span className="text-2xl font-semibold tabular-nums">{data.ranking.length}</span>
           </CardContent>
         </Card>
       </div>
@@ -144,15 +149,25 @@ export function FeedbackDashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis type="number" tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} />
-                <Tooltip />
-                <Bar dataKey="helpful" stackId="a" fill="oklch(0.72 0.17 155)" name="Helpful" />
-                <Bar dataKey="notHelpful" stackId="a" fill="oklch(0.65 0.2 15)" name="Not Helpful" />
+              <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} className="fill-muted-foreground" />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} className="fill-muted-foreground" />
+                <Tooltip contentStyle={tooltipStyle} />
+                <Bar dataKey="helpful" stackId="a" fill="var(--chart-1)" name="Helpful" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="notHelpful" stackId="a" fill="var(--chart-5)" name="Not Helpful" radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            <div className="mt-2 flex justify-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-chart-1" />
+                Helpful
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-chart-5" />
+                Not Helpful
+              </span>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -172,21 +187,21 @@ export function FeedbackDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Document</TableHead>
-                    <TableHead className="text-right">👍</TableHead>
-                    <TableHead className="text-right">👎</TableHead>
+                    <TableHead className="text-right">Helpful</TableHead>
+                    <TableHead className="text-right">Unhelpful</TableHead>
                     <TableHead className="text-right">Ratio</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.ranking.map((r) => (
                     <TableRow key={r.documentId}>
-                      <TableCell className="max-w-[200px] truncate font-medium">
+                      <TableCell className="max-w-[200px] truncate font-medium text-foreground">
                         {r.title}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-emerald-600">
+                      <TableCell className="text-right tabular-nums text-tone-success-text">
                         {r.helpful}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-rose-600">
+                      <TableCell className="text-right tabular-nums text-tone-error-text">
                         {r.notHelpful}
                       </TableCell>
                       <TableCell className="text-right">
@@ -195,10 +210,10 @@ export function FeedbackDashboard() {
                           className={cn(
                             'tabular-nums',
                             r.ratio >= 0.7
-                              ? 'border-emerald-300 text-emerald-700'
+                              ? 'border-tone-success-border bg-tone-success-bg text-tone-success-text'
                               : r.ratio >= 0.4
-                                ? 'border-amber-300 text-amber-700'
-                                : 'border-rose-300 text-rose-700',
+                                ? 'border-tone-caution-border bg-tone-caution-bg text-tone-caution-text'
+                                : 'border-tone-error-border bg-tone-error-bg text-tone-error-text',
                           )}
                         >
                           {(r.ratio * 100).toFixed(0)}%
@@ -221,21 +236,26 @@ export function FeedbackDashboard() {
             {data.recentComments.length === 0 ? (
               <p className="text-sm text-muted-foreground">No comments yet.</p>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {data.recentComments.map((fb) => (
-                  <div key={fb.id} className="rounded-md border p-3">
-                    <div className="mb-1 flex items-center gap-2">
+                  <div
+                    key={fb.id}
+                    className="rounded-lg border border-border/70 bg-card/70 p-3 transition-colors hover:bg-muted/30"
+                  >
+                    <div className="mb-1.5 flex items-center gap-2">
                       {fb.isHelpful ? (
-                        <ThumbsUp className="h-3.5 w-3.5 text-emerald-600" />
+                        <ThumbsUp className="h-3.5 w-3.5 text-tone-success-text" />
                       ) : (
-                        <ThumbsDown className="h-3.5 w-3.5 text-rose-600" />
+                        <ThumbsDown className="h-3.5 w-3.5 text-tone-error-text" />
                       )}
-                      <span className="text-xs font-medium">{fb.documentTitle}</span>
+                      <span className="text-xs font-medium text-foreground">{fb.documentTitle}</span>
                       <span className="ml-auto text-xs text-muted-foreground">
                         {new Date(fb.createdAt).toLocaleDateString()}
                       </span>
                     </div>
-                    <p className="text-sm text-muted-foreground">{fb.comment}</p>
+                    {fb.comment && (
+                      <p className="text-sm leading-relaxed text-muted-foreground">{fb.comment}</p>
+                    )}
                   </div>
                 ))}
               </div>

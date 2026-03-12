@@ -28,9 +28,11 @@ interface Summary {
   lastCheckedAt: string | null
 }
 
-const CHART_COLORS = {
-  alive: 'oklch(0.72 0.17 155)',
-  dead: 'oklch(0.65 0.2 15)',
+const tooltipStyle = {
+  borderRadius: '0.375rem',
+  border: '1px solid var(--border)',
+  background: 'var(--card)',
+  fontSize: '0.75rem',
 }
 
 export function LinkHealthDashboard() {
@@ -108,7 +110,7 @@ export function LinkHealthDashboard() {
           <CardContent>
             <div className="flex items-center gap-2">
               <Link className="h-4 w-4 text-muted-foreground" />
-              <span className="text-2xl font-bold tabular-nums">{summary?.totalLinks ?? 0}</span>
+              <span className="text-2xl font-semibold tabular-nums">{summary?.totalLinks ?? 0}</span>
             </div>
           </CardContent>
         </Card>
@@ -118,8 +120,8 @@ export function LinkHealthDashboard() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              <span className="text-2xl font-bold tabular-nums text-emerald-600">
+              <ShieldCheck className="h-4 w-4 text-tone-success-text" />
+              <span className="text-2xl font-semibold tabular-nums text-tone-success-text">
                 {summary?.aliveLinks ?? 0}
               </span>
             </div>
@@ -131,8 +133,8 @@ export function LinkHealthDashboard() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-rose-600" />
-              <span className="text-2xl font-bold tabular-nums text-rose-600">
+              <ShieldAlert className="h-4 w-4 text-tone-error-text" />
+              <span className="text-2xl font-semibold tabular-nums text-tone-error-text">
                 {summary?.deadLinks ?? 0}
               </span>
             </div>
@@ -171,19 +173,19 @@ export function LinkHealthDashboard() {
                     paddingAngle={2}
                     dataKey="value"
                   >
-                    <Cell fill={CHART_COLORS.alive} />
-                    <Cell fill={CHART_COLORS.dead} />
+                    <Cell fill="var(--chart-1)" />
+                    <Cell fill="var(--chart-5)" />
                   </Pie>
-                  <Tooltip />
+                  <Tooltip contentStyle={tooltipStyle} />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="mt-2 flex justify-center gap-4 text-xs">
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <div className="mt-2 flex justify-center gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-chart-1" />
                   Healthy
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-rose-500" />
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-chart-5" />
                   Broken
                 </span>
               </div>
@@ -200,7 +202,7 @@ export function LinkHealthDashboard() {
                 : `${brokenLinks.length} broken link${brokenLinks.length === 1 ? '' : 's'} detected.`}
             </CardDescription>
           </CardHeader>
-          {brokenLinks.length > 0 && (
+          {brokenLinks.length > 0 ? (
             <CardContent>
               <Table>
                 <TableHeader>
@@ -215,7 +217,7 @@ export function LinkHealthDashboard() {
                 <TableBody>
                   {brokenLinks.map((link) => (
                     <TableRow key={link.id}>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium text-foreground">
                         {link.documentTitle ?? 'Untitled'}
                       </TableCell>
                       <TableCell>
@@ -223,18 +225,21 @@ export function LinkHealthDashboard() {
                           href={link.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                         >
                           <span className="max-w-[200px] truncate">{link.url}</span>
                           <ExternalLink className="h-3 w-3 shrink-0" />
                         </a>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="destructive" className="tabular-nums">
+                        <Badge
+                          variant="outline"
+                          className="tabular-nums border-tone-error-border bg-tone-error-bg text-tone-error-text"
+                        >
                           {link.statusCode ?? '—'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="max-w-[180px] truncate text-xs text-muted-foreground">
                         {link.errorMessage ?? '—'}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
@@ -244,6 +249,13 @@ export function LinkHealthDashboard() {
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          ) : (
+            <CardContent>
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <ShieldCheck className="mb-2 size-6 text-tone-success-text" />
+                <p className="text-sm text-muted-foreground">All links are healthy</p>
+              </div>
             </CardContent>
           )}
         </Card>

@@ -38,9 +38,11 @@ export async function parseOpenAPISpec(content: string): Promise<ParsedSpec> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let api: Record<string, any>
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     api = (await dereference(parsed as any)) as Record<string, any>
   } catch {
     // Fall back to basic parse if dereference fails (e.g. circular refs)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     api = (await openapiParse(parsed as any)) as Record<string, any>
   }
 
