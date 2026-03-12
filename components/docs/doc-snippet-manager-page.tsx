@@ -20,9 +20,14 @@ import {
   type StoredDocSnippet,
 } from '@/lib/doc-snippets'
 import { useDocSnippets } from '@/hooks/use-doc-snippets'
-import { cn } from '@/lib/utils'
 import { DocsAdminShell } from '@/components/docs/docs-admin-shell'
 import { MarkdownPreview } from '@/components/docs/markdown-preview'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -174,15 +179,10 @@ export function DocSnippetManagerPage() {
       return
     }
 
-    if (!selectedId || !filteredItems.some((snippet) => snippet.id === selectedId)) {
-      setSelectedId(filteredItems[0].id)
+    if (selectedId && !filteredItems.some((snippet) => snippet.id === selectedId)) {
+      setSelectedId(null)
     }
   }, [filteredItems, selectedId])
-
-  const selectedSnippet =
-    filteredItems.find((snippet) => snippet.id === selectedId) ??
-    items.find((snippet) => snippet.id === selectedId) ??
-    null
 
   const totalSnippetCount = numberFormatter.format(items.length)
   const categoryCount = numberFormatter.format(
@@ -312,7 +312,7 @@ export function DocSnippetManagerPage() {
         </div>
       )}
     >
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gap-4">
         <section className="editorial-surface overflow-hidden editorial-reveal">
           <div className="grid gap-3 border-b border-border/70 px-4 py-4 sm:px-5">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
@@ -396,163 +396,118 @@ export function DocSnippetManagerPage() {
                 </EmptyContent>
               </Empty>
             ) : (
-              <div className="space-y-2">
-                {filteredItems.map((snippet) => {
-                  const isSelected = selectedId === snippet.id
-
-                  return (
-                    <article
-                      key={snippet.id}
-                      className={cn(
-                        'grid gap-3 rounded-xl border border-border/75 bg-card/70 p-3 transition-colors md:grid-cols-[minmax(0,1fr)_auto] md:items-start',
-                        isSelected
-                          ? 'border-primary/40 bg-primary/[0.06]'
-                          : 'hover:bg-muted/25',
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(snippet.id)}
-                        className="min-w-0 text-left"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-                            {snippet.label}
-                          </span>
-                          <Badge variant="outline">{snippet.category}</Badge>
-                          {isSelected ? <Badge variant="secondary">Selected</Badge> : null}
+              <div className="overflow-hidden rounded-xl border border-border/70 bg-card/40">
+                <Accordion
+                  type="single"
+                  collapsible
+                  value={selectedId ?? undefined}
+                  onValueChange={(value) => setSelectedId(value || null)}
+                  className="px-3 sm:px-4"
+                >
+                  {filteredItems.map((snippet) => (
+                    <AccordionItem key={snippet.id} value={snippet.id} className="border-border/70">
+                      <AccordionTrigger className="gap-3 py-3 hover:no-underline">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate text-[15px] font-semibold tracking-tight text-foreground">
+                              {snippet.label}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className="px-2 py-0.5 text-[10px] tracking-[0.18em]"
+                            >
+                              {snippet.category}
+                            </Badge>
+                            <Badge variant="outline" className="px-2 py-0.5 text-[10px]">
+                              {snippet.keywords.length} keywords
+                            </Badge>
+                          </div>
+                          <p className="mt-1 line-clamp-2 max-w-3xl text-[12px] leading-5 text-muted-foreground">
+                            {snippet.description}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted-foreground">
+                            <span>Updated {formatUpdatedAt(snippet.updatedAt)}</span>
+                          </div>
                         </div>
-                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">
-                          {snippet.description}
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <span>Updated {formatUpdatedAt(snippet.updatedAt)}</span>
-                          <span>{snippet.keywords.length} keywords</span>
-                        </div>
-                      </button>
+                      </AccordionTrigger>
 
-                      <div className="flex flex-wrap items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditDialog(snippet)}
-                        >
-                          <PencilLine data-icon="inline-start" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteTarget(snippet)}
-                        >
-                          <Trash2 data-icon="inline-start" />
-                          Delete
-                        </Button>
-                      </div>
-                    </article>
-                  )
-                })}
+                      <AccordionContent className="pb-4">
+                        <div className="border-t border-border/70 pt-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="flex flex-wrap gap-2">
+                              <Badge variant="outline">{snippet.category}</Badge>
+                              <Badge variant="secondary">
+                                {snippet.keywords.length} keywords
+                              </Badge>
+                              <Badge variant="outline">
+                                Updated {formatUpdatedAt(snippet.updatedAt)}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEditDialog(snippet)}
+                              >
+                                <PencilLine data-icon="inline-start" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeleteTarget(snippet)}
+                              >
+                                <Trash2 data-icon="inline-start" />
+                                Delete
+                              </Button>
+                            </div>
+                          </div>
+
+                          {snippet.keywords.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {snippet.keywords.map((keyword) => (
+                                <Badge key={keyword} variant="secondary">
+                                  {keyword}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                            <div className="rounded-lg border border-border/75 bg-muted/20 p-4">
+                              <p className="editorial-section-kicker">Rendered preview</p>
+                              <MarkdownPreview
+                                content={snippet.template}
+                                className="mt-3 min-h-[180px] max-w-none"
+                              />
+                            </div>
+
+                            <FieldGroup className="gap-4">
+                              <Field>
+                                <FieldLabel htmlFor={`snippet-source-${snippet.id}`}>
+                                  Markdown source
+                                </FieldLabel>
+                                <Textarea
+                                  id={`snippet-source-${snippet.id}`}
+                                  readOnly
+                                  value={snippet.template}
+                                  className="min-h-[180px] font-mono text-[13px] leading-6"
+                                />
+                                <FieldDescription>
+                                  Editing uses raw markdown so the Insert action stays predictable.
+                                </FieldDescription>
+                              </Field>
+                            </FieldGroup>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
               </div>
             )}
           </div>
         </section>
-
-        <aside className="editorial-reveal xl:sticky xl:top-4 xl:self-start">
-          <section className="editorial-surface overflow-hidden">
-            {selectedSnippet ? (
-              <>
-                <div className="border-b border-border/70 px-4 py-4 sm:px-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="editorial-section-kicker">Selection</p>
-                      <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-                        {selectedSnippet.label}
-                      </h2>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        {selectedSnippet.description}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEditDialog(selectedSnippet)}
-                      >
-                        <PencilLine data-icon="inline-start" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDeleteTarget(selectedSnippet)}
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">{selectedSnippet.category}</Badge>
-                    <Badge variant="secondary">
-                      {selectedSnippet.keywords.length} keywords
-                    </Badge>
-                    <Badge variant="outline">
-                      Updated {formatUpdatedAt(selectedSnippet.updatedAt)}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="space-y-4 p-4 sm:p-5">
-                  {selectedSnippet.keywords.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedSnippet.keywords.map((keyword) => (
-                        <Badge key={keyword} variant="secondary">
-                          {keyword}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <div className="rounded-lg border border-border/75 bg-muted/20 p-4">
-                    <p className="editorial-section-kicker">Rendered preview</p>
-                    <MarkdownPreview
-                      content={selectedSnippet.template}
-                      className="mt-3 min-h-[220px] max-w-none"
-                    />
-                  </div>
-
-                  <FieldGroup className="gap-4">
-                    <Field>
-                      <FieldLabel htmlFor="snippet-source">Markdown source</FieldLabel>
-                      <Textarea
-                        id="snippet-source"
-                        readOnly
-                        value={selectedSnippet.template}
-                        className="min-h-[220px] font-mono text-[13px] leading-6"
-                      />
-                      <FieldDescription>
-                        Editing uses raw markdown so the Insert action stays predictable.
-                      </FieldDescription>
-                    </Field>
-                  </FieldGroup>
-                </div>
-              </>
-            ) : (
-              <Empty className="min-h-[420px]">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <Blocks />
-                  </EmptyMedia>
-                  <EmptyTitle>Select a component</EmptyTitle>
-                  <EmptyDescription>
-                    Pick an item from the library to inspect its rendered output and raw
-                    markdown template.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-          </section>
-        </aside>
       </div>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

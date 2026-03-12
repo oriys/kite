@@ -38,6 +38,7 @@ import { cn } from '@/lib/utils'
 import { htmlToMd } from '@/lib/html-to-markdown'
 import { type DocSnippet } from '@/lib/doc-snippets'
 import { JsonViewerNode, SchemaViewerNode, HeatmapNode } from '@/lib/editor/custom-nodes'
+import { CommentMark } from '@/lib/editor/comment-marks'
 import { createImagePasteDropExtension } from '@/lib/editor/image-paste-drop'
 import { SearchReplace } from '@/lib/editor/search-replace'
 import { DocFindReplace } from '@/components/docs/doc-find-replace'
@@ -240,6 +241,7 @@ export function DocEditor({
       }),
       CharacterCount,
       SearchReplace,
+      CommentMark,
       JsonViewerNode,
       SchemaViewerNode,
       HeatmapNode,
@@ -699,6 +701,9 @@ export function DocEditor({
           break
         case 'code':
           editor.chain().focus().toggleCode().run()
+          break
+        case 'comment':
+          toast.info('Select text and use the comment sidebar to add comments')
           break
       }
     },

@@ -14,12 +14,14 @@ import {
   queuePendingDocumentSummary,
 } from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
+import { MessageSquare } from 'lucide-react'
 import { getDocEditorHref } from '@/lib/documents'
 import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
 import { useDocument } from '@/hooks/use-documents'
 import { useDocEditorWidth } from '@/hooks/use-doc-editor-width'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DocEditor,
@@ -28,6 +30,10 @@ import {
 import { EditorErrorBoundary } from '@/components/docs/editor-error-boundary'
 import { DocStatusBar, type SaveState } from '@/components/docs/doc-status-bar'
 import { type EditorViewMode } from '@/components/docs/doc-toolbar'
+import { DocCommentSidebar } from '@/components/docs/doc-comment-sidebar'
+import { VisibilitySelector } from '@/components/visibility-selector'
+import { VisibilityBadge } from '@/components/visibility-badge'
+import { DocFeedback } from '@/components/doc-feedback'
 
 function getEditorShellClassName(resizing = false) {
   return cn(
@@ -108,6 +114,10 @@ export function DocEditorPageClient() {
   const [documentResizeActive, setDocumentResizeActive] = React.useState(false)
   const [initializedDocId, setInitializedDocId] = React.useState<string | null>(null)
   const [saveState, setSaveState] = React.useState<SaveState>('idle')
+  const [commentSidebarOpen, setCommentSidebarOpen] = React.useState(false)
+  const [visibility, setVisibility] = React.useState<'public' | 'partner' | 'private'>(
+    doc?.visibility ?? 'private',
+  )
   const [backBusy, setBackBusy] = React.useState(false)
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedFeedbackRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -125,6 +135,7 @@ export function DocEditorPageClient() {
     if (doc && initializedDocId !== doc.id) {
       setTitle(doc.title)
       setContent(doc.content)
+      setVisibility(doc.visibility)
       setInitializedDocId(doc.id)
     }
   }, [doc, initializedDocId])
@@ -267,6 +278,23 @@ export function DocEditorPageClient() {
     }
   }
 
+  const handleVisibilityChange = async (newVisibility: 'public' | 'partner' | 'private') => {
+    if (!docId) return
+    setVisibility(newVisibility)
+    try {
+      const res = await fetch(`/api/documents/${docId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility: newVisibility }),
+      })
+      if (!res.ok) throw new Error('Failed to update visibility')
+      toast.success(`Visibility set to ${newVisibility}`)
+    } catch {
+      setVisibility(visibility)
+      toast.error('Failed to update visibility')
+    }
+  }
+
   const triggerDocumentSummaryRefresh = React.useCallback((documentId: string) => {
     queuePendingDocumentSummary(documentId)
 
@@ -359,15 +387,33 @@ export function DocEditorPageClient() {
     <div className="flex h-full flex-col">
       <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
         <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
-          <Input
-            value={title}
-            onChange={(e) => handleTitleChange(e.target.value)}
-            onKeyDown={handleTitleKeyDown}
-            readOnly={isReadOnly}
-            aria-label="Document title"
-            placeholder="Untitled document…"
-            className="border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
-          />
+          <div className="flex items-center gap-3">
+            <Input
+              value={title}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              onKeyDown={handleTitleKeyDown}
+              readOnly={isReadOnly}
+              aria-label="Document title"
+              placeholder="Untitled document…"
+              className="flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
+            />
+            <VisibilityBadge visibility={visibility} className="shrink-0" />
+            <VisibilitySelector
+              value={visibility}
+              onChange={handleVisibilityChange}
+              disabled={isReadOnly}
+              className="shrink-0"
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              aria-label="Toggle comment sidebar"
+              onClick={() => setCommentSidebarOpen((v) => !v)}
+            >
+              <MessageSquare className="size-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -381,29 +427,41 @@ export function DocEditorPageClient() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto xl:overflow-hidden">
-        <div
-          className={cn(getEditorShellClassName(documentResizeActive), 'py-4 xl:h-full')}
-          style={editorShellStyle}
-        >
-          <EditorErrorBoundary>
-            <DocEditor
-              key={doc.id}
-              content={content}
-              onChange={handleContentChange}
-              readOnly={isReadOnly}
-              className="min-h-[60vh] xl:h-full"
-              onModeChange={setEditorMode}
-              editorFocusRef={editorFocusRef}
-              documentWidth={documentWidth}
-              onDocumentWidthChange={setDocumentWidth}
-              onDocumentResizeStateChange={setDocumentResizeActive}
-              aiPreviewSide={aiPanelSide}
-              onAiPreviewSideChange={setAiPanelSide}
-            />
-          </EditorErrorBoundary>
+      <div className="flex flex-1 overflow-y-auto xl:overflow-hidden">
+        <div className="flex-1">
+          <div
+            className={cn(getEditorShellClassName(documentResizeActive), 'py-4 xl:h-full')}
+            style={editorShellStyle}
+          >
+            <EditorErrorBoundary>
+              <DocEditor
+                key={doc.id}
+                content={content}
+                onChange={handleContentChange}
+                readOnly={isReadOnly}
+                className="min-h-[60vh] xl:h-full"
+                onModeChange={setEditorMode}
+                editorFocusRef={editorFocusRef}
+                documentWidth={documentWidth}
+                onDocumentWidthChange={setDocumentWidth}
+                onDocumentResizeStateChange={setDocumentResizeActive}
+                aiPreviewSide={aiPanelSide}
+                onAiPreviewSideChange={setAiPanelSide}
+              />
+            </EditorErrorBoundary>
+          </div>
         </div>
+        {commentSidebarOpen && (
+          <DocCommentSidebar
+            documentId={doc.id}
+            className="w-80 shrink-0 border-l"
+          />
+        )}
       </div>
+
+      {doc.status === 'published' && (
+        <DocFeedback documentId={doc.id} className="border-t border-border/60" />
+      )}
 
       <DocStatusBar
         doc={{ ...doc, title, content }}

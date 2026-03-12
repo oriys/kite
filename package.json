@@ -8,10 +8,10 @@
     "postbuild": "mkdir -p .next/standalone/.next/static .next/standalone/public && cp -R .next/static/. .next/standalone/.next/static && cp -R public/. .next/standalone/public",
     "start": "node --env-file=.env .next/standalone/server.js",
     "lint": "eslint .",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:generate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs generate",
+    "db:migrate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs migrate",
+    "db:push": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs push",
+    "db:studio": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",

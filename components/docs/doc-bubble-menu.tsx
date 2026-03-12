@@ -11,6 +11,7 @@ import {
   Languages,
   Link2,
   Loader2,
+  MessageSquarePlus,
   PencilLine,
   Sparkles,
   Strikethrough,
@@ -561,6 +562,20 @@ export function DocBubbleMenu({
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-[10px]">Link</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-7 w-7"
+                onClick={() => onAction('comment')}
+              >
+                <MessageSquarePlus className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-[10px]">Comment</TooltipContent>
           </Tooltip>
 
           <Separator orientation="vertical" className="mx-1 h-4" />

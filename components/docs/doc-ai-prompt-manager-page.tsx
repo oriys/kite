@@ -34,15 +34,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import {
   Field,
   FieldContent,
   FieldDescription,
@@ -307,13 +298,18 @@ export function DocAiPromptManagerPage() {
       )}
     >
       <div className="grid gap-4">
-        <Card className="editorial-reveal">
-          <CardHeader className="border-b border-border/70">
-            <CardTitle>System prompt</CardTitle>
-            <CardDescription>
-              Shared guardrails sent before every AI request, regardless of action.
-            </CardDescription>
-            <CardAction>
+        <section className="editorial-surface overflow-hidden editorial-reveal">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 px-4 py-4 sm:px-5">
+            <div className="min-w-0">
+              <p className="editorial-section-kicker">Shared Guardrails</p>
+              <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
+                System prompt
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                Shared guardrails sent before every AI request, regardless of action.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
               <Button
                 type="button"
                 size="sm"
@@ -327,9 +323,10 @@ export function DocAiPromptManagerPage() {
               >
                 Reset
               </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="py-5">
+            </div>
+          </div>
+
+          <div className="px-4 py-4 sm:px-5">
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="ai-system-prompt">Shared instruction</FieldLabel>
@@ -353,15 +350,16 @@ export function DocAiPromptManagerPage() {
                 </FieldContent>
               </Field>
             </FieldGroup>
-          </CardContent>
-          <CardFooter className="justify-between border-t border-border/70 pt-4 text-xs text-muted-foreground">
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 px-4 py-3 text-xs text-muted-foreground sm:px-5">
             <span>Shapes tone, formatting discipline, and output constraints.</span>
             <span>
               {formatCharacterCount(draftPrompts.systemPrompt)} /{' '}
               {numberFormatter.format(MAX_AI_SYSTEM_PROMPT_LENGTH)}
             </span>
-          </CardFooter>
-        </Card>
+          </div>
+        </section>
 
         <section className="editorial-surface overflow-hidden editorial-reveal">
           <div className="border-b border-border/70 px-4 py-4 sm:px-5">

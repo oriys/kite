@@ -5,7 +5,7 @@ const publicPaths = ['/', '/auth', '/components', '/api/auth']
 
 function isPublicPath(pathname: string) {
   return publicPaths.some(
-    (p) => pathname === p || pathname.startsWith(p + '/'),
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
   )
 }
 
@@ -15,7 +15,7 @@ function isStaticAsset(pathname: string) {
   return pathname.startsWith('/_next') || STATIC_EXT.test(pathname)
 }
 
-function isSafeCallbackUrl(url: string): boolean {
+function isSafeCallbackUrl(url: string) {
   return url.startsWith('/') && !url.startsWith('//')
 }
 
