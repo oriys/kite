@@ -871,6 +871,23 @@ export function DocEditor({
 
   const customActionModelSelection = resolveActionModelSelection('custom')
 
+  // ── Toolbar callback stability ──────────────────────────────────────────
+
+  const handleRichChange = React.useCallback(() => {
+    if (!editor) return
+    const html = editor.getHTML()
+    const md = htmlToMd(html)
+    latestMdRef.current = md
+    onChange(md)
+  }, [editor, onChange])
+
+  const handleAiDocumentActionWrapper = React.useCallback(
+    (action: AiTransformAction, options?: { targetLanguage?: string }) => {
+      void handleAiDocumentAction(action, options)
+    },
+    [handleAiDocumentAction],
+  )
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -900,13 +917,7 @@ export function DocEditor({
           disabled={readOnly}
           onEditorModeChange={handleModeChange}
           onSourceChange={handleSourceChange}
-          onRichChange={() => {
-            if (!editor) return
-            const html = editor.getHTML()
-            const md = htmlToMd(html)
-            latestMdRef.current = md
-            onChange(md)
-          }}
+          onRichChange={handleRichChange}
           insertPickerOpen={insertPickerOpen}
           onInsertPickerOpenChange={setInsertPickerOpen}
           onInsertSnippet={handleInsertSnippet}
@@ -914,9 +925,7 @@ export function DocEditor({
           activeAiLabel={activeModel?.label ?? activeModelId}
           aiDisabled={Boolean(ai.pendingAction) || !activeModelId}
           aiDocumentPendingAction={aiDocumentPendingAction}
-          onAiDocumentAction={(action, options) => {
-            void handleAiDocumentAction(action, options)
-          }}
+          onAiDocumentAction={handleAiDocumentActionWrapper}
         />
 
         {/* Find/Replace bar */}
