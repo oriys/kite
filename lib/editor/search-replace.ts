@@ -51,7 +51,7 @@ function findMatches(doc: EditorState['doc'], searchTerm: string, caseSensitive:
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getStorage(editor: { storage: any }): SearchReplaceStorage {
-  return getStorage(editor) as SearchReplaceStorage
+  return editor.storage.searchReplace as SearchReplaceStorage
 }
 
 export const SearchReplace = Extension.create<Record<string, never>, SearchReplaceStorage>({
