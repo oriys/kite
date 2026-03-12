@@ -106,6 +106,7 @@ export function DocEditor({
   onDocumentResizeStateChange,
   aiPreviewSide = 'right',
   onAiPreviewSideChange,
+  onComment,
 }: DocEditorProps) {
   // ── AI model state ───────────────────────────────────────────────────────
   const { items: aiModels, loading: aiModelsLoading, defaultModelId } = useAiModels()
@@ -401,6 +402,16 @@ export function DocEditor({
     if (editorFocusRef) {
       editorFocusRef.current = {
         focus: () => editor?.commands.focus(),
+        applyCommentMark: (from: number, to: number, commentId: string) => {
+          if (!editor) return
+          editor
+            .chain()
+            .focus()
+            .setTextSelection({ from, to })
+            .setMark('comment', { commentId })
+            .setTextSelection(to)
+            .run()
+        },
       }
     }
   }, [editor, editorFocusRef])
@@ -702,12 +713,20 @@ export function DocEditor({
         case 'code':
           editor.chain().focus().toggleCode().run()
           break
-        case 'comment':
-          toast.info('Select text and use the comment sidebar to add comments')
+        case 'comment': {
+          if (!editor) break
+          const { from, to } = editor.state.selection
+          if (from === to) {
+            toast.info('Select some text first to add a comment')
+            break
+          }
+          const text = editor.state.doc.textBetween(from, to, ' ')
+          onComment?.({ from, to, text })
           break
+        }
       }
     },
-    [editor],
+    [editor, onComment],
   )
 
   // ── Slash menu handler ───────────────────────────────────────────────────

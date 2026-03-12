@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,10 +14,12 @@ import {
   Undo2,
   Eye,
   EyeOff,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
+import type { CommentSelection } from '@/lib/editor/editor-helpers'
 
 interface Comment {
   id: string
@@ -35,6 +37,9 @@ interface Comment {
 interface DocCommentSidebarProps {
   documentId: string
   className?: string
+  pendingComment?: CommentSelection | null
+  onCommentCreated?: (commentId: string, from: number, to: number) => void
+  onPendingClear?: () => void
   onCommentClick?: (anchorFrom: number, anchorTo: number) => void
 }
 
@@ -47,6 +52,124 @@ function authorInitials(name: string | null): string {
     .toUpperCase()
     .slice(0, 2)
 }
+
+/* ── New comment form (shown at top of sidebar) ─────────────────────── */
+
+function NewCommentForm({
+  documentId,
+  selection,
+  onCreated,
+  onCancel,
+}: {
+  documentId: string
+  selection: CommentSelection
+  onCreated: (commentId: string) => void
+  onCancel: () => void
+}) {
+  const [body, setBody] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    // Focus the textarea once mounted
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }, [])
+
+  const preview =
+    selection.text.length > 120
+      ? selection.text.slice(0, 120) + '…'
+      : selection.text
+
+  async function handleSubmit() {
+    const trimmed = body.trim()
+    if (!trimmed) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/documents/${documentId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          anchorType: 'text_range',
+          anchorFrom: selection.from,
+          anchorTo: selection.to,
+          quotedText: selection.text,
+          body: trimmed,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.error ?? 'Failed to create comment')
+      }
+      const created = await res.json()
+      setBody('')
+      onCreated(created.id)
+      toast.success('Comment added')
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not add comment',
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      handleSubmit()
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    }
+  }
+
+  return (
+    <div className="border-b border-border/50 bg-muted/20 p-3">
+      <div className="space-y-2.5">
+        {/* Quoted text preview */}
+        <div className="border-l-2 border-primary/30 pl-2.5">
+          <p className="text-xs italic leading-relaxed text-muted-foreground">
+            &ldquo;{preview}&rdquo;
+          </p>
+        </div>
+
+        {/* Comment input */}
+        <Textarea
+          ref={textareaRef}
+          placeholder="Add your comment… (⌘+Enter to submit)"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="min-h-[72px] resize-none text-sm"
+        />
+
+        {/* Actions */}
+        <div className="flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 text-xs text-muted-foreground"
+            onClick={onCancel}
+          >
+            <X className="h-3 w-3" />
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 gap-1 text-xs"
+            disabled={!body.trim() || submitting}
+            onClick={handleSubmit}
+          >
+            {submitting ? 'Posting…' : 'Comment'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Single comment card ─────────────────────────────────────────────── */
 
 function CommentCard({
   comment,
@@ -80,7 +203,7 @@ function CommentCard({
   return (
     <div
       className={cn(
-        'group rounded-md border border-border/50 bg-card p-3 transition-colors',
+        'group rounded-lg border border-border/50 bg-card/80 p-3 transition-colors',
         comment.threadResolved && 'opacity-60',
       )}
     >
@@ -120,7 +243,7 @@ function CommentCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+              className="h-6 w-6 text-tone-success-text hover:text-tone-success-text/80"
               title="Resolve thread"
               onClick={() => onResolve(comment.id)}
             >
@@ -134,7 +257,7 @@ function CommentCard({
       {comment.quotedText && (
         <button
           type="button"
-          className="mt-2 block w-full cursor-pointer border-l-2 border-primary/30 pl-2.5 text-left text-xs italic text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground/70"
+          className="mt-2 block w-full cursor-pointer border-l-2 border-primary/30 pl-2.5 text-left text-xs italic leading-relaxed text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground/70"
           onClick={onClick}
         >
           &ldquo;{comment.quotedText.slice(0, 120)}
@@ -155,8 +278,8 @@ function CommentCard({
       {/* Resolved badge */}
       {comment.threadResolved && (
         <Badge
-          variant="secondary"
-          className="mt-1.5 gap-1 text-[10px] font-normal text-emerald-600 dark:text-emerald-400"
+          variant="outline"
+          className="mt-1.5 gap-1 border-tone-success-border bg-tone-success-bg text-[10px] font-normal text-tone-success-text"
         >
           <Check className="h-3 w-3" />
           Resolved
@@ -203,7 +326,17 @@ function CommentCard({
                 placeholder="Write a reply…"
                 value={replyBody}
                 onChange={(e) => setReplyBody(e.target.value)}
-                className="min-h-[60px] resize-none text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault()
+                    handleReply()
+                  }
+                  if (e.key === 'Escape') {
+                    setShowReplyForm(false)
+                    setReplyBody('')
+                  }
+                }}
+                className="min-h-[56px] resize-none text-xs"
                 autoFocus
               />
               <div className="flex items-center justify-end gap-1">
@@ -245,9 +378,14 @@ function CommentCard({
   )
 }
 
+/* ── Main sidebar ────────────────────────────────────────────────────── */
+
 export function DocCommentSidebar({
   documentId,
   className,
+  pendingComment,
+  onCommentCreated,
+  onPendingClear,
   onCommentClick,
 }: DocCommentSidebarProps) {
   const [comments, setComments] = useState<Comment[]>([])
@@ -323,6 +461,14 @@ export function DocCommentSidebar({
     }
   }
 
+  function handleNewCommentCreated(commentId: string) {
+    if (pendingComment) {
+      onCommentCreated?.(commentId, pendingComment.from, pendingComment.to)
+    }
+    onPendingClear?.()
+    fetchComments()
+  }
+
   const visibleComments = showResolved
     ? comments
     : comments.filter((c) => !c.threadResolved)
@@ -364,6 +510,16 @@ export function DocCommentSidebar({
         )}
       </div>
 
+      {/* New comment form (appears when user selected text + clicked comment) */}
+      {pendingComment && (
+        <NewCommentForm
+          documentId={documentId}
+          selection={pendingComment}
+          onCreated={handleNewCommentCreated}
+          onCancel={() => onPendingClear?.()}
+        />
+      )}
+
       {/* Comment list */}
       <ScrollArea className="flex-1">
         <div className="space-y-2 p-3">
@@ -372,12 +528,12 @@ export function DocCommentSidebar({
               Loading…
             </p>
           )}
-          {!loading && visibleComments.length === 0 && (
+          {!loading && visibleComments.length === 0 && !pendingComment && (
             <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
               <MessageSquare className="h-8 w-8 opacity-30" />
               <p className="text-xs">No comments yet</p>
-              <p className="text-[10px]">
-                Select text in the editor to add a comment
+              <p className="max-w-[200px] text-center text-[10px] leading-relaxed">
+                Select text in the editor and click the comment button to start a discussion
               </p>
             </div>
           )}

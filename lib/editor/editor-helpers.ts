@@ -26,6 +26,12 @@ export interface AiPreviewState extends AiPreviewRequest {
   resultText: string
 }
 
+export interface CommentSelection {
+  from: number
+  to: number
+  text: string
+}
+
 export interface DocEditorProps {
   content: string
   onChange: (content: string) => void
@@ -39,10 +45,12 @@ export interface DocEditorProps {
   onDocumentResizeStateChange?: (active: boolean) => void
   aiPreviewSide?: DocEditorAiPanelSide
   onAiPreviewSideChange?: (side: DocEditorAiPanelSide) => void
+  onComment?: (selection: CommentSelection) => void
 }
 
 export interface DocEditorHandle {
   focus: () => void
+  applyCommentMark?: (from: number, to: number, commentId: string) => void
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────

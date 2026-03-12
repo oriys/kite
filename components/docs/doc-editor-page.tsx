@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 import { MessageSquare } from 'lucide-react'
 import { getDocEditorHref } from '@/lib/documents'
+import type { CommentSelection } from '@/lib/editor/editor-helpers'
 import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
 import { useDocument } from '@/hooks/use-documents'
@@ -115,6 +116,7 @@ export function DocEditorPageClient() {
   const [initializedDocId, setInitializedDocId] = React.useState<string | null>(null)
   const [saveState, setSaveState] = React.useState<SaveState>('idle')
   const [commentSidebarOpen, setCommentSidebarOpen] = React.useState(false)
+  const [pendingComment, setPendingComment] = React.useState<CommentSelection | null>(null)
   const [visibility, setVisibility] = React.useState<'public' | 'partner' | 'private'>(
     doc?.visibility ?? 'private',
   )
@@ -295,6 +297,18 @@ export function DocEditorPageClient() {
     }
   }
 
+  const handleComment = React.useCallback((selection: CommentSelection) => {
+    setPendingComment(selection)
+    setCommentSidebarOpen(true)
+  }, [])
+
+  const handleCommentCreated = React.useCallback(
+    (commentId: string, from: number, to: number) => {
+      editorFocusRef.current?.applyCommentMark?.(from, to, commentId)
+    },
+    [],
+  )
+
   const triggerDocumentSummaryRefresh = React.useCallback((documentId: string) => {
     queuePendingDocumentSummary(documentId)
 
@@ -449,6 +463,7 @@ export function DocEditorPageClient() {
                 onDocumentResizeStateChange={setDocumentResizeActive}
                 aiPreviewSide={aiPanelSide}
                 onAiPreviewSideChange={setAiPanelSide}
+                onComment={handleComment}
               />
             </EditorErrorBoundary>
           </div>
@@ -457,6 +472,9 @@ export function DocEditorPageClient() {
           <DocCommentSidebar
             documentId={doc.id}
             className="w-80 shrink-0 border-l"
+            pendingComment={pendingComment}
+            onCommentCreated={handleCommentCreated}
+            onPendingClear={() => setPendingComment(null)}
           />
         )}
       </div>
