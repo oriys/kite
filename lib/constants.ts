@@ -1,0 +1,38 @@
+import type { DocStatus } from './documents'
+
+// ─── Document validation ────────────────────────────────────────
+
+export const VALID_STATUSES: readonly DocStatus[] = [
+  'draft',
+  'review',
+  'published',
+  'archived',
+] as const
+
+export const MAX_TITLE_LENGTH = 255
+export const MAX_CONTENT_SIZE = 10 * 1024 * 1024 // 10 MB
+
+export const ALLOWED_TRANSITIONS: Record<DocStatus, readonly DocStatus[]> = {
+  draft: ['review', 'archived'],
+  review: ['draft', 'published', 'archived'],
+  published: ['archived'],
+  archived: ['draft'],
+}
+
+// ─── Snippet validation ─────────────────────────────────────────
+
+export const MAX_LABEL_LENGTH = 80
+export const MAX_DESCRIPTION_LENGTH = 240
+export const MAX_TEMPLATE_LENGTH = 50_000
+export const MAX_KEYWORD_COUNT = 16
+export const MAX_KEYWORD_LENGTH = 32
+
+// ─── Import ─────────────────────────────────────────────────────
+
+export const MAX_IMPORT_COUNT = 200
+
+// ─── Misc ───────────────────────────────────────────────────────
+
+export function isValidStatus(value: string): value is DocStatus {
+  return (VALID_STATUSES as readonly string[]).includes(value)
+}

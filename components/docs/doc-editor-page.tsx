@@ -14,8 +14,8 @@ import {
   queuePendingDocumentSummary,
 } from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
-import { getDocEditorHref } from '@/lib/docs-url'
-import { getDocEditorShellWidth } from '@/lib/doc-editor-layout'
+import { getDocEditorHref } from '@/lib/documents'
+import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
 import { useDocument } from '@/hooks/use-documents'
 import { useDocEditorWidth } from '@/hooks/use-doc-editor-width'
@@ -25,6 +25,7 @@ import {
   DocEditor,
   type DocEditorHandle,
 } from '@/components/docs/doc-editor'
+import { EditorErrorBoundary } from '@/components/docs/editor-error-boundary'
 import { DocStatusBar, type SaveState } from '@/components/docs/doc-status-bar'
 import { type EditorViewMode } from '@/components/docs/doc-toolbar'
 
@@ -37,7 +38,7 @@ function getEditorShellClassName(resizing = false) {
 
 function getEditorShellStyle(documentWidth: number) {
   return {
-    maxWidth: `${getDocEditorShellWidth(documentWidth)}px`,
+    maxWidth: `${clampDocEditorWidth(documentWidth)}px`,
   } satisfies React.CSSProperties
 }
 
@@ -385,20 +386,22 @@ export function DocEditorPageClient() {
           className={cn(getEditorShellClassName(documentResizeActive), 'py-4 xl:h-full')}
           style={editorShellStyle}
         >
-          <DocEditor
-            key={doc.id}
-            content={content}
-            onChange={handleContentChange}
-            readOnly={isReadOnly}
-            className="min-h-[60vh] xl:h-full"
-            onModeChange={setEditorMode}
-            editorFocusRef={editorFocusRef}
-            documentWidth={documentWidth}
-            onDocumentWidthChange={setDocumentWidth}
-            onDocumentResizeStateChange={setDocumentResizeActive}
-            aiPreviewSide={aiPanelSide}
-            onAiPreviewSideChange={setAiPanelSide}
-          />
+          <EditorErrorBoundary>
+            <DocEditor
+              key={doc.id}
+              content={content}
+              onChange={handleContentChange}
+              readOnly={isReadOnly}
+              className="min-h-[60vh] xl:h-full"
+              onModeChange={setEditorMode}
+              editorFocusRef={editorFocusRef}
+              documentWidth={documentWidth}
+              onDocumentWidthChange={setDocumentWidth}
+              onDocumentResizeStateChange={setDocumentResizeActive}
+              aiPreviewSide={aiPanelSide}
+              onAiPreviewSideChange={setAiPanelSide}
+            />
+          </EditorErrorBoundary>
         </div>
       </div>
 

@@ -71,16 +71,8 @@ export function normalizeAnnotationQuote(text: string): string {
   return `${normalized.slice(0, DOC_ANNOTATION_QUOTE_MAX_LENGTH - 1).trimEnd()}…`
 }
 
-export function wordCount(text: string): number {
-  const trimmed = text.trim()
-  if (!trimmed) return 0
-  // Handle both CJK and latin text
-  const cjk = trimmed.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g)?.length ?? 0
-  const latin = trimmed
-    .replace(/[\u4e00-\u9fff\u3400-\u4dbf]/g, '')
-    .split(/\s+/)
-    .filter(Boolean).length
-  return cjk + latin
+export function getDocEditorHref(id: string): string {
+  return `/docs/editor?doc=${encodeURIComponent(id)}`
 }
 
 export const STATUS_CONFIG: Record<DocStatus, { label: string; tone: string; next: DocStatus | null; nextLabel: string | null }> = {

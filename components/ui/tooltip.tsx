@@ -1,8 +1,10 @@
 'use client'
 
 import * as React from 'react'
+import { Slot } from '@radix-ui/react-slot'
 import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 
+import { useHydrated } from '@/components/ui/use-hydrated'
 import { cn } from '@/lib/utils'
 
 function TooltipProvider({
@@ -29,9 +31,25 @@ function Tooltip({
 }
 
 function TooltipTrigger({
+  asChild,
+  children,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+  const hydrated = useHydrated()
+
+  if (asChild && !hydrated) {
+    return (
+      <Slot data-slot="tooltip-trigger" {...props}>
+        {children}
+      </Slot>
+    )
+  }
+
+  return (
+    <TooltipPrimitive.Trigger data-slot="tooltip-trigger" asChild={asChild} {...props}>
+      {children}
+    </TooltipPrimitive.Trigger>
+  )
 }
 
 function TooltipContent({

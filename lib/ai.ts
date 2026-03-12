@@ -1,53 +1,38 @@
-export const AI_TRANSFORM_ACTIONS = [
-  'polish',
-  'shorten',
-  'expand',
-  'translate',
-  'explain',
-  'review',
-  'score',
-  'summarize',
-  'outline',
-  'checklist',
-  'custom',
-] as const
+export const AI_ACTIONS = {
+  polish:    { label: 'Polish',        mode: 'rewrite' },
+  shorten:   { label: 'Shorten',       mode: 'rewrite' },
+  expand:    { label: 'Expand',        mode: 'rewrite' },
+  translate: { label: 'Translate',     mode: 'rewrite' },
+  explain:   { label: 'Explain',       mode: 'append' },
+  review:    { label: 'Review',        mode: 'append' },
+  score:     { label: 'Score',         mode: 'append' },
+  summarize: { label: 'Summarize',     mode: 'append' },
+  outline:   { label: 'Outline',       mode: 'append' },
+  checklist: { label: 'Checklist',     mode: 'append' },
+  custom:    { label: 'Custom Prompt', mode: 'custom' },
+} as const satisfies Record<string, { label: string; mode: 'rewrite' | 'append' | 'custom' }>
 
-export const AI_REWRITE_ACTIONS = [
-  'polish',
-  'shorten',
-  'expand',
-  'translate',
-] as const
+export type AiTransformAction = keyof typeof AI_ACTIONS
 
-export const AI_APPEND_RESULT_ACTIONS = [
-  'review',
-  'score',
-  'summarize',
-  'outline',
-  'checklist',
-] as const
+export const AI_TRANSFORM_ACTIONS = Object.keys(AI_ACTIONS) as AiTransformAction[]
+
+export const AI_ACTION_LABELS = Object.fromEntries(
+  Object.entries(AI_ACTIONS).map(([key, { label }]) => [key, label]),
+) as Record<AiTransformAction, string>
+
+export function isAiRewriteAction(action: AiTransformAction) {
+  return AI_ACTIONS[action].mode === 'rewrite'
+}
+
+export function isAiAppendResultAction(action: AiTransformAction) {
+  return AI_ACTIONS[action].mode === 'append'
+}
 
 export const AI_PROVIDER_NAME = 'AIHubMix'
 export const DEFAULT_AIHUBMIX_MODEL = 'gpt-4o-mini'
 export const DEFAULT_AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1'
 export const AI_MODEL_PREFERENCES_STORAGE_KEY = 'editorial-ai-model-preferences'
 export const AI_MODEL_PREFERENCES_EVENT = 'editorial-ai-model-preferences:change'
-
-export type AiTransformAction = (typeof AI_TRANSFORM_ACTIONS)[number]
-
-export const AI_ACTION_LABELS: Record<AiTransformAction, string> = {
-  polish: 'Polish',
-  shorten: 'Shorten',
-  expand: 'Expand',
-  translate: 'Translate',
-  explain: 'Explain',
-  review: 'Review',
-  score: 'Score',
-  summarize: 'Summarize',
-  outline: 'Outline',
-  checklist: 'Checklist',
-  custom: 'Custom Prompt',
-}
 
 export const MAX_AI_MODEL_ID_LENGTH = 200
 export const MAX_AI_CUSTOM_PROMPT_LENGTH = 2_000
@@ -90,18 +75,6 @@ export interface AiTransformRequest {
 export interface AiTransformResponse {
   result: string
   model: string
-}
-
-export function isAiRewriteAction(action: AiTransformAction) {
-  return AI_REWRITE_ACTIONS.includes(
-    action as (typeof AI_REWRITE_ACTIONS)[number],
-  )
-}
-
-export function isAiAppendResultAction(action: AiTransformAction) {
-  return AI_APPEND_RESULT_ACTIONS.includes(
-    action as (typeof AI_APPEND_RESULT_ACTIONS)[number],
-  )
 }
 
 export function formatAiModelLabel(id: string) {

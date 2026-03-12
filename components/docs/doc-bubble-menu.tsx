@@ -63,6 +63,7 @@ type AiFlyoutPanel = 'models' | 'languages' | null
 const MENU_VIEWPORT_PADDING = 8
 const MENU_SELECTION_GAP = 12
 const MENU_FALLBACK_HEIGHT = 44
+const MENU_FALLBACK_WIDTH = 220
 const MENU_HORIZONTAL_PADDING = 24
 const AI_MENU_FLYOUT_GAP = 8
 const AI_MENU_MODELS_WIDTH = 288
@@ -74,6 +75,38 @@ type AiFlyoutDirection = 'right' | 'left' | 'bottom'
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
+}
+
+function isRectVisibleInViewport(rect: DOMRect, viewportRect: DOMRect) {
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    rect.bottom >= viewportRect.top &&
+    rect.top <= viewportRect.bottom &&
+    rect.right >= viewportRect.left &&
+    rect.left <= viewportRect.right
+  )
+}
+
+function getSelectionAnchorRect(range: Range, viewportRect: DOMRect) {
+  const clientRects = Array.from(range.getClientRects()).filter(
+    (rect) => rect.width > 0 && rect.height > 0,
+  )
+
+  if (clientRects.length === 0) {
+    return range.getBoundingClientRect()
+  }
+
+  const visibleRects = clientRects.filter((rect) =>
+    isRectVisibleInViewport(rect, viewportRect),
+  )
+  const candidateRects = visibleRects.length > 0 ? visibleRects : clientRects
+
+  return candidateRects.reduce((bestRect, rect) => {
+    if (rect.top < bestRect.top - 1) return rect
+    if (Math.abs(rect.top - bestRect.top) <= 1 && rect.left < bestRect.left) return rect
+    return bestRect
+  })
 }
 
 function ShortenActionIcon({ className }: { className?: string }) {
@@ -313,24 +346,26 @@ export function DocBubbleMenu({
       return
     }
 
-    const rect = range.getBoundingClientRect()
-
-    const canvas = editorRef.current.parentElement
-    const viewport = canvas?.parentElement
+    const canvas = editorRef.current
+    const viewport = editorRef.current.parentElement
     if (!canvas || !viewport) return
 
     const canvasRect = canvas.getBoundingClientRect()
+    const viewportRect = viewport.getBoundingClientRect()
+    const anchorRect = getSelectionAnchorRect(range, viewportRect)
+    const menuHeight = menuRef.current?.offsetHeight ?? MENU_FALLBACK_HEIGHT
+    const menuWidth = menuRef.current?.offsetWidth ?? MENU_FALLBACK_WIDTH
+    const menuHalfWidth = menuWidth / 2
     const toolbarLeft = clamp(
-      rect.left - canvasRect.left + rect.width / 2,
-      viewport.scrollLeft + MENU_HORIZONTAL_PADDING,
+      anchorRect.left - canvasRect.left + anchorRect.width / 2,
+      viewport.scrollLeft + MENU_HORIZONTAL_PADDING + menuHalfWidth,
       Math.max(
-        viewport.scrollLeft + MENU_HORIZONTAL_PADDING,
-        viewport.scrollLeft + viewport.clientWidth - MENU_HORIZONTAL_PADDING,
+        viewport.scrollLeft + MENU_HORIZONTAL_PADDING + menuHalfWidth,
+        viewport.scrollLeft + viewport.clientWidth - MENU_HORIZONTAL_PADDING - menuHalfWidth,
       ),
     )
-    const menuHeight = menuRef.current?.offsetHeight ?? MENU_FALLBACK_HEIGHT
-    const selectionTop = rect.top - canvasRect.top
-    const selectionBottom = rect.bottom - canvasRect.top
+    const selectionTop = anchorRect.top - canvasRect.top
+    const selectionBottom = anchorRect.bottom - canvasRect.top
     const minTop = viewport.scrollTop + MENU_VIEWPORT_PADDING
     const maxTop = Math.max(
       minTop,
@@ -360,10 +395,12 @@ export function DocBubbleMenu({
 
     document.addEventListener('selectionchange', handleSelectionChange)
     window.addEventListener('resize', updatePosition)
+    document.addEventListener('scroll', handleSelectionChange, true)
 
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange)
       window.removeEventListener('resize', updatePosition)
+      document.removeEventListener('scroll', handleSelectionChange, true)
     }
   }, [updatePosition])
 
@@ -430,7 +467,10 @@ export function DocBubbleMenu({
     <>
       <div
         ref={menuRef}
-        className="absolute z-50 flex items-center gap-0.5 rounded-lg border border-border/80 bg-background/95 p-1 shadow-lg backdrop-blur-md transition-all duration-200 animate-in fade-in zoom-in-95"
+        role="toolbar"
+        aria-label="Text formatting"
+        aria-orientation="horizontal"
+        className="absolute z-50 flex items-center gap-0.5 rounded-lg border border-border/80 bg-background/95 p-1 shadow-lg backdrop-blur-md transition-all duration-200 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95"
         style={{
           top: `${position.top}px`,
           left: `${position.left}px`,

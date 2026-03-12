@@ -2,8 +2,10 @@
 
 import * as React from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { Slot } from '@radix-ui/react-slot'
 import { XIcon } from 'lucide-react'
 
+import { useHydrated } from '@/components/ui/use-hydrated'
 import { cn } from '@/lib/utils'
 
 function Dialog({
@@ -13,9 +15,25 @@ function Dialog({
 }
 
 function DialogTrigger({
+  asChild,
+  children,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
+  const hydrated = useHydrated()
+
+  if (asChild && !hydrated) {
+    return (
+      <Slot data-slot="dialog-trigger" {...props}>
+        {children}
+      </Slot>
+    )
+  }
+
+  return (
+    <DialogPrimitive.Trigger data-slot="dialog-trigger" asChild={asChild} {...props}>
+      {children}
+    </DialogPrimitive.Trigger>
+  )
 }
 
 function DialogPortal({

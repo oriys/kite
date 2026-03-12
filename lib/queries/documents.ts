@@ -6,6 +6,7 @@ import {
   type docStatusEnum,
 } from '../schema'
 import { verifyWorkspaceMembership } from './workspaces'
+import { wordCount } from '../utils'
 
 type DocStatusValue = (typeof docStatusEnum.enumValues)[number]
 
@@ -25,20 +26,11 @@ interface ImportDocumentInput {
   versions?: ImportDocumentVersionInput[]
 }
 
-function wordCount(text: string): number {
-  const trimmed = text.trim()
-  if (!trimmed) return 0
-  const cjk = trimmed.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g)?.length ?? 0
-  const latin = trimmed
-    .replace(/[\u4e00-\u9fff\u3400-\u4dbf]/g, '')
-    .split(/\s+/)
-    .filter(Boolean).length
-  return cjk + latin
-}
-
 export async function listDocuments(
   workspaceId: string,
   statusFilter?: DocStatusValue,
+  limit = 100,
+  offset = 0,
 ) {
   const conditions = [eq(documents.workspaceId, workspaceId)]
   if (statusFilter) {
@@ -48,6 +40,8 @@ export async function listDocuments(
   const docs = await db.query.documents.findMany({
     where: and(...conditions),
     orderBy: [desc(documents.updatedAt)],
+    limit,
+    offset,
     with: {
       versions: {
         orderBy: [desc(documentVersions.savedAt)],

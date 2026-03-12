@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import { importDocuments } from '@/lib/queries/documents'
-
-const VALID_STATUSES = ['draft', 'review', 'published', 'archived'] as const
-const MAX_IMPORT_COUNT = 200
-const MAX_TITLE_LENGTH = 255
-const MAX_CONTENT_SIZE = 10 * 1024 * 1024 // 10 MB
+import type { DocStatus } from '@/lib/documents'
+import {
+  isValidStatus,
+  MAX_IMPORT_COUNT,
+  MAX_TITLE_LENGTH,
+  MAX_CONTENT_SIZE,
+} from '@/lib/constants'
 
 interface ImportVersionPayload {
   content: string
@@ -17,7 +19,7 @@ interface ImportVersionPayload {
 interface ImportDocumentPayload {
   title: string
   content: string
-  status?: (typeof VALID_STATUSES)[number]
+  status?: DocStatus
   createdAt?: string
   updatedAt?: string
   versions?: ImportVersionPayload[]
@@ -47,7 +49,7 @@ function normalizeDocument(raw: unknown): ImportDocumentPayload | null {
 
   if (content === null) return null
   if (titleValue.length > MAX_TITLE_LENGTH || content.length > MAX_CONTENT_SIZE) return null
-  if (status && !VALID_STATUSES.includes(status as (typeof VALID_STATUSES)[number])) return null
+  if (status && !isValidStatus(status)) return null
 
   const versions = Array.isArray(doc.versions)
     ? doc.versions
@@ -58,7 +60,7 @@ function normalizeDocument(raw: unknown): ImportDocumentPayload | null {
   return {
     title: titleValue || 'Untitled',
     content,
-    status: status as (typeof VALID_STATUSES)[number] | undefined,
+    status: status as DocStatus | undefined,
     createdAt: typeof doc.createdAt === 'string' ? doc.createdAt : undefined,
     updatedAt: typeof doc.updatedAt === 'string' ? doc.updatedAt : undefined,
     versions,

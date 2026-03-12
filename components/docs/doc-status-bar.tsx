@@ -16,8 +16,8 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 
-import { cn } from '@/lib/utils'
-import { type Doc, type DocStatus, STATUS_CONFIG, wordCount } from '@/lib/documents'
+import { cn, wordCount } from '@/lib/utils'
+import { type Doc, type DocStatus, STATUS_CONFIG } from '@/lib/documents'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import {

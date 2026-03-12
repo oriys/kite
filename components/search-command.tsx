@@ -15,6 +15,12 @@ interface SearchCommandProps {
   sections: ReadonlyArray<{ id: string; label: string; note: string }>
 }
 
+const SearchOpenContext = React.createContext<(() => void) | null>(null)
+
+export function useSearchOpen() {
+  return React.useContext(SearchOpenContext)
+}
+
 export function SearchCommand({ sections }: SearchCommandProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -29,15 +35,10 @@ export function SearchCommand({ sections }: SearchCommandProps) {
     return () => document.removeEventListener('keydown', down)
   }, [])
 
+  const openSearch = React.useCallback(() => setOpen(true), [])
+
   return (
-    <>
-      <button
-        type="button"
-        data-slot="search-trigger"
-        className="hidden"
-        aria-hidden
-        onClick={() => setOpen(true)}
-      />
+    <SearchOpenContext value={openSearch}>
       <CommandDialog open={open} onOpenChange={setOpen}>
         <CommandInput placeholder="Jump to a section…" />
         <CommandList>
@@ -60,6 +61,6 @@ export function SearchCommand({ sections }: SearchCommandProps) {
           </CommandGroup>
         </CommandList>
       </CommandDialog>
-    </>
+    </SearchOpenContext>
   )
 }

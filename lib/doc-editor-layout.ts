@@ -32,7 +32,3 @@ export function normalizeDocEditorAiPanelSide(
 ): DocEditorAiPanelSide {
   return value === 'left' ? 'left' : 'right'
 }
-
-export function getDocEditorShellWidth(documentWidth: number) {
-  return clampDocEditorWidth(documentWidth)
-}

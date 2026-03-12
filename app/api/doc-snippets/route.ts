@@ -9,12 +9,13 @@ import {
 } from '@/lib/doc-snippets'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { createDocSnippet, listDocSnippets } from '@/lib/queries/doc-snippets'
-
-const MAX_LABEL_LENGTH = 80
-const MAX_DESCRIPTION_LENGTH = 240
-const MAX_TEMPLATE_LENGTH = 50_000
-const MAX_KEYWORD_COUNT = 16
-const MAX_KEYWORD_LENGTH = 32
+import {
+  MAX_LABEL_LENGTH,
+  MAX_DESCRIPTION_LENGTH,
+  MAX_TEMPLATE_LENGTH,
+  MAX_KEYWORD_COUNT,
+  MAX_KEYWORD_LENGTH,
+} from '@/lib/constants'
 
 function isDocSnippetCategory(value: string): value is DocSnippetCategory {
   return DOC_SNIPPET_CATEGORIES.includes(value as DocSnippetCategory)
