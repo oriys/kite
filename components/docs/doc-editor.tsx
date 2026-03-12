@@ -131,13 +131,46 @@ export function DocEditor({
   const [mode, setMode] = React.useState<EditorMode>('wysiwyg')
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
 
-  // ── AI state ─────────────────────────────────────────────────────────────
-  const [aiPendingAction, setAiPendingAction] = React.useState<AiTransformAction | null>(null)
-  const [aiPendingScope, setAiPendingScope] = React.useState<'selection' | 'document' | null>(null)
-  const [aiPreview, setAiPreview] = React.useState<AiPreviewState | null>(null)
-  const [customPromptOpen, setCustomPromptOpen] = React.useState(false)
-  const [customPromptValue, setCustomPromptValue] = React.useState('')
-  const [customPromptSelectionText, setCustomPromptSelectionText] = React.useState('')
+  // ── AI state (consolidated reducer to minimize re-renders) ───────────────
+  type AiState = {
+    pendingAction: AiTransformAction | null
+    pendingScope: 'selection' | 'document' | null
+    preview: AiPreviewState | null
+    customPromptOpen: boolean
+    customPromptValue: string
+    customPromptSelectionText: string
+  }
+  type AiAction =
+    | { type: 'SET_PENDING'; action: AiTransformAction | null; scope: 'selection' | 'document' | null }
+    | { type: 'SET_PREVIEW'; preview: AiPreviewState | null }
+    | { type: 'SET_PREVIEW_RESULT'; resultText: string }
+    | { type: 'OPEN_CUSTOM_PROMPT'; selectionText: string }
+    | { type: 'CLOSE_CUSTOM_PROMPT' }
+    | { type: 'SET_CUSTOM_PROMPT_VALUE'; value: string }
+    | { type: 'RESET' }
+  const [ai, dispatchAi] = React.useReducer(
+    (state: AiState, action: AiAction): AiState => {
+      switch (action.type) {
+        case 'SET_PENDING':
+          return { ...state, pendingAction: action.action, pendingScope: action.scope }
+        case 'SET_PREVIEW':
+          return { ...state, preview: action.preview }
+        case 'SET_PREVIEW_RESULT':
+          return state.preview ? { ...state, preview: { ...state.preview, resultText: action.resultText } } : state
+        case 'OPEN_CUSTOM_PROMPT':
+          return { ...state, customPromptOpen: true, customPromptValue: '', customPromptSelectionText: action.selectionText }
+        case 'CLOSE_CUSTOM_PROMPT':
+          return { ...state, customPromptOpen: false }
+        case 'SET_CUSTOM_PROMPT_VALUE':
+          return { ...state, customPromptValue: action.value }
+        case 'RESET':
+          return { pendingAction: null, pendingScope: null, preview: null, customPromptOpen: false, customPromptValue: '', customPromptSelectionText: '' }
+        default:
+          return state
+      }
+    },
+    { pendingAction: null, pendingScope: null, preview: null, customPromptOpen: false, customPromptValue: '', customPromptSelectionText: '' },
+  )
 
   // ── UI state ─────────────────────────────────────────────────────────────
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
@@ -168,6 +201,7 @@ export function DocEditor({
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const latestMdRef = React.useRef(content)
   const switchingRef = React.useRef(false)
+  const htmlToMdTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const aiRequestIdRef = React.useRef(0)
   const customPromptSelectionRef = React.useRef<{ from: number; to: number } | null>(null)
   const slashMenuRef = React.useRef<{ show: () => void; hide: () => void }>(null)
@@ -190,11 +224,11 @@ export function DocEditor({
 
   const reducedMotion = useReducedMotion()
   const editingMode: ToolbarMode = mode === 'split' ? activePane : mode
-  const aiDocumentPendingAction = aiPendingScope === 'document' ? aiPendingAction : null
+  const aiDocumentPendingAction = ai.pendingScope === 'document' ? ai.pendingAction : null
   const wysiwygOnLeft = splitPaneLeading === 'wysiwyg'
-  const aiPreviewOnLeft = Boolean(aiPreview) && aiPreviewSide === 'left'
+  const aiPreviewOnLeft = Boolean(ai.preview) && aiPreviewSide === 'left'
   const splitPaneColumns = `minmax(0, ${splitPaneRatio}fr) minmax(0, ${1 - splitPaneRatio}fr)`
-  const aiSplitColumns = aiPreview
+  const aiSplitColumns = ai.preview
     ? aiPreviewOnLeft
       ? `minmax(0, ${aiSplitRatio}fr) minmax(0, ${1 - aiSplitRatio}fr)`
       : `minmax(0, ${1 - aiSplitRatio}fr) minmax(0, ${aiSplitRatio}fr)`
@@ -296,10 +330,14 @@ export function DocEditor({
       },
     },
     onUpdate: ({ editor: ed }) => {
-      const html = ed.getHTML()
-      const md = htmlToMd(html)
-      latestMdRef.current = md
-      onChange(md)
+      // Debounce the expensive HTML→MD conversion (150ms)
+      if (htmlToMdTimerRef.current) clearTimeout(htmlToMdTimerRef.current)
+      htmlToMdTimerRef.current = setTimeout(() => {
+        const html = ed.getHTML()
+        const md = htmlToMd(html)
+        latestMdRef.current = md
+        onChange(md)
+      }, 150)
     },
     onSelectionUpdate: ({ editor: ed }) => {
       const { from, to } = ed.state.selection
@@ -317,6 +355,25 @@ export function DocEditor({
   })
 
   // ── Link input helpers ──────────────────────────────────────────────────
+
+  // Flush any pending debounced HTML→MD conversion
+  const flushHtmlToMd = React.useCallback(() => {
+    if (htmlToMdTimerRef.current && editor) {
+      clearTimeout(htmlToMdTimerRef.current)
+      htmlToMdTimerRef.current = null
+      const html = editor.getHTML()
+      const md = htmlToMd(html)
+      latestMdRef.current = md
+      onChange(md)
+    }
+  }, [editor, onChange])
+
+  // Clean up debounce timer on unmount
+  React.useEffect(() => {
+    return () => {
+      if (htmlToMdTimerRef.current) clearTimeout(htmlToMdTimerRef.current)
+    }
+  }, [])
 
   const openLinkInput = React.useCallback(() => {
     if (!editor) return
@@ -369,10 +426,11 @@ export function DocEditor({
   // ── Mode changes ─────────────────────────────────────────────────────────
 
   React.useEffect(() => { onModeChange?.(mode) }, [mode, onModeChange])
-  React.useEffect(() => { onAiPreviewVisibilityChange?.(Boolean(aiPreview)) }, [aiPreview, onAiPreviewVisibilityChange])
+  React.useEffect(() => { onAiPreviewVisibilityChange?.(Boolean(ai.preview)) }, [ai.preview, onAiPreviewVisibilityChange])
   React.useEffect(() => { onDocumentResizeStateChange?.(documentResizeActive) }, [documentResizeActive, onDocumentResizeStateChange])
 
   const handleModeChange = React.useCallback((newMode: EditorViewMode) => {
+    flushHtmlToMd()
     switchingRef.current = true
     setMode(newMode)
 
@@ -399,7 +457,7 @@ export function DocEditor({
     requestAnimationFrame(() => {
       switchingRef.current = false
     })
-  }, [editor, announce])
+  }, [editor, announce, flushHtmlToMd])
 
   const handleSourceChange = React.useCallback((newContent: string) => {
     latestMdRef.current = newContent
@@ -426,9 +484,8 @@ export function DocEditor({
   const runAiPreviewRequest = React.useCallback(
     async (request: AiPreviewRequest) => {
       const requestId = ++aiRequestIdRef.current
-      setAiPendingAction(request.action)
-      setAiPendingScope(request.scope)
-      setAiPreview({ ...request, resultText: '' })
+      dispatchAi({ type: 'SET_PENDING', action: request.action, scope: request.scope })
+      dispatchAi({ type: 'SET_PREVIEW', preview: { ...request, resultText: '' } })
 
       try {
         const actionPrompt = resolveAiActionPrompt(
@@ -462,21 +519,18 @@ export function DocEditor({
 
         if (requestId !== aiRequestIdRef.current) return
 
-        setAiPreview((prev) =>
-          prev ? { ...prev, resultText: data.result } : null,
-        )
+        dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: data.result })
         announce('AI result ready for review')
       } catch (error) {
         if (requestId !== aiRequestIdRef.current) return
         toast.error('AI transform failed', {
           description: error instanceof Error ? error.message : 'An unexpected error occurred.',
         })
-        setAiPreview(null)
+        dispatchAi({ type: 'SET_PREVIEW', preview: null })
         announce('AI transform failed')
       } finally {
         if (requestId === aiRequestIdRef.current) {
-          setAiPendingAction(null)
-          setAiPendingScope(null)
+          dispatchAi({ type: 'SET_PENDING', action: null, scope: null })
         }
       }
     },
@@ -547,39 +601,38 @@ export function DocEditor({
   const handleAiPreviewOpenChange = React.useCallback((open: boolean) => {
     if (!open) {
       aiRequestIdRef.current += 1
-      setAiPreview(null)
-      setAiPendingAction(null)
-      setAiPendingScope(null)
+      dispatchAi({ type: 'SET_PREVIEW', preview: null })
+      dispatchAi({ type: 'SET_PENDING', action: null, scope: null })
     }
   }, [])
 
   const handleRetryAiPreview = React.useCallback(() => {
-    if (!aiPreview) return
+    if (!ai.preview) return
     const request: AiPreviewRequest = {
-      scope: aiPreview.scope,
-      action: aiPreview.action,
-      modelId: aiPreview.modelId,
-      modelLabel: aiPreview.modelLabel,
-      originalText: aiPreview.originalText,
-      selectionRange: aiPreview.selectionRange,
-      targetLanguage: aiPreview.targetLanguage,
-      customPrompt: aiPreview.customPrompt,
+      scope: ai.preview.scope,
+      action: ai.preview.action,
+      modelId: ai.preview.modelId,
+      modelLabel: ai.preview.modelLabel,
+      originalText: ai.preview.originalText,
+      selectionRange: ai.preview.selectionRange,
+      targetLanguage: ai.preview.targetLanguage,
+      customPrompt: ai.preview.customPrompt,
     }
     void runAiPreviewRequest(request)
-  }, [aiPreview, runAiPreviewRequest])
+  }, [ai.preview, runAiPreviewRequest])
 
   const handleAcceptAiPreview = React.useCallback(() => {
-    if (!aiPreview || !aiPreview.resultText) return
+    if (!ai.preview || !ai.preview.resultText) return
 
     handleAiPreviewOpenChange(false)
 
     requestAnimationFrame(() => {
       if (!editor) return
 
-      if (aiPreview.scope === 'document') {
-        const nextContent = isAiAppendResultAction(aiPreview.action)
-          ? appendAiResultToDocument(latestMdRef.current, aiPreview.resultText)
-          : aiPreview.resultText
+      if (ai.preview!.scope === 'document') {
+        const nextContent = isAiAppendResultAction(ai.preview!.action)
+          ? appendAiResultToDocument(latestMdRef.current, ai.preview!.resultText)
+          : ai.preview!.resultText
 
         const html = mdToHtml(nextContent)
         editor.commands.setContent(html, { emitUpdate: false })
@@ -589,19 +642,19 @@ export function DocEditor({
         return
       }
 
-      const sel = aiPreview.selectionRange
+      const sel = ai.preview!.selectionRange
       if (!sel) return
 
-      if (isAiAppendResultAction(aiPreview.action)) {
+      if (isAiAppendResultAction(ai.preview!.action)) {
         const insertPos = Math.min(sel.to, editor.state.doc.content.size)
-        const resultHtml = mdToHtml('\n\n' + aiPreview.resultText)
+        const resultHtml = mdToHtml('\n\n' + ai.preview!.resultText)
         editor.chain().focus().insertContentAt(insertPos, resultHtml).run()
       } else {
         editor
           .chain()
           .focus()
           .deleteRange({ from: sel.from, to: sel.to })
-          .insertContentAt(sel.from, aiPreview.resultText)
+          .insertContentAt(sel.from, ai.preview!.resultText)
           .run()
       }
 
@@ -611,7 +664,7 @@ export function DocEditor({
       onChange(md)
       setSelectionInfo(null)
     })
-  }, [aiPreview, editor, handleAiPreviewOpenChange, onChange])
+  }, [ai.preview, editor, handleAiPreviewOpenChange, onChange])
 
   const handleOpenAiCustomPrompt = React.useCallback(() => {
     if (!editor) return
@@ -619,15 +672,14 @@ export function DocEditor({
     if (from === to) return
     const text = editor.state.doc.textBetween(from, to, ' ')
     customPromptSelectionRef.current = { from, to }
-    setCustomPromptSelectionText(text)
-    setCustomPromptOpen(true)
+    dispatchAi({ type: 'OPEN_CUSTOM_PROMPT', selectionText: text })
   }, [editor])
 
   const handleSubmitCustomPrompt = React.useCallback(async () => {
     const sel = customPromptSelectionRef.current
-    if (!sel || !customPromptValue.trim()) return
+    if (!sel || !ai.customPromptValue.trim()) return
 
-    const text = editor?.state.doc.textBetween(sel.from, sel.to, ' ') ?? customPromptSelectionText
+    const text = editor?.state.doc.textBetween(sel.from, sel.to, ' ') ?? ai.customPromptSelectionText
 
     const modelSelection = resolveActionModelSelection('custom')
     if (!modelSelection) {
@@ -635,7 +687,7 @@ export function DocEditor({
       return
     }
 
-    setCustomPromptOpen(false)
+    dispatchAi({ type: 'CLOSE_CUSTOM_PROMPT' })
 
     void runAiPreviewRequest({
       scope: 'selection',
@@ -644,13 +696,11 @@ export function DocEditor({
       modelLabel: modelSelection.modelLabel,
       originalText: text,
       selectionRange: sel,
-      customPrompt: customPromptValue,
+      customPrompt: ai.customPromptValue,
     })
 
-    setCustomPromptValue('')
-    setCustomPromptSelectionText('')
     customPromptSelectionRef.current = null
-  }, [customPromptValue, customPromptSelectionText, editor, resolveActionModelSelection, runAiPreviewRequest])
+  }, [ai.customPromptValue, ai.customPromptSelectionText, editor, resolveActionModelSelection, runAiPreviewRequest])
 
   // ── Bubble menu handler ──────────────────────────────────────────────────
 
@@ -862,7 +912,7 @@ export function DocEditor({
 
   const handleDocumentResizeStart = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
-      const resizingAi = Boolean(aiPreview)
+      const resizingAi = Boolean(ai.preview)
       const canResizeAi = resizingAi && Boolean(aiSplitPaneRef.current)
       const canResizeDoc = !resizingAi && typeof documentWidth === 'number' && Boolean(onDocumentWidthChange)
       if (!canResizeAi && !canResizeDoc) return
@@ -879,7 +929,7 @@ export function DocEditor({
       }
       setDocumentResizeActive(true)
     },
-    [aiPreview, aiSplitRatio, documentWidth, onDocumentWidthChange],
+    [ai.preview, aiSplitRatio, documentWidth, onDocumentWidthChange],
   )
 
   React.useEffect(() => {
@@ -1021,7 +1071,7 @@ export function DocEditor({
           onInsertSnippet={handleInsertSnippet}
           onInsertCodeBlock={handleInsertCodeBlock}
           activeAiLabel={activeModel?.label ?? activeModelId}
-          aiDisabled={Boolean(aiPendingAction) || !activeModelId}
+          aiDisabled={Boolean(ai.pendingAction) || !activeModelId}
           aiDocumentPendingAction={aiDocumentPendingAction}
           onAiDocumentAction={(action, options) => {
             void handleAiDocumentAction(action, options)
@@ -1032,14 +1082,13 @@ export function DocEditor({
         <div
           ref={aiSplitPaneRef}
           style={
-            aiPreview && aiSplitColumns
+            ai.preview && aiSplitColumns
               ? ({ '--doc-ai-split-columns': aiSplitColumns } as React.CSSProperties)
               : undefined
           }
           className={cn(
             'group/ai-split-pane relative flex-1 min-h-0 grid grid-cols-1 motion-reduce:transition-none xl:transition-[grid-template-columns] xl:duration-300 xl:ease-[cubic-bezier(0.22,1,0.36,1)]',
-            aiPreview
-              ? 'xl:[grid-template-columns:var(--doc-ai-split-columns)]'
+            ai.preview              ? 'xl:[grid-template-columns:var(--doc-ai-split-columns)]'
               : 'xl:[grid-template-columns:minmax(0,1fr)]',
           )}
         >
@@ -1111,7 +1160,7 @@ export function DocEditor({
                             onLinkAction={openLinkInput}
                             onAiAction={handleAiAction}
                             onOpenAiCustomPrompt={handleOpenAiCustomPrompt}
-                            aiPendingAction={aiPendingAction}
+                            aiPendingAction={ai.pendingAction}
                             enabledModels={enabledModels}
                             activeModelId={activeModel?.id ?? activeModelId}
                             onActiveModelChange={setActiveModelId}
@@ -1219,7 +1268,7 @@ export function DocEditor({
           </div>
 
           {/* Document width resize handle */}
-          {!aiPreview && onDocumentWidthChange && typeof documentWidth === 'number' ? (
+          {!ai.preview && onDocumentWidthChange && typeof documentWidth === 'number' ? (
             <button
               type="button"
               onMouseDown={handleDocumentResizeStart}
@@ -1245,11 +1294,11 @@ export function DocEditor({
           className={cn(
             'h-full min-h-0 min-w-0 overflow-hidden motion-reduce:transition-none',
             aiPreviewOnLeft ? 'xl:order-1' : 'xl:order-2',
-            aiPreview ? 'pointer-events-auto' : 'pointer-events-none',
+            ai.preview ? 'pointer-events-auto' : 'pointer-events-none',
           )}
-          aria-hidden={!aiPreview}
+          aria-hidden={!ai.preview}
         >
-          {aiPreview ? (
+          {ai.preview ? (
             <div
               className={cn(
                 'flex h-full min-h-0 flex-col animate-in fade-in duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none',
@@ -1257,14 +1306,14 @@ export function DocEditor({
               )}
             >
               <DocAiResultPanel
-                scope={aiPreview.scope}
-                action={aiPreview.action}
-                resultText={aiPreview.resultText}
-                modelLabel={aiPreview.modelLabel}
-                modelId={aiPreview.modelId}
-                targetLanguage={aiPreview.targetLanguage}
-                customPrompt={aiPreview.customPrompt}
-                pending={aiPendingAction === aiPreview.action}
+                scope={ai.preview.scope}
+                action={ai.preview.action}
+                resultText={ai.preview.resultText}
+                modelLabel={ai.preview.modelLabel}
+                modelId={ai.preview.modelId}
+                targetLanguage={ai.preview.targetLanguage}
+                customPrompt={ai.preview.customPrompt}
+                pending={ai.pendingAction === ai.preview.action}
                 onRetry={handleRetryAiPreview}
                 onAccept={handleAcceptAiPreview}
                 side={aiPreviewSide}
@@ -1275,7 +1324,7 @@ export function DocEditor({
         </div>
 
         {/* AI split resize handle */}
-        {aiPreview ? (
+        {ai.preview ? (
           <button
             type="button"
             onMouseDown={handleDocumentResizeStart}
@@ -1296,13 +1345,11 @@ export function DocEditor({
 
         {/* Custom AI Prompt Dialog */}
         <Dialog
-          open={customPromptOpen}
+          open={ai.customPromptOpen}
           onOpenChange={(open) => {
-            setCustomPromptOpen(open)
             if (!open) {
               customPromptSelectionRef.current = null
-              setCustomPromptSelectionText('')
-              setCustomPromptValue('')
+              dispatchAi({ type: 'CLOSE_CUSTOM_PROMPT' })
             }
           }}
         >
@@ -1318,7 +1365,7 @@ export function DocEditor({
               <Badge variant="secondary">
                 {customActionModelSelection?.modelLabel ?? 'No AI enabled'}
               </Badge>
-              <Badge variant="outline">{customPromptSelectionText.length} selected characters</Badge>
+              <Badge variant="outline">{ai.customPromptSelectionText.length} selected characters</Badge>
             </div>
 
             <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
@@ -1326,7 +1373,7 @@ export function DocEditor({
                 Selected text
               </p>
               <p className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
-                {customPromptSelectionText}
+                {ai.customPromptSelectionText}
               </p>
             </div>
 
@@ -1336,8 +1383,8 @@ export function DocEditor({
                 <FieldContent>
                   <Textarea
                     id="custom-ai-prompt"
-                    value={customPromptValue}
-                    onChange={(event) => setCustomPromptValue(event.target.value)}
+                    value={ai.customPromptValue}
+                    onChange={(event) => dispatchAi({ type: 'SET_CUSTOM_PROMPT_VALUE', value: event.target.value })}
                     className="min-h-36 leading-6"
                     placeholder="Example: Rewrite this into a concise changelog for release notes, keep all technical terms and bullet structure."
                     maxLength={MAX_AI_CUSTOM_PROMPT_LENGTH}
@@ -1345,17 +1392,17 @@ export function DocEditor({
                   />
                   <FieldDescription>
                     Be explicit about tone, format, constraints, or what should stay unchanged.
-                    {` ${customPromptValue.length} / ${MAX_AI_CUSTOM_PROMPT_LENGTH}`}
+                    {` ${ai.customPromptValue.length} / ${MAX_AI_CUSTOM_PROMPT_LENGTH}`}
                   </FieldDescription>
                 </FieldContent>
               </Field>
             </FieldGroup>
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => setCustomPromptOpen(false)}>
+              <Button variant="outline" onClick={() => dispatchAi({ type: 'CLOSE_CUSTOM_PROMPT' })}>
                 Cancel
               </Button>
-              <Button onClick={() => void handleSubmitCustomPrompt()} disabled={!customPromptValue.trim()}>
+              <Button onClick={() => void handleSubmitCustomPrompt()} disabled={!ai.customPromptValue.trim()}>
                 <Sparkles data-icon="inline-start" />
                 Run prompt
               </Button>
