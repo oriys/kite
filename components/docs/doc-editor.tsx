@@ -247,7 +247,8 @@ export function DocEditor({
   const [insertPickerOpen, setInsertPickerOpen] = React.useState(false)
   const [showShortcuts, setShowShortcuts] = React.useState(false)
   const [heatmapEditorOpen, setHeatmapEditorOpen] = React.useState(false)
-  const [heatmapDraft] = React.useState<HeatmapDocument | null>(null)
+  const [linkInputOpen, setLinkInputOpen] = React.useState(false)
+  const [linkInputUrl, setLinkInputUrl] = React.useState('')
   const [a11yAnnouncement, setA11yAnnouncement] = React.useState('')
 
   const announce = React.useCallback((message: string) => {
@@ -383,14 +384,7 @@ export function DocEditor({
         // Link shortcut — toggle link via editor command
         if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
           event.preventDefault()
-          if (editor!.isActive('link')) {
-            editor!.chain().focus().unsetLink().run()
-          } else {
-            const url = window.prompt('Enter URL')
-            if (url) {
-              editor!.chain().focus().setLink({ href: url }).run()
-            }
-          }
+          openLinkInput()
           return true
         }
 
@@ -424,6 +418,28 @@ export function DocEditor({
     },
     onFocus: () => setActivePane('wysiwyg'),
   })
+
+  // ── Link input helpers ──────────────────────────────────────────────────
+
+  const openLinkInput = React.useCallback(() => {
+    if (!editor) return
+    if (editor.isActive('link')) {
+      editor.chain().focus().unsetLink().run()
+      return
+    }
+    const currentUrl = editor.getAttributes('link').href ?? ''
+    setLinkInputUrl(typeof currentUrl === 'string' ? currentUrl : '')
+    setLinkInputOpen(true)
+  }, [editor])
+
+  const submitLinkInput = React.useCallback(() => {
+    const url = linkInputUrl.trim()
+    if (url && editor) {
+      editor.chain().focus().setLink({ href: url }).run()
+    }
+    setLinkInputOpen(false)
+    setLinkInputUrl('')
+  }, [editor, linkInputUrl])
 
   // ── Content sync ─────────────────────────────────────────────────────────
 
@@ -896,10 +912,11 @@ export function DocEditor({
 
   // ── Split pane resize ────────────────────────────────────────────────────
 
-  const handleSplitPaneResizeStart = React.useCallback((event: React.MouseEvent) => {
+  const handleSplitPaneResizeStart = React.useCallback((event: React.MouseEvent | React.TouchEvent) => {
     event.preventDefault()
+    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX
     splitPaneResizeRef.current = {
-      startClientX: event.clientX,
+      startClientX: clientX,
       startRatio: splitPaneRatio,
       dragged: false,
     }
@@ -908,12 +925,13 @@ export function DocEditor({
 
   React.useEffect(() => {
     if (!splitPaneResizeActive) return
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: MouseEvent | TouchEvent) => {
       const ref = splitPaneResizeRef.current
       const pane = splitPaneRef.current
       if (!ref || !pane) return
       ref.dragged = true
-      const dx = e.clientX - ref.startClientX
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+      const dx = clientX - ref.startClientX
       const paneWidth = pane.offsetWidth
       if (paneWidth <= 0) return
       const next = clamp(ref.startRatio + dx / paneWidth, DOC_SPLIT_RATIO_MIN, DOC_SPLIT_RATIO_MAX, DOC_SPLIT_RATIO_DEFAULT)
@@ -933,16 +951,20 @@ export function DocEditor({
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
+    document.addEventListener('touchmove', onMove, { passive: false })
+    document.addEventListener('touchend', onUp)
     return () => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onUp)
     }
   }, [splitPaneResizeActive, splitPaneLeading, splitPaneRatio])
 
   // ── Document / AI pane resize ────────────────────────────────────────────
 
   const handleDocumentResizeStart = React.useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
+    (event: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
       const resizingAi = Boolean(aiPreview)
       const canResizeAi = resizingAi && Boolean(aiSplitPaneRef.current)
       const canResizeDoc = !resizingAi && typeof documentWidth === 'number' && Boolean(onDocumentWidthChange)
@@ -951,8 +973,9 @@ export function DocEditor({
       event.preventDefault()
       event.stopPropagation()
 
+      const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX
       documentResizeRef.current = {
-        startClientX: event.clientX,
+        startClientX: clientX,
         startValue: canResizeAi ? aiSplitRatio : documentWidth ?? 0,
         mode: canResizeAi ? 'ai-preview' : 'document',
         dragged: false,
@@ -964,20 +987,21 @@ export function DocEditor({
 
   React.useEffect(() => {
     if (!documentResizeActive) return
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: MouseEvent | TouchEvent) => {
       const ref = documentResizeRef.current
       if (!ref) return
       ref.dragged = true
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
       if (ref.mode === 'ai-preview') {
         const pane = aiSplitPaneRef.current
         if (!pane) return
-        const dx = e.clientX - ref.startClientX
+        const dx = clientX - ref.startClientX
         const paneWidth = pane.offsetWidth
         if (paneWidth <= 0) return
         const next = clamp(ref.startValue + dx / paneWidth, DOC_AI_SPLIT_RATIO_MIN, DOC_AI_SPLIT_RATIO_MAX, DOC_AI_SPLIT_RATIO_DEFAULT)
         setAiSplitRatio(next)
       } else {
-        const dx = e.clientX - ref.startClientX
+        const dx = clientX - ref.startClientX
         const next = Math.max(520, ref.startValue + dx * 2)
         onDocumentWidthChange?.(next)
       }
@@ -996,9 +1020,13 @@ export function DocEditor({
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
+    document.addEventListener('touchmove', onMove, { passive: false })
+    document.addEventListener('touchend', onUp)
     return () => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onUp)
     }
   }, [documentResizeActive, aiSplitRatio, aiPreviewSide, onAiPreviewSideChange, onDocumentWidthChange])
 
@@ -1051,12 +1079,6 @@ export function DocEditor({
     }
   }, [])
 
-  // ── Capture current selection for insert operations ──────────────────────
-
-  const captureCurrentSelection = React.useCallback(() => {
-    // No-op for Tiptap — selection is managed by ProseMirror
-  }, [])
-
   // ── Custom AI model selection ────────────────────────────────────────────
 
   const customActionModelSelection = resolveActionModelSelection('custom')
@@ -1099,9 +1121,7 @@ export function DocEditor({
           }}
           insertPickerOpen={insertPickerOpen}
           onInsertPickerOpenChange={setInsertPickerOpen}
-          onBeforeOpenInsertPicker={captureCurrentSelection}
           onInsertSnippet={handleInsertSnippet}
-          onBeforeOpenCodeMenu={captureCurrentSelection}
           onInsertCodeBlock={handleInsertCodeBlock}
           activeAiLabel={activeModel?.label ?? activeModelId}
           aiDisabled={Boolean(aiPendingAction) || !activeModelId}
@@ -1191,17 +1211,7 @@ export function DocEditor({
                           <DocBubbleMenu
                             editorRef={editorWrapperRef}
                             onAction={handleBubbleAction}
-                            onLinkAction={() => {
-                              if (!editor) return
-                              if (editor.isActive('link')) {
-                                editor.chain().focus().unsetLink().run()
-                              } else {
-                                const url = window.prompt('Enter URL')
-                                if (url) {
-                                  editor.chain().focus().setLink({ href: url }).run()
-                                }
-                              }
-                            }}
+                            onLinkAction={openLinkInput}
                             onAiAction={handleAiAction}
                             onOpenAiCustomPrompt={handleOpenAiCustomPrompt}
                             aiPendingAction={aiPendingAction}
@@ -1294,9 +1304,10 @@ export function DocEditor({
                 <button
                   type="button"
                   onMouseDown={handleSplitPaneResizeStart}
+                  onTouchStart={handleSplitPaneResizeStart}
                   aria-label="Drag to resize split editors, click to swap sides"
                   title="Drag to resize split editors, click to swap sides"
-                  className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center md:flex"
+                  className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center touch-none md:flex"
                   style={{ left: `${splitPaneRatio * 100}%` }}
                 >
                   <span
@@ -1315,9 +1326,10 @@ export function DocEditor({
             <button
               type="button"
               onMouseDown={handleDocumentResizeStart}
+              onTouchStart={handleDocumentResizeStart}
               aria-label="Resize document width"
               className={cn(
-                'absolute inset-y-0 z-40 hidden cursor-col-resize items-center justify-center xl:flex',
+                'absolute inset-y-0 z-40 hidden cursor-col-resize items-center justify-center touch-none xl:flex',
                 'w-4 right-0 translate-x-1/2',
               )}
             >
@@ -1370,9 +1382,10 @@ export function DocEditor({
           <button
             type="button"
             onMouseDown={handleDocumentResizeStart}
+            onTouchStart={handleDocumentResizeStart}
             aria-label="Drag to resize AI split panes, click to swap sides"
             title="Drag to resize AI split panes, click to swap sides"
-            className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center xl:flex"
+            className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center touch-none xl:flex"
             style={{ left: `${aiSplitDividerPosition * 100}%` }}
           >
             <span
@@ -1455,9 +1468,39 @@ export function DocEditor({
 
         <KeyboardShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
 
+        {/* Inline link input dialog */}
+        <Dialog open={linkInputOpen} onOpenChange={(open) => {
+          if (!open) { setLinkInputOpen(false); setLinkInputUrl('') }
+        }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Insert Link</DialogTitle>
+              <DialogDescription>Enter the URL for this link.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={(e) => { e.preventDefault(); submitLinkInput() }}>
+              <input
+                type="url"
+                value={linkInputUrl}
+                onChange={(e) => setLinkInputUrl(e.target.value)}
+                placeholder="https://example.com"
+                autoFocus
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+              <DialogFooter className="mt-4">
+                <Button type="button" variant="ghost" size="sm" onClick={() => { setLinkInputOpen(false); setLinkInputUrl('') }}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={!linkInputUrl.trim()}>
+                  Insert
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         <DocHeatmapEditorDialog
           open={heatmapEditorOpen}
-          data={heatmapDraft}
+          data={null}
           onOpenChange={(open) => {
             setHeatmapEditorOpen(open)
           }}

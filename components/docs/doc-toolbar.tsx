@@ -10,6 +10,7 @@ import {
   Columns2,
   Italic,
   Loader2,
+  Redo2,
   Sparkles,
   Strikethrough,
   FileCode,
@@ -29,6 +30,7 @@ import {
   Minus,
   PenLine,
   Table,
+  Undo2,
 } from 'lucide-react'
 import { AI_ACTION_LABELS, type AiTransformAction } from '@/lib/ai'
 import { type DocSnippet } from '@/lib/doc-snippets'
@@ -659,6 +661,50 @@ export function DocToolbar({
           <div className="flex min-w-max items-center gap-0.5 pr-1">
             <EditorModeMenu value={editorMode} onChange={onEditorModeChange} />
             <Separator orientation="vertical" className="mx-1 h-5" />
+            {/* Undo / Redo */}
+            {mode === 'wysiwyg' && tiptapEditor && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={disabled || !tiptapEditor.can().undo()}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        tiptapEditor.chain().focus().undo().run()
+                      }}
+                      aria-label="Undo"
+                    >
+                      <Undo2 className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    Undo <span className="ml-2 text-muted-foreground">⌘Z</span>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={disabled || !tiptapEditor.can().redo()}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        tiptapEditor.chain().focus().redo().run()
+                      }}
+                      aria-label="Redo"
+                    >
+                      <Redo2 className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    Redo <span className="ml-2 text-muted-foreground">⌘⇧Z</span>
+                  </TooltipContent>
+                </Tooltip>
+                <Separator orientation="vertical" className="mx-1 h-5" />
+              </>
+            )}
             <DocSnippetPicker
               open={insertPickerOpen}
               disabled={disabled || !onInsertSnippet}
