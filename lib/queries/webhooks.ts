@@ -1,4 +1,4 @@
-import { desc, eq, and } from 'drizzle-orm'
+import { desc, eq, and, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { webhooks, webhookDeliveries } from '../schema'
 
@@ -19,14 +19,14 @@ export async function createWebhook(
 
 export async function listWebhooks(workspaceId: string) {
   return db.query.webhooks.findMany({
-    where: eq(webhooks.workspaceId, workspaceId),
+    where: and(eq(webhooks.workspaceId, workspaceId), isNull(webhooks.deletedAt)),
     orderBy: [desc(webhooks.createdAt)],
   })
 }
 
 export async function getWebhook(id: string) {
   return (await db.query.webhooks.findFirst({
-    where: eq(webhooks.id, id),
+    where: and(eq(webhooks.id, id), isNull(webhooks.deletedAt)),
   })) ?? null
 }
 
@@ -42,13 +42,16 @@ export async function updateWebhook(
   const [wh] = await db
     .update(webhooks)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(webhooks.id, id))
+    .where(and(eq(webhooks.id, id), isNull(webhooks.deletedAt)))
     .returning()
   return wh ?? null
 }
 
 export async function deleteWebhook(id: string) {
-  await db.delete(webhooks).where(eq(webhooks.id, id))
+  await db
+    .update(webhooks)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(webhooks.id, id), isNull(webhooks.deletedAt)))
 }
 
 export async function listWebhookDeliveries(
@@ -74,6 +77,7 @@ export async function dispatchWebhookEvent(
     where: and(
       eq(webhooks.workspaceId, workspaceId),
       eq(webhooks.isActive, true),
+      isNull(webhooks.deletedAt),
     ),
   })
 

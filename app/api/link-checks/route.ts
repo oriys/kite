@@ -4,7 +4,7 @@ import { getLinkChecksByWorkspace, getLinkHealthSummary } from '@/lib/queries/li
 import { checkDocumentLinks } from '@/lib/link-checker'
 import { db } from '@/lib/db'
 import { documents } from '@/lib/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 
 export async function GET() {
   const result = await withWorkspaceAuth('viewer')
@@ -29,6 +29,7 @@ export async function POST() {
       and(
         eq(documents.workspaceId, result.ctx.workspaceId),
         eq(documents.status, 'published'),
+        isNull(documents.deletedAt),
       ),
     )
 

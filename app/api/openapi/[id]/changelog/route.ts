@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { eq, desc, and } from 'drizzle-orm'
+import { eq, desc, and, isNull } from 'drizzle-orm'
 import { withWorkspaceAuth, notFound, badRequest } from '@/lib/api-utils'
 import { db } from '@/lib/db'
 import { openapiSources, openapiSnapshots, documents } from '@/lib/schema'
@@ -40,6 +40,7 @@ export async function POST(
     where: and(
       eq(openapiSources.id, id),
       eq(openapiSources.workspaceId, result.ctx.workspaceId),
+      isNull(openapiSources.deletedAt),
     ),
   })
   if (!source) return notFound()

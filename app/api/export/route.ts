@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
 import { db } from '@/lib/db'
 import { documents } from '@/lib/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { exportToMarkdown, exportToHtml } from '@/lib/export'
 
 export async function GET(request: NextRequest) {
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     return badRequest('Format must be markdown or html')
 
   const doc = await db.query.documents.findFirst({
-    where: eq(documents.id, documentId),
+    where: and(eq(documents.id, documentId), isNull(documents.deletedAt)),
   })
   if (!doc) return notFound()
 

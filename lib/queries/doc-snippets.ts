@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm'
 
 import { db } from '../db'
 import {
@@ -32,7 +32,7 @@ async function ensureDefaultDocSnippets(workspaceId: string) {
   const existing = await db
     .select({ id: docSnippets.id })
     .from(docSnippets)
-    .where(eq(docSnippets.workspaceId, workspaceId))
+    .where(and(eq(docSnippets.workspaceId, workspaceId), isNull(docSnippets.deletedAt)))
     .limit(1)
 
   if (existing.length > 0) {
@@ -53,14 +53,26 @@ async function ensureDefaultDocSnippets(workspaceId: string) {
         sortOrder: index + 1,
       })),
     )
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: [docSnippets.workspaceId, docSnippets.id],
+      set: {
+        label: sql`excluded.label`,
+        description: sql`excluded.description`,
+        category: sql`excluded.category`,
+        keywords: sql`excluded.keywords`,
+        template: sql`excluded.template`,
+        sortOrder: sql`excluded.sort_order`,
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+    })
 }
 
 async function getNextSortOrder(workspaceId: string) {
   const [latest] = await db
     .select({ sortOrder: docSnippets.sortOrder })
     .from(docSnippets)
-    .where(eq(docSnippets.workspaceId, workspaceId))
+    .where(and(eq(docSnippets.workspaceId, workspaceId), isNull(docSnippets.deletedAt)))
     .orderBy(desc(docSnippets.sortOrder))
     .limit(1)
 
@@ -73,7 +85,11 @@ async function generateSnippetId(workspaceId: string, label: string) {
   let suffix = 2
 
   for (;;) {
-    const existing = await getDocSnippet(candidate, workspaceId)
+    const [existing] = await db
+      .select({ id: docSnippets.id })
+      .from(docSnippets)
+      .where(and(eq(docSnippets.workspaceId, workspaceId), eq(docSnippets.id, candidate)))
+      .limit(1)
 
     if (!existing) {
       return candidate
@@ -88,7 +104,7 @@ export async function listDocSnippets(workspaceId: string) {
   await ensureDefaultDocSnippets(workspaceId)
 
   const snippets = await db.query.docSnippets.findMany({
-    where: eq(docSnippets.workspaceId, workspaceId),
+    where: and(eq(docSnippets.workspaceId, workspaceId), isNull(docSnippets.deletedAt)),
     orderBy: [asc(docSnippets.sortOrder), asc(docSnippets.createdAt)],
   })
 
@@ -97,7 +113,11 @@ export async function listDocSnippets(workspaceId: string) {
 
 export async function getDocSnippet(id: string, workspaceId: string) {
   const snippet = await db.query.docSnippets.findFirst({
-    where: and(eq(docSnippets.workspaceId, workspaceId), eq(docSnippets.id, id)),
+    where: and(
+      eq(docSnippets.workspaceId, workspaceId),
+      eq(docSnippets.id, id),
+      isNull(docSnippets.deletedAt),
+    ),
   })
 
   return snippet ? normalizeStoredDocSnippet(snippet) : null
@@ -150,7 +170,13 @@ export async function updateDocSnippet(
   const [updated] = await db
     .update(docSnippets)
     .set({ ...updateValues, updatedAt: new Date() })
-    .where(and(eq(docSnippets.workspaceId, workspaceId), eq(docSnippets.id, id)))
+    .where(
+      and(
+        eq(docSnippets.workspaceId, workspaceId),
+        eq(docSnippets.id, id),
+        isNull(docSnippets.deletedAt),
+      ),
+    )
     .returning()
 
   return updated ? normalizeStoredDocSnippet(updated) : null
@@ -158,8 +184,15 @@ export async function updateDocSnippet(
 
 export async function deleteDocSnippet(id: string, workspaceId: string) {
   const deleted = await db
-    .delete(docSnippets)
-    .where(and(eq(docSnippets.workspaceId, workspaceId), eq(docSnippets.id, id)))
+    .update(docSnippets)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(docSnippets.workspaceId, workspaceId),
+        eq(docSnippets.id, id),
+        isNull(docSnippets.deletedAt),
+      ),
+    )
     .returning({ id: docSnippets.id })
 
   return deleted.length > 0

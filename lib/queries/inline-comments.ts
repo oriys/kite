@@ -1,4 +1,4 @@
-import { eq, asc } from 'drizzle-orm'
+import { eq, asc, and, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { inlineComments } from '@/lib/schema'
 
@@ -55,7 +55,10 @@ export async function listDocumentComments(
   documentId: string,
 ): Promise<CommentWithAuthor[]> {
   const rows = await db.query.inlineComments.findMany({
-    where: eq(inlineComments.documentId, documentId),
+    where: and(
+      eq(inlineComments.documentId, documentId),
+      isNull(inlineComments.deletedAt),
+    ),
     orderBy: [asc(inlineComments.createdAt)],
     with: {
       author: {
@@ -140,8 +143,9 @@ export async function unresolveThread(commentId: string): Promise<void> {
 
 export async function deleteComment(commentId: string): Promise<boolean> {
   const result = await db
-    .delete(inlineComments)
-    .where(eq(inlineComments.id, commentId))
+    .update(inlineComments)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(inlineComments.id, commentId), isNull(inlineComments.deletedAt)))
     .returning({ id: inlineComments.id })
 
   return result.length > 0

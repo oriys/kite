@@ -27,6 +27,13 @@ import {
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 
+async function parseResponseError(response: Response) {
+  const body = await response.json().catch(() => null)
+  return typeof body?.error === 'string'
+    ? body.error
+    : 'Unable to load approval requests'
+}
+
 interface ApprovalItem {
   id: string
   status: string
@@ -57,15 +64,51 @@ const statusConfig: Record<
 export default function ApprovalsPage() {
   const [items, setItems] = React.useState<ApprovalItem[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
   const [filter, setFilter] = React.useState<string>('all')
 
   React.useEffect(() => {
+    let active = true
+
     const params = new URLSearchParams()
     if (filter !== 'all') params.set('status', filter)
-    fetch(`/api/approvals?${params}`)
-      .then((r) => r.json())
-      .then(setItems)
-      .finally(() => setLoading(false))
+
+    async function loadApprovals() {
+      setLoading(true)
+
+      try {
+        const response = await fetch(`/api/approvals?${params}`, {
+          cache: 'no-store',
+        })
+
+        if (!response.ok) {
+          throw new Error(await parseResponseError(response))
+        }
+
+        const data = (await response.json().catch(() => [])) as ApprovalItem[]
+        if (!active) return
+
+        setItems(Array.isArray(data) ? data : [])
+        setError(null)
+      } catch (nextError) {
+        if (!active) return
+
+        setItems([])
+        setError(
+          nextError instanceof Error
+            ? nextError.message
+            : 'Unable to load approval requests',
+        )
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    void loadApprovals()
+
+    return () => {
+      active = false
+    }
   }, [filter])
 
   return (
@@ -97,6 +140,16 @@ export default function ApprovalsPage() {
         <div className="py-16 text-center">
           <Spinner className="mx-auto size-5 text-muted-foreground" />
         </div>
+      ) : error ? (
+        <Card>
+          <CardContent className="py-16 text-center">
+            <AlertCircle className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
+            <p className="text-sm font-medium text-foreground">
+              Unable to load approvals
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+          </CardContent>
+        </Card>
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">

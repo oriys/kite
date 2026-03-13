@@ -3,7 +3,7 @@ import { withWorkspaceAuth, notFound } from '@/lib/api-utils'
 import { deletePartnerGroup } from '@/lib/queries/partner-groups'
 import { db } from '@/lib/db'
 import { partnerGroups } from '@/lib/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 
 export async function DELETE(
   _request: Request,
@@ -22,6 +22,7 @@ export async function DELETE(
       and(
         eq(partnerGroups.id, id),
         eq(partnerGroups.workspaceId, result.ctx.workspaceId),
+        isNull(partnerGroups.deletedAt),
       ),
     )
     .limit(1)

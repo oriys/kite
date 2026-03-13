@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { documentTranslations, documents } from '../schema'
 
@@ -29,7 +29,13 @@ export async function getTranslationsForDocument(documentId: string) {
       documents,
       eq(documentTranslations.translatedDocumentId, documents.id),
     )
-    .where(eq(documentTranslations.sourceDocumentId, documentId))
+    .where(
+      and(
+        eq(documentTranslations.sourceDocumentId, documentId),
+        isNull(documentTranslations.deletedAt),
+        isNull(documents.deletedAt),
+      ),
+    )
 
   const asTarget = await db
     .select({
@@ -44,7 +50,13 @@ export async function getTranslationsForDocument(documentId: string) {
       documents,
       eq(documentTranslations.sourceDocumentId, documents.id),
     )
-    .where(eq(documentTranslations.translatedDocumentId, documentId))
+    .where(
+      and(
+        eq(documentTranslations.translatedDocumentId, documentId),
+        isNull(documentTranslations.deletedAt),
+        isNull(documents.deletedAt),
+      ),
+    )
 
   return [...asSource, ...asTarget]
 }
@@ -56,13 +68,16 @@ export async function updateTranslationStatus(
   const [result] = await db
     .update(documentTranslations)
     .set({ translationStatus: status })
-    .where(eq(documentTranslations.id, id))
+    .where(and(eq(documentTranslations.id, id), isNull(documentTranslations.deletedAt)))
     .returning()
   return result ?? null
 }
 
 export async function deleteTranslationLink(id: string) {
-  await db.delete(documentTranslations).where(eq(documentTranslations.id, id))
+  await db
+    .update(documentTranslations)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(documentTranslations.id, id), isNull(documentTranslations.deletedAt)))
 }
 
 export const SUPPORTED_LOCALES = [

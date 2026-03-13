@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, notFound, badRequest } from '@/lib/api-utils'
 import { db } from '@/lib/db'
 import { apiEndpoints, openapiSources } from '@/lib/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { generateAllTypes } from '@/lib/openapi/type-exporter'
 import { extractJsonSchemas, generateJsonSchemaBundle } from '@/lib/openapi/schema-exporter'
 
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   // Verify source belongs to workspace
   const source = await db.query.openapiSources.findFirst({
-    where: eq(openapiSources.id, id),
+    where: and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)),
   })
 
   if (!source || source.workspaceId !== result.ctx.workspaceId) {

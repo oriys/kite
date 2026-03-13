@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { linkChecks, documents } from '@/lib/schema'
-import { eq, sql, desc } from 'drizzle-orm'
+import { eq, sql, desc, and, isNull } from 'drizzle-orm'
 
 export async function getLinkChecksByWorkspace(workspaceId: string) {
   return db
@@ -16,7 +16,12 @@ export async function getLinkChecksByWorkspace(workspaceId: string) {
     })
     .from(linkChecks)
     .leftJoin(documents, eq(linkChecks.documentId, documents.id))
-    .where(eq(linkChecks.workspaceId, workspaceId))
+    .where(
+      and(
+        eq(linkChecks.workspaceId, workspaceId),
+        isNull(documents.deletedAt),
+      ),
+    )
     .orderBy(linkChecks.isAlive, desc(linkChecks.lastCheckedAt))
 }
 

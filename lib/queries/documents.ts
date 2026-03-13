@@ -1,4 +1,4 @@
-import { eq, and, desc, notInArray, sql } from 'drizzle-orm'
+import { eq, and, desc, notInArray, sql, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import {
   documents,
@@ -35,7 +35,10 @@ export async function listDocuments(
   offset = 0,
   apiVersionId?: string,
 ) {
-  const conditions = [eq(documents.workspaceId, workspaceId)]
+  const conditions = [
+    eq(documents.workspaceId, workspaceId),
+    isNull(documents.deletedAt),
+  ]
   if (statusFilter) {
     conditions.push(eq(documents.status, statusFilter))
   }
@@ -60,7 +63,11 @@ export async function listDocuments(
 
 export async function getDocument(id: string, workspaceId: string) {
   const doc = await db.query.documents.findFirst({
-    where: and(eq(documents.id, id), eq(documents.workspaceId, workspaceId)),
+    where: and(
+      eq(documents.id, id),
+      eq(documents.workspaceId, workspaceId),
+      isNull(documents.deletedAt),
+    ),
     with: {
       versions: {
         orderBy: [desc(documentVersions.savedAt)],
@@ -184,7 +191,13 @@ export async function updateDocument(
         : {}),
       updatedAt: new Date(),
     })
-    .where(and(eq(documents.id, id), eq(documents.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(documents.id, id),
+        eq(documents.workspaceId, workspaceId),
+        isNull(documents.deletedAt),
+      ),
+    )
     .returning()
 
   return updated ? await getDocument(id, workspaceId) : null
@@ -198,7 +211,13 @@ export async function transitionDocument(
   const [updated] = await db
     .update(documents)
     .set({ status: newStatus, updatedAt: new Date() })
-    .where(and(eq(documents.id, id), eq(documents.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(documents.id, id),
+        eq(documents.workspaceId, workspaceId),
+        isNull(documents.deletedAt),
+      ),
+    )
     .returning()
 
   return updated ? await getDocument(id, workspaceId) : null
@@ -206,8 +225,15 @@ export async function transitionDocument(
 
 export async function deleteDocument(id: string, workspaceId: string) {
   const result = await db
-    .delete(documents)
-    .where(and(eq(documents.id, id), eq(documents.workspaceId, workspaceId)))
+    .update(documents)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(documents.id, id),
+        eq(documents.workspaceId, workspaceId),
+        isNull(documents.deletedAt),
+      ),
+    )
     .returning()
 
   return result.length > 0
@@ -238,7 +264,13 @@ export async function updateDocumentSummary(
   const [updated] = await db
     .update(documents)
     .set({ summary })
-    .where(and(eq(documents.id, id), eq(documents.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(documents.id, id),
+        eq(documents.workspaceId, workspaceId),
+        isNull(documents.deletedAt),
+      ),
+    )
     .returning()
 
   return updated ? await getDocument(id, workspaceId) : null
@@ -266,6 +298,7 @@ export async function updateDocumentSummaryIfUnchanged(
         eq(documents.id, id),
         eq(documents.workspaceId, workspaceId),
         eq(documents.updatedAt, expectedUpdatedAt),
+        isNull(documents.deletedAt),
       ),
     )
     .returning()

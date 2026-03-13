@@ -1,12 +1,12 @@
 import { db } from '@/lib/db'
 import { partnerGroups, partnerGroupMembers, users } from '@/lib/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 
 export async function listPartnerGroups(workspaceId: string) {
   return db
     .select()
     .from(partnerGroups)
-    .where(eq(partnerGroups.workspaceId, workspaceId))
+    .where(and(eq(partnerGroups.workspaceId, workspaceId), isNull(partnerGroups.deletedAt)))
     .orderBy(partnerGroups.createdAt)
 }
 
@@ -20,8 +20,9 @@ export async function createPartnerGroup(workspaceId: string, name: string) {
 
 export async function deletePartnerGroup(id: string) {
   const [deleted] = await db
-    .delete(partnerGroups)
-    .where(eq(partnerGroups.id, id))
+    .update(partnerGroups)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(partnerGroups.id, id), isNull(partnerGroups.deletedAt)))
     .returning()
   return deleted ?? null
 }
@@ -30,18 +31,23 @@ export async function addMemberToGroup(groupId: string, userId: string) {
   const [member] = await db
     .insert(partnerGroupMembers)
     .values({ groupId, userId })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: [partnerGroupMembers.groupId, partnerGroupMembers.userId],
+      set: { deletedAt: null },
+    })
     .returning()
   return member ?? null
 }
 
 export async function removeMemberFromGroup(groupId: string, userId: string) {
   const [removed] = await db
-    .delete(partnerGroupMembers)
+    .update(partnerGroupMembers)
+    .set({ deletedAt: new Date() })
     .where(
       and(
         eq(partnerGroupMembers.groupId, groupId),
         eq(partnerGroupMembers.userId, userId),
+        isNull(partnerGroupMembers.deletedAt),
       ),
     )
     .returning()
@@ -58,5 +64,10 @@ export async function getGroupMembers(groupId: string) {
     })
     .from(partnerGroupMembers)
     .innerJoin(users, eq(users.id, partnerGroupMembers.userId))
-    .where(eq(partnerGroupMembers.groupId, groupId))
+    .where(
+      and(
+        eq(partnerGroupMembers.groupId, groupId),
+        isNull(partnerGroupMembers.deletedAt),
+      ),
+    )
 }

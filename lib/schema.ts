@@ -10,7 +10,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
-import { relations } from 'drizzle-orm'
+import { relations, sql } from 'drizzle-orm'
 import type { AdapterAccountType } from 'next-auth/adapters'
 import { DOC_SNIPPET_CATEGORIES, type DocSnippetCategory } from './doc-snippets'
 
@@ -128,6 +128,7 @@ export const documents = pgTable(
     apiVersionId: text('api_version_id'),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
     locale: text('locale').notNull().default('en'),
     createdBy: text('created_by').references(() => users.id, {
       onDelete: 'set null',
@@ -162,6 +163,7 @@ export const docSnippets = pgTable(
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     primaryKey({ columns: [t.workspaceId, t.id] }),
@@ -278,6 +280,7 @@ export const openapiSources = pgTable(
     checksum: text('checksum').notNull(),
     lastSyncedAt: timestamp('last_synced_at', { mode: 'date' }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     index('openapi_sources_workspace_id_idx').on(t.workspaceId),
@@ -359,9 +362,12 @@ export const apiVersions = pgTable(
     sourceId: text('source_id'),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
-    uniqueIndex('api_versions_workspace_slug_idx').on(t.workspaceId, t.slug),
+    uniqueIndex('api_versions_workspace_slug_idx')
+      .on(t.workspaceId, t.slug)
+      .where(sql`${t.deletedAt} is null`),
     index('api_versions_workspace_id_idx').on(t.workspaceId),
   ],
 )
@@ -400,6 +406,7 @@ export const partnerGroups = pgTable(
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     index('partner_groups_workspace_id_idx').on(t.workspaceId),
@@ -415,6 +422,7 @@ export const partnerGroupMembers = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [primaryKey({ columns: [t.groupId, t.userId] })],
 )
@@ -445,6 +453,7 @@ export const inlineComments = pgTable(
     resolvedAt: timestamp('resolved_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     index('inline_comments_document_id_idx').on(t.documentId),
@@ -724,6 +733,7 @@ export const webhooks = pgTable(
     }),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     index('webhooks_workspace_id_idx').on(t.workspaceId),
@@ -927,12 +937,12 @@ export const documentTranslations = pgTable(
     targetLocale: text('target_locale').notNull(),
     translationStatus: text('translation_status').notNull().default('draft'),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
-    uniqueIndex('doc_translations_source_target_idx').on(
-      t.sourceDocumentId,
-      t.targetLocale,
-    ),
+    uniqueIndex('doc_translations_source_target_idx')
+      .on(t.sourceDocumentId, t.targetLocale)
+      .where(sql`${t.deletedAt} is null`),
     index('doc_translations_translated_idx').on(t.translatedDocumentId),
   ],
 )
@@ -981,6 +991,7 @@ export const apiEnvironments = pgTable(
     isDefault: boolean('is_default').notNull().default(false),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     index('api_environments_workspace_id_idx').on(t.workspaceId),
@@ -1001,6 +1012,7 @@ export const apiAuthConfigs = pgTable(
     config: jsonb('config').$type<Record<string, string>>().notNull().default({}),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     index('api_auth_configs_workspace_id_idx').on(t.workspaceId),
@@ -1029,6 +1041,7 @@ export const apiRequestHistory = pgTable(
     durationMs: integer('duration_ms'),
     environmentId: text('environment_id'),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     index('api_request_history_workspace_id_idx').on(t.workspaceId),
@@ -1095,6 +1108,7 @@ export const documentTemplates = pgTable(
     }),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
     index('document_templates_workspace_id_idx').on(t.workspaceId),

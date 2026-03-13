@@ -1,4 +1,4 @@
-import { desc, eq, and } from 'drizzle-orm'
+import { desc, eq, and, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import {
   apiEnvironments,
@@ -23,14 +23,17 @@ export async function createEnvironment(
 
 export async function listEnvironments(workspaceId: string) {
   return db.query.apiEnvironments.findMany({
-    where: eq(apiEnvironments.workspaceId, workspaceId),
+    where: and(
+      eq(apiEnvironments.workspaceId, workspaceId),
+      isNull(apiEnvironments.deletedAt),
+    ),
     orderBy: [desc(apiEnvironments.createdAt)],
   })
 }
 
 export async function getEnvironment(id: string) {
   return (await db.query.apiEnvironments.findFirst({
-    where: eq(apiEnvironments.id, id),
+    where: and(eq(apiEnvironments.id, id), isNull(apiEnvironments.deletedAt)),
   })) ?? null
 }
 
@@ -46,13 +49,16 @@ export async function updateEnvironment(
   const [env] = await db
     .update(apiEnvironments)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(apiEnvironments.id, id))
+    .where(and(eq(apiEnvironments.id, id), isNull(apiEnvironments.deletedAt)))
     .returning()
   return env ?? null
 }
 
 export async function deleteEnvironment(id: string) {
-  await db.delete(apiEnvironments).where(eq(apiEnvironments.id, id))
+  await db
+    .update(apiEnvironments)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(apiEnvironments.id, id), isNull(apiEnvironments.deletedAt)))
 }
 
 // ─── Auth Configs ───────────────────────────────────────────────
@@ -72,7 +78,10 @@ export async function createAuthConfig(
 
 export async function listAuthConfigs(workspaceId: string) {
   return db.query.apiAuthConfigs.findMany({
-    where: eq(apiAuthConfigs.workspaceId, workspaceId),
+    where: and(
+      eq(apiAuthConfigs.workspaceId, workspaceId),
+      isNull(apiAuthConfigs.deletedAt),
+    ),
     orderBy: [desc(apiAuthConfigs.createdAt)],
   })
 }
@@ -88,13 +97,16 @@ export async function updateAuthConfig(
   const [ac] = await db
     .update(apiAuthConfigs)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(apiAuthConfigs.id, id))
+    .where(and(eq(apiAuthConfigs.id, id), isNull(apiAuthConfigs.deletedAt)))
     .returning()
   return ac ?? null
 }
 
 export async function deleteAuthConfig(id: string) {
-  await db.delete(apiAuthConfigs).where(eq(apiAuthConfigs.id, id))
+  await db
+    .update(apiAuthConfigs)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(apiAuthConfigs.id, id), isNull(apiAuthConfigs.deletedAt)))
 }
 
 // ─── Request History ────────────────────────────────────────────
@@ -138,7 +150,10 @@ export async function listRequestHistory(
   options: { userId?: string; limit?: number; offset?: number } = {},
 ) {
   const { userId, limit = 50, offset = 0 } = options
-  const conditions = [eq(apiRequestHistory.workspaceId, workspaceId)]
+  const conditions = [
+    eq(apiRequestHistory.workspaceId, workspaceId),
+    isNull(apiRequestHistory.deletedAt),
+  ]
   if (userId) conditions.push(eq(apiRequestHistory.userId, userId))
 
   return db.query.apiRequestHistory.findMany({
@@ -151,6 +166,12 @@ export async function listRequestHistory(
 
 export async function clearRequestHistory(workspaceId: string) {
   await db
-    .delete(apiRequestHistory)
-    .where(eq(apiRequestHistory.workspaceId, workspaceId))
+    .update(apiRequestHistory)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(apiRequestHistory.workspaceId, workspaceId),
+        isNull(apiRequestHistory.deletedAt),
+      ),
+    )
 }

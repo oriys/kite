@@ -20,6 +20,13 @@ import {
 } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
+async function parseResponseError(response: Response) {
+  const body = await response.json().catch(() => null)
+  return typeof body?.error === 'string'
+    ? body.error
+    : 'Unable to load approval request'
+}
+
 interface Reviewer {
   id: string
   reviewerId: string
@@ -94,16 +101,38 @@ export function ApprovalBanner({
   const [submitting, setSubmitting] = React.useState(false)
 
   React.useEffect(() => {
-    fetch(`/api/approvals?status=pending`)
-      .then((r) => r.json())
-      .then((data) => {
+    let active = true
+
+    async function loadApproval() {
+      try {
+        const response = await fetch(`/api/approvals?status=pending`, {
+          cache: 'no-store',
+        })
+
+        if (!response.ok) {
+          throw new Error(await parseResponseError(response))
+        }
+
+        const data = (await response.json().catch(() => [])) as ApprovalRequest[]
+        if (!active) return
+
         const match = data.find(
-          (a: ApprovalRequest) =>
-            a.documentId === documentId && a.status === 'pending',
+          (a) => a.documentId === documentId && a.status === 'pending',
         )
         setApproval(match ?? null)
-      })
-      .finally(() => setLoading(false))
+      } catch {
+        if (!active) return
+        setApproval(null)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    void loadApproval()
+
+    return () => {
+      active = false
+    }
   }, [documentId])
 
   if (loading || !approval) return null

@@ -1,17 +1,17 @@
-import { eq, and, asc, ne } from 'drizzle-orm'
+import { eq, and, asc, ne, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { apiVersions, documents } from '../schema'
 
 export async function listApiVersions(workspaceId: string) {
   return db.query.apiVersions.findMany({
-    where: eq(apiVersions.workspaceId, workspaceId),
+    where: and(eq(apiVersions.workspaceId, workspaceId), isNull(apiVersions.deletedAt)),
     orderBy: [asc(apiVersions.sortOrder), asc(apiVersions.createdAt)],
   })
 }
 
 export async function getApiVersion(id: string) {
   const version = await db.query.apiVersions.findFirst({
-    where: eq(apiVersions.id, id),
+    where: and(eq(apiVersions.id, id), isNull(apiVersions.deletedAt)),
   })
   return version ?? null
 }
@@ -51,7 +51,7 @@ export async function updateApiVersion(
   const [updated] = await db
     .update(apiVersions)
     .set(data)
-    .where(eq(apiVersions.id, id))
+    .where(and(eq(apiVersions.id, id), isNull(apiVersions.deletedAt)))
     .returning()
 
   return updated ?? null
@@ -59,8 +59,9 @@ export async function updateApiVersion(
 
 export async function deleteApiVersion(id: string) {
   const result = await db
-    .delete(apiVersions)
-    .where(eq(apiVersions.id, id))
+    .update(apiVersions)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(apiVersions.id, id), isNull(apiVersions.deletedAt)))
     .returning()
 
   return result.length > 0
@@ -78,6 +79,7 @@ export async function setDefaultVersion(
         and(
           eq(apiVersions.workspaceId, workspaceId),
           ne(apiVersions.id, versionId),
+          isNull(apiVersions.deletedAt),
         ),
       )
 
@@ -88,6 +90,7 @@ export async function setDefaultVersion(
         and(
           eq(apiVersions.id, versionId),
           eq(apiVersions.workspaceId, workspaceId),
+          isNull(apiVersions.deletedAt),
         ),
       )
       .returning()
@@ -105,6 +108,7 @@ export async function cloneVersionDocuments(
     where: and(
       eq(documents.apiVersionId, sourceVersionId),
       eq(documents.workspaceId, workspaceId),
+      isNull(documents.deletedAt),
     ),
   })
 

@@ -4,7 +4,7 @@ import { getLinkChecksByDocument } from '@/lib/queries/link-checks'
 import { checkDocumentLinks } from '@/lib/link-checker'
 import { db } from '@/lib/db'
 import { documents } from '@/lib/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 
 interface RouteContext {
   params: Promise<{ documentId: string }>
@@ -29,6 +29,7 @@ export async function POST(_request: Request, context: RouteContext) {
     where: and(
       eq(documents.id, documentId),
       eq(documents.workspaceId, result.ctx.workspaceId),
+      isNull(documents.deletedAt),
     ),
   })
 

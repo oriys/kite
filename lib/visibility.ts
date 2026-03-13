@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { partnerGroups, partnerGroupMembers } from '@/lib/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 
 export type VisibilityLevel = 'public' | 'partner' | 'private'
 
@@ -19,6 +19,8 @@ export async function isUserInPartnerGroup(
       and(
         eq(partnerGroupMembers.userId, userId),
         eq(partnerGroups.workspaceId, workspaceId),
+        isNull(partnerGroupMembers.deletedAt),
+        isNull(partnerGroups.deletedAt),
       ),
     )
     .limit(1)
@@ -73,6 +75,7 @@ export async function getVisibleDocuments(
       and(
         eq(documents.workspaceId, workspaceId),
         inArray(documents.visibility, allowedLevels),
+        isNull(documents.deletedAt),
       ),
     )
 

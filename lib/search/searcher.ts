@@ -38,6 +38,7 @@ export async function searchDocuments(
             ts_rank(search_vector, plainto_tsquery('english', ${query})) AS rank
           FROM documents
           WHERE workspace_id = ${workspaceId}
+            AND deleted_at IS NULL
             AND search_vector @@ plainto_tsquery('english', ${query})
           ORDER BY rank DESC
           LIMIT ${limit}`,
@@ -77,6 +78,7 @@ async function searchDocumentsFallback(
           END AS rank
         FROM documents
         WHERE workspace_id = ${workspaceId}
+          AND deleted_at IS NULL
           AND (title ILIKE ${pattern} OR content ILIKE ${pattern})
         ORDER BY rank DESC, updated_at DESC
         LIMIT ${limit}`,
@@ -134,5 +136,6 @@ export async function ensureSearchIndex(): Promise<void> {
     UPDATE documents
     SET search_vector = to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, ''))
     WHERE search_vector IS NULL
+      AND deleted_at IS NULL
   `)
 }

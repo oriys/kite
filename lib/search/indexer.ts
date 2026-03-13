@@ -63,6 +63,6 @@ export async function updateSearchIndex(
 ): Promise<void> {
   const plainContent = stripMarkdownAndHtml(content)
   await db.execute(
-    sql`UPDATE documents SET search_vector = to_tsvector('english', ${title} || ' ' || ${plainContent}) WHERE id = ${documentId}`,
+    sql`UPDATE documents SET search_vector = to_tsvector('english', ${title} || ' ' || ${plainContent}) WHERE id = ${documentId} AND deleted_at IS NULL`,
   )
 }

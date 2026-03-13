@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { documentFeedback, documents, searchLogs } from '@/lib/schema'
-import { eq, and, sql, desc } from 'drizzle-orm'
+import { eq, and, sql, desc, isNull } from 'drizzle-orm'
 
 export async function submitFeedback(data: {
   documentId: string
@@ -54,7 +54,7 @@ export async function getWorkspaceFeedbackRanking(workspaceId: string, limit = 2
     })
     .from(documentFeedback)
     .innerJoin(documents, eq(documentFeedback.documentId, documents.id))
-    .where(eq(documents.workspaceId, workspaceId))
+    .where(and(eq(documents.workspaceId, workspaceId), isNull(documents.deletedAt)))
     .groupBy(documentFeedback.documentId, documents.title)
     .orderBy(sql`ratio asc`)
     .limit(limit)
@@ -76,6 +76,7 @@ export async function getRecentFeedbackWithComments(workspaceId: string, limit =
       and(
         eq(documents.workspaceId, workspaceId),
         sql`${documentFeedback.comment} is not null`,
+        isNull(documents.deletedAt),
       ),
     )
     .orderBy(desc(documentFeedback.createdAt))

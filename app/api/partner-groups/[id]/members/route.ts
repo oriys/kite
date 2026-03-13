@@ -8,7 +8,7 @@ import {
 } from '@/lib/queries/partner-groups'
 import { db } from '@/lib/db'
 import { partnerGroups } from '@/lib/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 
 async function verifyGroupOwnership(groupId: string, workspaceId: string) {
   const [group] = await db
@@ -18,6 +18,7 @@ async function verifyGroupOwnership(groupId: string, workspaceId: string) {
       and(
         eq(partnerGroups.id, groupId),
         eq(partnerGroups.workspaceId, workspaceId),
+        isNull(partnerGroups.deletedAt),
       ),
     )
     .limit(1)

@@ -1,4 +1,4 @@
-import { desc, eq, and, sql } from 'drizzle-orm'
+import { desc, eq, and, sql, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { documentTemplates, documents } from '../schema'
 
@@ -34,7 +34,10 @@ export async function listTemplates(
   workspaceId: string,
   category?: TemplateCategory,
 ) {
-  const conditions = [eq(documentTemplates.workspaceId, workspaceId)]
+  const conditions = [
+    eq(documentTemplates.workspaceId, workspaceId),
+    isNull(documentTemplates.deletedAt),
+  ]
   if (category) conditions.push(eq(documentTemplates.category, category))
 
   return db.query.documentTemplates.findMany({
@@ -48,6 +51,7 @@ export async function getTemplate(id: string, workspaceId: string) {
     where: and(
       eq(documentTemplates.id, id),
       eq(documentTemplates.workspaceId, workspaceId),
+      isNull(documentTemplates.deletedAt),
     ),
   })) ?? null
 }
@@ -70,6 +74,7 @@ export async function updateTemplate(
       and(
         eq(documentTemplates.id, id),
         eq(documentTemplates.workspaceId, workspaceId),
+        isNull(documentTemplates.deletedAt),
       ),
     )
     .returning()
@@ -78,11 +83,13 @@ export async function updateTemplate(
 
 export async function deleteTemplate(id: string, workspaceId: string) {
   const deleted = await db
-    .delete(documentTemplates)
+    .update(documentTemplates)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(
       and(
         eq(documentTemplates.id, id),
         eq(documentTemplates.workspaceId, workspaceId),
+        isNull(documentTemplates.deletedAt),
       ),
     )
     .returning()
@@ -121,7 +128,7 @@ export async function createDocumentFromTemplate(
   await db
     .update(documentTemplates)
     .set({ usageCount: sql`${documentTemplates.usageCount} + 1` })
-    .where(eq(documentTemplates.id, templateId))
+    .where(and(eq(documentTemplates.id, templateId), isNull(documentTemplates.deletedAt)))
 
   const [doc] = await db
     .insert(documents)

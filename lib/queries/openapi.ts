@@ -4,7 +4,7 @@ import {
   openapiSnapshots,
   apiEndpoints,
 } from '@/lib/schema'
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, and, isNull } from 'drizzle-orm'
 import { parseOpenAPISpec } from '@/lib/openapi/parser'
 import type { ParsedEndpoint } from '@/lib/openapi/parser'
 
@@ -23,7 +23,7 @@ export async function createOpenapiSource(
 
 export async function getOpenapiSource(id: string) {
   return db.query.openapiSources.findFirst({
-    where: eq(openapiSources.id, id),
+    where: and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)),
     with: {
       snapshots: {
         orderBy: [desc(openapiSnapshots.snapshotAt)],
@@ -35,7 +35,10 @@ export async function getOpenapiSource(id: string) {
 
 export async function listOpenapiSources(workspaceId: string) {
   return db.query.openapiSources.findMany({
-    where: eq(openapiSources.workspaceId, workspaceId),
+    where: and(
+      eq(openapiSources.workspaceId, workspaceId),
+      isNull(openapiSources.deletedAt),
+    ),
     orderBy: [desc(openapiSources.createdAt)],
   })
 }
@@ -54,7 +57,7 @@ export async function syncOpenapiSource(
     const [current] = await tx
       .select()
       .from(openapiSources)
-      .where(eq(openapiSources.id, id))
+      .where(and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)))
 
     if (!current) throw new Error('Source not found')
 
@@ -108,7 +111,7 @@ export async function syncOpenapiSource(
     const [updated] = await tx
       .select()
       .from(openapiSources)
-      .where(eq(openapiSources.id, id))
+      .where(and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)))
 
     return { source: updated, spec }
   })
@@ -116,13 +119,19 @@ export async function syncOpenapiSource(
 
 export async function deleteOpenapiSource(id: string) {
   const result = await db
-    .delete(openapiSources)
-    .where(eq(openapiSources.id, id))
+    .update(openapiSources)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)))
     .returning()
   return result.length > 0
 }
 
 export async function getEndpointsBySource(sourceId: string) {
+  const source = await db.query.openapiSources.findFirst({
+    where: and(eq(openapiSources.id, sourceId), isNull(openapiSources.deletedAt)),
+  })
+  if (!source) return []
+
   return db.query.apiEndpoints.findMany({
     where: eq(apiEndpoints.sourceId, sourceId),
     orderBy: [apiEndpoints.path, apiEndpoints.method],
@@ -130,6 +139,11 @@ export async function getEndpointsBySource(sourceId: string) {
 }
 
 export async function getLatestSnapshot(sourceId: string) {
+  const source = await db.query.openapiSources.findFirst({
+    where: and(eq(openapiSources.id, sourceId), isNull(openapiSources.deletedAt)),
+  })
+  if (!source) return null
+
   return db.query.openapiSnapshots.findFirst({
     where: eq(openapiSnapshots.sourceId, sourceId),
     orderBy: [desc(openapiSnapshots.snapshotAt)],
