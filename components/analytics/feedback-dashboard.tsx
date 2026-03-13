@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -41,11 +41,13 @@ interface FeedbackData {
 }
 
 const tooltipStyle = {
-  borderRadius: '0.375rem',
-  border: '1px solid var(--border)',
-  background: 'var(--card)',
+  borderRadius: '0.75rem',
+  border: '1px solid var(--analytics-grid)',
+  background: 'var(--analytics-surface)',
+  color: 'var(--foreground)',
   fontSize: '0.75rem',
-}
+  boxShadow: '0 18px 40px -28px color-mix(in oklab, var(--foreground) 20%, transparent)',
+} satisfies CSSProperties
 
 export function FeedbackDashboard() {
   const [data, setData] = useState<FeedbackData | null>(null)
@@ -104,32 +106,35 @@ export function FeedbackDashboard() {
     <div className="space-y-6">
       {/* Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
+        <Card className="border-border/70 bg-card/95">
           <CardHeader className="pb-2">
             <CardDescription>Total Feedback</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              <MessageSquare className="h-4 w-4 text-[var(--analytics-ink-soft)]" />
               <span className="text-2xl font-semibold tabular-nums">{totalFeedback}</span>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/70 bg-card/95">
           <CardHeader className="pb-2">
             <CardDescription>Helpfulness Ratio</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="mb-2 flex items-center gap-2">
-              <ThumbsUp className="h-4 w-4 text-tone-success-text" />
-              <span className="text-2xl font-semibold tabular-nums text-tone-success-text">
+              <ThumbsUp className="h-4 w-4 text-[var(--analytics-ink-medium)]" />
+              <span className="text-2xl font-semibold tabular-nums text-[var(--analytics-ink-medium)]">
                 {(overallRatio * 100).toFixed(1)}%
               </span>
             </div>
-            <Progress value={overallRatio * 100} className="h-1.5" />
+            <Progress
+              value={overallRatio * 100}
+              className="h-1.5 bg-[var(--analytics-surface-strong)] [&_[data-slot=progress-indicator]]:bg-[var(--analytics-ink-strong)]"
+            />
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/70 bg-card/95">
           <CardHeader className="pb-2">
             <CardDescription>Documents Rated</CardDescription>
           </CardHeader>
@@ -141,7 +146,7 @@ export function FeedbackDashboard() {
 
       {/* Bar Chart */}
       {chartData.length > 0 && (
-        <Card>
+        <Card className="border-border/70 bg-card/95">
           <CardHeader>
             <CardTitle className="text-sm font-medium">
               Feedback by Document (Worst First)
@@ -150,21 +155,27 @@ export function FeedbackDashboard() {
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--analytics-grid)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} className="fill-muted-foreground" />
                 <Tooltip contentStyle={tooltipStyle} />
-                <Bar dataKey="helpful" stackId="a" fill="var(--chart-1)" name="Helpful" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="notHelpful" stackId="a" fill="var(--chart-5)" name="Not Helpful" radius={[0, 3, 3, 0]} />
+                <Bar dataKey="helpful" stackId="a" fill="var(--analytics-ink-medium)" name="Helpful" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="notHelpful" stackId="a" fill="var(--analytics-ink-faint)" name="Not Helpful" radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
             <div className="mt-2 flex justify-center gap-4 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-chart-1" />
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: 'var(--analytics-ink-medium)' }}
+                />
                 Helpful
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-chart-5" />
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: 'var(--analytics-ink-faint)' }}
+                />
                 Not Helpful
               </span>
             </div>
@@ -198,10 +209,10 @@ export function FeedbackDashboard() {
                       <TableCell className="max-w-[200px] truncate font-medium text-foreground">
                         {r.title}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-tone-success-text">
+                      <TableCell className="text-right tabular-nums text-foreground">
                         {r.helpful}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-tone-error-text">
+                      <TableCell className="text-right tabular-nums text-[var(--analytics-ink-soft)]">
                         {r.notHelpful}
                       </TableCell>
                       <TableCell className="text-right">
@@ -210,10 +221,10 @@ export function FeedbackDashboard() {
                           className={cn(
                             'tabular-nums',
                             r.ratio >= 0.7
-                              ? 'border-tone-success-border bg-tone-success-bg text-tone-success-text'
+                              ? 'border-border/70 bg-[var(--analytics-surface)] text-foreground'
                               : r.ratio >= 0.4
-                                ? 'border-tone-caution-border bg-tone-caution-bg text-tone-caution-text'
-                                : 'border-tone-error-border bg-tone-error-bg text-tone-error-text',
+                                ? 'border-border/70 bg-muted/70 text-foreground'
+                                : 'border-border/70 bg-transparent text-muted-foreground',
                           )}
                         >
                           {(r.ratio * 100).toFixed(0)}%
@@ -240,13 +251,13 @@ export function FeedbackDashboard() {
                 {data.recentComments.map((fb) => (
                   <div
                     key={fb.id}
-                    className="rounded-lg border border-border/70 bg-card/70 p-3 transition-colors hover:bg-muted/30"
+                    className="rounded-lg border border-border/70 bg-card/70 p-3 transition-colors hover:bg-[var(--analytics-surface)]"
                   >
                     <div className="mb-1.5 flex items-center gap-2">
                       {fb.isHelpful ? (
-                        <ThumbsUp className="h-3.5 w-3.5 text-tone-success-text" />
+                        <ThumbsUp className="h-3.5 w-3.5 text-foreground" />
                       ) : (
-                        <ThumbsDown className="h-3.5 w-3.5 text-tone-error-text" />
+                        <ThumbsDown className="h-3.5 w-3.5 text-[var(--analytics-ink-soft)]" />
                       )}
                       <span className="text-xs font-medium text-foreground">{fb.documentTitle}</span>
                       <span className="ml-auto text-xs text-muted-foreground">

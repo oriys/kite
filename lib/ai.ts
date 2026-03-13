@@ -16,6 +16,27 @@ export type AiTransformAction = keyof typeof AI_ACTIONS
 
 export const AI_TRANSFORM_ACTIONS = Object.keys(AI_ACTIONS) as AiTransformAction[]
 
+export const REVIEW_SELECTION_AI_ACTIONS = [
+  'explain',
+] as const satisfies readonly AiTransformAction[]
+
+export const REVIEW_DOCUMENT_AI_ACTIONS = [
+  'review',
+  'score',
+  'summarize',
+  'outline',
+  'checklist',
+] as const satisfies readonly AiTransformAction[]
+
+export const REVIEW_READ_ONLY_AI_ACTIONS = [
+  'explain',
+  'review',
+  'score',
+  'summarize',
+  'outline',
+  'checklist',
+] as const satisfies readonly AiTransformAction[]
+
 export const AI_ACTION_LABELS = Object.fromEntries(
   Object.entries(AI_ACTIONS).map(([key, { label }]) => [key, label]),
 ) as Record<AiTransformAction, string>

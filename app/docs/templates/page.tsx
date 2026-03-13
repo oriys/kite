@@ -3,14 +3,23 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  Copy,
   LayoutTemplate,
+  PencilLine,
   Plus,
   Trash2,
-  FileText,
 } from 'lucide-react'
+import { toast } from 'sonner'
+
+import {
+  getTemplateCategoryLabel,
+  getTemplateEditorHref,
+  TEMPLATE_CATEGORIES,
+  type TemplateCategory,
+} from '@/lib/templates'
+import { useTemplates } from '@/hooks/use-templates'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import {
@@ -37,101 +46,88 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-interface Template {
-  id: string
-  name: string
-  description: string
-  category: string
-  content: string
-  usageCount: number
-  isBuiltIn: boolean
-  createdAt: string
-}
-
-const CATEGORIES = [
-  { value: 'getting-started', label: 'Getting Started' },
-  { value: 'api-reference', label: 'API Reference' },
-  { value: 'changelog', label: 'Changelog' },
-  { value: 'migration-guide', label: 'Migration Guide' },
-  { value: 'tutorial', label: 'Tutorial' },
-  { value: 'troubleshooting', label: 'Troubleshooting' },
-  { value: 'custom', label: 'Custom' },
-]
-
 export default function TemplatesPage() {
   const router = useRouter()
-  const [templates, setTemplates] = React.useState<Template[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const { items: templates, loading, create, remove, duplicate } = useTemplates()
   const [createOpen, setCreateOpen] = React.useState(false)
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
-  const [category, setCategory] = React.useState('custom')
-  const [content, setContent] = React.useState('')
+  const [category, setCategory] = React.useState<TemplateCategory>('custom')
   const [saving, setSaving] = React.useState(false)
-
-  const refresh = React.useCallback(async () => {
-    const res = await fetch('/api/templates')
-    if (res.ok) setTemplates(await res.json())
-    setLoading(false)
-  }, [])
-
-  React.useEffect(() => {
-    refresh()
-  }, [refresh])
+  const [busyTemplateId, setBusyTemplateId] = React.useState<string | null>(null)
 
   const handleCreate = async () => {
     setSaving(true)
     try {
-      const res = await fetch('/api/templates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description, category, content }),
+      const template = await create({
+        name: name.trim(),
+        description: description.trim(),
+        category,
+        content: '',
       })
-      if (res.ok) {
-        setCreateOpen(false)
-        setName('')
-        setDescription('')
-        setCategory('custom')
-        setContent('')
-        refresh()
+
+      if (!template) {
+        toast.error('Failed to create template')
+        return
       }
+
+      setCreateOpen(false)
+      setName('')
+      setDescription('')
+      setCategory('custom')
+      router.push(getTemplateEditorHref(template.id))
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/templates/${id}`, { method: 'DELETE' })
-    refresh()
+    setBusyTemplateId(id)
+    try {
+      const deleted = await remove(id)
+      if (!deleted) {
+        toast.error('Failed to delete template')
+        return
+      }
+      toast.success('Template deleted')
+    } finally {
+      setBusyTemplateId(null)
+    }
   }
 
-  const handleUse = async (id: string) => {
-    const res = await fetch(`/api/templates/${id}/create-doc`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-    if (res.ok) {
-      const doc = await res.json()
-      router.push(`/docs/editor/${doc.id}`)
+  const handleDuplicate = async (id: string) => {
+    setBusyTemplateId(id)
+    try {
+      const template = await duplicate(id)
+      if (!template) {
+        toast.error('Failed to duplicate template')
+        return
+      }
+
+      toast.success('Template duplicated', {
+        description: `Created "${template.name}".`,
+      })
+      router.push(getTemplateEditorHref(template.id))
+    } finally {
+      setBusyTemplateId(null)
     }
   }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
             Template Library
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Reusable document structures for common documentation patterns
+            Reusable document structures for common documentation patterns.
           </p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="size-3.5" />
               Create Template
             </Button>
           </DialogTrigger>
@@ -139,56 +135,53 @@ export default function TemplatesPage() {
             <DialogHeader>
               <DialogTitle>New Template</DialogTitle>
               <DialogDescription>
-                Create a reusable document template
+                Create the template shell, then edit content with the full
+                document editor.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Name</Label>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="template-name">Name</Label>
                 <Input
+                  id="template-name"
                   placeholder="Template name"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(event) => setName(event.target.value)}
+                  autoFocus
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="template-description">Description</Label>
                 <Input
+                  id="template-description"
                   placeholder="Brief description"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(event) => setDescription(event.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="template-category">Category</Label>
+                <Select
+                  value={category}
+                  onValueChange={(value) =>
+                    setCategory(value as TemplateCategory)
+                  }
+                >
+                  <SelectTrigger id="template-category">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.label}
+                    {TEMPLATE_CATEGORIES.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Content (Markdown)</Label>
-                <Textarea
-                  className="min-h-[150px] font-mono text-xs"
-                  placeholder="# Title\n\n## Section"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                />
-              </div>
             </div>
             <DialogFooter>
-              <Button
-                onClick={handleCreate}
-                disabled={saving || !name}
-              >
+              <Button onClick={handleCreate} disabled={saving || !name.trim()}>
                 {saving ? 'Creating…' : 'Create Template'}
               </Button>
             </DialogFooter>
@@ -211,61 +204,88 @@ export default function TemplatesPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {templates.map((tpl) => (
-            <Card
-              key={tpl.id}
-              className="group transition-shadow hover:shadow-md"
-            >
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <CardTitle className="text-sm">{tpl.name}</CardTitle>
-                  {tpl.isBuiltIn && (
-                    <Badge variant="secondary" className="text-[10px]">
-                      Built-in
-                    </Badge>
-                  )}
-                </div>
-                <CardDescription className="line-clamp-2 text-xs">
-                  {tpl.description}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+          {templates.map((template) => {
+            const isBusy = busyTemplateId === template.id
+
+            return (
+              <Card
+                key={template.id}
+                className="group cursor-pointer transition-shadow hover:shadow-md"
+                onClick={() => router.push(getTemplateEditorHref(template.id))}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <CardTitle className="truncate text-sm">
+                        {template.name}
+                      </CardTitle>
+                      <CardDescription className="mt-1 line-clamp-2 text-xs">
+                        {template.description}
+                      </CardDescription>
+                    </div>
+                    {template.isBuiltIn ? (
+                      <Badge variant="secondary" className="shrink-0 text-[10px]">
+                        Built-in
+                      </Badge>
+                    ) : null}
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-2">
                     <Badge variant="outline" className="text-[10px]">
-                      {CATEGORIES.find((c) => c.value === tpl.category)
-                        ?.label ?? tpl.category}
+                      {getTemplateCategoryLabel(template.category)}
                     </Badge>
                     <span className="text-[10px] text-muted-foreground">
-                      Used {tpl.usageCount}×
+                      Used {template.usageCount}×
                     </span>
                   </div>
-                  <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+
+                  <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
-                      onClick={() => handleUse(tpl.id)}
-                      title="Use template"
+                      className="h-7 w-7"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        router.push(getTemplateEditorHref(template.id))
+                      }}
+                      title="Edit template"
                     >
-                      <FileText className="h-3 w-3" />
+                      <PencilLine className="size-3.5" />
                     </Button>
-                    {!tpl.isBuiltIn && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={isBusy}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void handleDuplicate(template.id)
+                      }}
+                      title="Duplicate template"
+                    >
+                      <Copy className="size-3.5" />
+                    </Button>
+                    {!template.isBuiltIn ? (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 text-destructive"
-                        onClick={() => handleDelete(tpl.id)}
-                        title="Delete"
+                        className="h-7 w-7 text-destructive"
+                        disabled={isBusy}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void handleDelete(template.id)
+                        }}
+                        title="Delete template"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Trash2 className="size-3.5" />
                       </Button>
-                    )}
+                    ) : null}
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       )}
     </div>

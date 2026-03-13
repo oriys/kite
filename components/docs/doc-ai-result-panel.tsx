@@ -25,6 +25,7 @@ interface DocAiResultPanelProps {
   targetLanguage?: string
   customPrompt?: string
   pending?: boolean
+  previewOnly?: boolean
   onRetry: () => void
   onAccept: () => void
   side?: DocEditorAiPanelSide
@@ -40,6 +41,7 @@ export function DocAiResultPanel({
   targetLanguage,
   customPrompt,
   pending,
+  previewOnly = false,
   onRetry,
   onAccept,
   side = 'right',
@@ -59,11 +61,13 @@ export function DocAiResultPanel({
               : 'Full-document draft'
 
   const description =
-    scope === 'document' && isAiRewriteAction(action)
-      ? 'Review the AI rewrite here. Accepting it will replace the current document.'
-      : scope === 'document' && isAiAppendResultAction(action)
-        ? 'Review the AI report here. Accepting it will append the result to the end of the document.'
-        : 'Reviewing only the AI output. The original stays visible in the editor.'
+    previewOnly
+      ? 'Preview the AI output here. This document is read-only in its current status, so applying changes is disabled.'
+      : scope === 'document' && isAiRewriteAction(action)
+        ? 'Review the AI rewrite here. Accepting it will replace the current document.'
+        : scope === 'document' && isAiAppendResultAction(action)
+          ? 'Review the AI report here. Accepting it will append the result to the end of the document.'
+          : 'Reviewing only the AI output. The original stays visible in the editor.'
 
   const acceptLabel =
     action === 'explain'
@@ -120,6 +124,7 @@ export function DocAiResultPanel({
           <Badge variant="outline" className="max-w-full truncate" title={modelId}>
             {modelId}
           </Badge>
+          {previewOnly ? <Badge variant="secondary">Preview only</Badge> : null}
           <Badge variant={pending ? 'secondary' : 'outline'}>
             <DocAiGlyph className={cn('size-[0.8rem]', pending && 'animate-pulse')} />
             {pending ? 'Refreshing' : 'Ready'}
@@ -155,10 +160,12 @@ export function DocAiResultPanel({
             <RefreshCw className={pending ? 'animate-spin' : undefined} />
             {pending ? 'Retrying…' : 'Retry'}
           </Button>
-          <Button onClick={onAccept} disabled={pending}>
-            <Check />
-            {acceptLabel}
-          </Button>
+          {!previewOnly ? (
+            <Button onClick={onAccept} disabled={pending}>
+              <Check />
+              {acceptLabel}
+            </Button>
+          ) : null}
         </div>
       </div>
     </aside>

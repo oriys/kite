@@ -3,10 +3,18 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileText, Braces, BrainCircuit, PencilLine, Blocks, BarChart3, LinkIcon, Menu, Search, Shield, Webhook, Palette, LayoutTemplate, ClipboardCheck } from 'lucide-react'
+import { FileText, Braces, BrainCircuit, PencilLine, Blocks, BarChart3, LinkIcon, Menu, Search, Shield, Webhook, Palette, LayoutTemplate, ClipboardCheck, ChevronDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
@@ -25,15 +33,49 @@ const NAV_ITEMS = [
   { href: '/docs/openapi', label: 'OpenAPI', icon: Braces },
   { href: '/docs/ai', label: 'AI Models', icon: BrainCircuit },
   { href: '/docs/ai/prompts', label: 'AI Prompts', icon: PencilLine },
-  { href: '/docs/components', label: 'Quick Insert', icon: Blocks },
   { href: '/docs/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/docs/link-health', label: 'Link Health', icon: LinkIcon },
   { href: '/docs/templates', label: 'Templates', icon: LayoutTemplate },
   { href: '/docs/approvals', label: 'Approvals', icon: ClipboardCheck },
   { href: '/docs/webhooks', label: 'Webhooks', icon: Webhook },
   { href: '/docs/branding', label: 'Branding', icon: Palette },
+  { href: '/docs/link-health', label: 'Link Health', icon: LinkIcon },
+  { href: '/docs/components', label: 'Quick Insert', icon: Blocks },
   { href: '/docs/audit-logs', label: 'Audit Logs', icon: Shield },
 ] as const
+
+const DESKTOP_NAV_LINK_CLASS =
+  'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors'
+const DESKTOP_NAV_LINK_ACTIVE_CLASS = 'bg-accent/50 text-foreground'
+const DESKTOP_NAV_LINK_IDLE_CLASS =
+  'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+
+function getVisibleCount(
+  maxWidth: number,
+  itemWidths: number[],
+  overflowWidth: number,
+) {
+  let usedWidth = 0
+  let count = 0
+
+  for (let index = 0; index < itemWidths.length; index += 1) {
+    const nextWidth = itemWidths[index]
+    const hasOverflowAfterThisItem = index < itemWidths.length - 1
+    const reservedOverflowWidth = hasOverflowAfterThisItem ? overflowWidth : 0
+
+    if (
+      count === 0 ||
+      usedWidth + nextWidth + reservedOverflowWidth <= maxWidth
+    ) {
+      usedWidth += nextWidth
+      count += 1
+      continue
+    }
+
+    break
+  }
+
+  return count
+}
 
 function isActive(pathname: string, href: string) {
   if (href === '/docs') {
@@ -49,6 +91,11 @@ export function DocsTopNav() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [searchOpen, setSearchOpen] = React.useState(false)
+  const desktopNavRef = React.useRef<HTMLDivElement | null>(null)
+  const desktopMeasureRef = React.useRef<HTMLDivElement | null>(null)
+  const [visibleCount, setVisibleCount] = React.useState<number>(
+    NAV_ITEMS.length,
+  )
 
   React.useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -60,6 +107,58 @@ export function DocsTopNav() {
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [])
+
+  const recomputeDesktopNav = React.useCallback(() => {
+    if (!desktopNavRef.current || !desktopMeasureRef.current) return
+
+    const maxWidth = Math.min(
+      desktopNavRef.current.clientWidth,
+      window.innerWidth * 0.5,
+    )
+    const measurements = Array.from(
+      desktopMeasureRef.current.children,
+    ) as HTMLElement[]
+
+    if (measurements.length < NAV_ITEMS.length + 1) return
+
+    const itemWidths = measurements
+      .slice(0, NAV_ITEMS.length)
+      .map((item) => item.offsetWidth)
+    const overflowWidth = measurements.at(-1)?.offsetWidth ?? 0
+    const nextVisibleCount = getVisibleCount(maxWidth, itemWidths, overflowWidth)
+
+    setVisibleCount((currentCount) =>
+      currentCount === nextVisibleCount ? currentCount : nextVisibleCount,
+    )
+  }, [])
+
+  React.useEffect(() => {
+    recomputeDesktopNav()
+
+    const navElement = desktopNavRef.current
+    if (!navElement) return
+
+    const resizeObserver = new ResizeObserver(() => {
+      recomputeDesktopNav()
+    })
+
+    resizeObserver.observe(navElement)
+    window.addEventListener('resize', recomputeDesktopNav)
+
+    if ('fonts' in document) {
+      void document.fonts.ready.then(() => {
+        recomputeDesktopNav()
+      })
+    }
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', recomputeDesktopNav)
+    }
+  }, [recomputeDesktopNav])
+
+  const visibleItems = NAV_ITEMS.slice(0, visibleCount)
+  const overflowItems = NAV_ITEMS.slice(visibleCount)
 
   return (
     <header className="shrink-0 border-b border-border/60 bg-card/50 backdrop-blur-sm">
@@ -115,38 +214,100 @@ export function DocsTopNav() {
           Kite
         </Link>
 
-        <Separator orientation="vertical" className="!h-5 hidden md:block" />
+        <div className="hidden flex-1 items-center gap-3 md:flex">
+          <Separator orientation="vertical" className="!h-5 shrink-0" />
 
-        {/* Desktop nav links */}
-        <nav className="hidden items-center gap-1 md:flex">
-          {NAV_ITEMS.map((item) => {
-            const active = isActive(pathname, item.href)
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-                  active
-                    ? 'bg-accent/50 text-foreground'
-                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                )}
-              >
-                <item.icon className="size-3.5" />
-                {item.label}
-              </Link>
-            )
-          })}
-        </nav>
+          <div
+            ref={desktopNavRef}
+            className="relative min-w-0 w-full max-w-[50vw]"
+          >
+            <nav className="flex min-w-0 items-center gap-1 overflow-hidden">
+              {visibleItems.map((item) => {
+                const active = isActive(pathname, item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      DESKTOP_NAV_LINK_CLASS,
+                      active
+                        ? DESKTOP_NAV_LINK_ACTIVE_CLASS
+                        : DESKTOP_NAV_LINK_IDLE_CLASS,
+                    )}
+                  >
+                    <item.icon className="size-3.5 shrink-0" />
+                    {item.label}
+                  </Link>
+                )
+              })}
 
-        {/* Spacer */}
-        <div className="flex-1" />
+              {overflowItems.length > 0 ? (
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5 px-2.5 text-xs text-muted-foreground"
+                    >
+                      More
+                      <ChevronDown className="size-3 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuLabel>More</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {overflowItems.map((item) => {
+                      const active = isActive(pathname, item.href)
+                      return (
+                        <DropdownMenuItem
+                          key={item.href}
+                          asChild
+                          className={cn(
+                            active && 'bg-accent/50 font-medium text-foreground',
+                          )}
+                        >
+                          <Link href={item.href}>
+                            <item.icon className="size-4" />
+                            <span className="flex-1">{item.label}</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </nav>
+
+            <div
+              ref={desktopMeasureRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute top-0 left-0 invisible flex w-max items-center gap-1"
+            >
+              {NAV_ITEMS.map((item) => (
+                <span
+                  key={item.href}
+                  className={cn(
+                    DESKTOP_NAV_LINK_CLASS,
+                    DESKTOP_NAV_LINK_IDLE_CLASS,
+                  )}
+                >
+                  <item.icon className="size-3.5 shrink-0" />
+                  {item.label}
+                </span>
+              ))}
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
+                More
+                <ChevronDown className="size-3 opacity-60" />
+              </span>
+            </div>
+          </div>
+        </div>
 
         {/* Search trigger */}
         <button
           type="button"
           onClick={() => setSearchOpen(true)}
-          className="hidden items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground sm:inline-flex"
+          className="hidden shrink-0 items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground lg:inline-flex"
         >
           <Search className="size-3" />
           <span>Search docs…</span>
@@ -156,7 +317,7 @@ export function DocsTopNav() {
         </button>
 
         {/* Utilities */}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Button
             variant="ghost"
             size="icon-sm"

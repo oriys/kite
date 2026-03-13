@@ -74,6 +74,14 @@
   --tone-subscription-border: oklch(0.82 0.06 312);
   --tone-subscription-bg: oklch(0.67 0.10 312 / 0.10);
   --tone-subscription-text: oklch(0.45 0.10 312);
+
+  --analytics-ink-strong: color-mix(in oklab, var(--foreground) 92%, var(--background) 8%);
+  --analytics-ink-medium: color-mix(in oklab, var(--foreground) 72%, var(--background) 28%);
+  --analytics-ink-soft: color-mix(in oklab, var(--foreground) 52%, var(--background) 48%);
+  --analytics-ink-faint: color-mix(in oklab, var(--foreground) 28%, var(--background) 72%);
+  --analytics-surface: color-mix(in oklab, var(--card) 92%, var(--foreground) 8%);
+  --analytics-surface-strong: color-mix(in oklab, var(--card) 84%, var(--foreground) 16%);
+  --analytics-grid: color-mix(in oklab, var(--border) 74%, var(--foreground) 26%);
 }
 
 .dark {

@@ -36,6 +36,9 @@ export interface DocEditorProps {
   content: string
   onChange: (content: string) => void
   readOnly?: boolean
+  readOnlyAiActions?: readonly AiTransformAction[]
+  commentsEnabled?: boolean
+  statsOverlayContainerRef?: React.RefObject<HTMLDivElement | null>
   className?: string
   onModeChange?: (mode: EditorViewMode) => void
   editorFocusRef?: React.MutableRefObject<DocEditorHandle | null>

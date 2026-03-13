@@ -13,6 +13,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getDocEditorHref } from '@/lib/documents'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -116,7 +117,7 @@ export function TemplatePicker({ trigger, onCreated }: TemplatePickerProps) {
         const doc = await res.json()
         setOpen(false)
         if (onCreated) onCreated(doc.id)
-        else router.push(`/docs/editor/${doc.id}`)
+        else router.push(getDocEditorHref(doc.id))
       }
     } finally {
       setCreating(null)

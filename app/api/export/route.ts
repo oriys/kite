@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(md, {
       headers: {
         'Content-Type': 'text/markdown; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${encodeSlug(doc.title)}.md"`,
+        'Content-Disposition': createContentDisposition(doc.title, 'md'),
       },
     })
   }
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   return new NextResponse(html, {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${encodeSlug(doc.title)}.html"`,
+      'Content-Disposition': createContentDisposition(doc.title, 'html'),
     },
   })
 }
@@ -49,7 +49,33 @@ export async function GET(request: NextRequest) {
 function encodeSlug(title: string): string {
   return title
     .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
+    .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 80) || 'document'
+}
+
+function normalizeDownloadName(title: string) {
+  return title
+    .trim()
+    .replace(/[\u0000-\u001f\u007f]+/g, '')
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .slice(0, 120) || 'document'
+}
+
+function encodeRFC5987Value(value: string) {
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
+}
+
+function createContentDisposition(title: string, extension: 'md' | 'html') {
+  const normalizedTitle = normalizeDownloadName(title)
+  const asciiFallback = `${encodeSlug(normalizedTitle)}.${extension}`
+  const utf8Filename = `${normalizedTitle}.${extension}`
+
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeRFC5987Value(
+    utf8Filename,
+  )}`
 }

@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 
+import { REVIEW_READ_ONLY_AI_ACTIONS } from '@/lib/ai'
 import {
   isDocumentTitleMissing,
   type DocStatus,
@@ -133,6 +134,7 @@ export function DocEditorPageClient() {
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   )
   const editorFocusRef = React.useRef<DocEditorHandle | null>(null)
+  const editorOverlayRef = React.useRef<HTMLDivElement | null>(null)
   const { documentWidth, setDocumentWidth } = useDocEditorWidth()
   const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
 
@@ -397,7 +399,8 @@ export function DocEditorPageClient() {
     return <MissingDocumentState />
   }
 
-  const isReadOnly = doc.status === 'published' || doc.status === 'archived'
+  const isReadOnly = doc.status !== 'draft'
+  const readOnlyAiActions = doc.status === 'review' ? REVIEW_READ_ONLY_AI_ACTIONS : undefined
   const editorShellStyle = getEditorShellStyle(documentWidth)
 
   return (
@@ -452,29 +455,33 @@ export function DocEditorPageClient() {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-y-auto xl:overflow-hidden">
-        <div className="flex-1">
-          <div
-            className={cn(getEditorShellClassName(documentResizeActive), 'py-4 xl:h-full')}
-            style={editorShellStyle}
-          >
-            <EditorErrorBoundary>
-              <DocEditor
-                key={doc.id}
-                content={content}
-                onChange={handleContentChange}
-                readOnly={isReadOnly}
-                className="min-h-[60vh] xl:h-full"
-                onModeChange={setEditorMode}
-                editorFocusRef={editorFocusRef}
-                documentWidth={documentWidth}
-                onDocumentWidthChange={setDocumentWidth}
-                onDocumentResizeStateChange={setDocumentResizeActive}
-                aiPreviewSide={aiPanelSide}
-                onAiPreviewSideChange={setAiPanelSide}
-                onComment={handleComment}
-              />
-            </EditorErrorBoundary>
+      <div ref={editorOverlayRef} className="relative flex flex-1 min-h-0">
+        <div className="flex flex-1 overflow-y-auto xl:overflow-hidden">
+          <div className="flex-1">
+            <div
+              className={cn(getEditorShellClassName(documentResizeActive), 'py-4 xl:h-full')}
+              style={editorShellStyle}
+            >
+              <EditorErrorBoundary>
+                <DocEditor
+                  key={doc.id}
+                  content={content}
+                  onChange={handleContentChange}
+                  readOnly={isReadOnly}
+                  readOnlyAiActions={readOnlyAiActions}
+                  className="min-h-[60vh] xl:h-full"
+                  onModeChange={setEditorMode}
+                  editorFocusRef={editorFocusRef}
+                  statsOverlayContainerRef={editorOverlayRef}
+                  documentWidth={documentWidth}
+                  onDocumentWidthChange={setDocumentWidth}
+                  onDocumentResizeStateChange={setDocumentResizeActive}
+                  aiPreviewSide={aiPanelSide}
+                  onAiPreviewSideChange={setAiPanelSide}
+                  onComment={handleComment}
+                />
+              </EditorErrorBoundary>
+            </div>
           </div>
         </div>
         {commentSidebarOpen && (
@@ -502,10 +509,14 @@ export function DocEditorPageClient() {
         onTransition={handleTransition}
         onDelete={handleDelete}
         onDuplicate={handleDuplicate}
-        onRestoreVersion={(versionContent) => {
-          setContent(versionContent)
-          scheduleAutoSave(title, versionContent)
-        }}
+        onRestoreVersion={
+          isReadOnly
+            ? undefined
+            : (versionContent) => {
+                setContent(versionContent)
+                scheduleAutoSave(title, versionContent)
+              }
+        }
       />
     </div>
   )

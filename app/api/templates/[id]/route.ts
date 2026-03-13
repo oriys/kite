@@ -11,7 +11,7 @@ export async function GET(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const tpl = await getTemplate(id)
+  const tpl = await getTemplate(id, result.ctx.workspaceId)
   if (!tpl) return notFound()
 
   return NextResponse.json(tpl)
@@ -35,7 +35,7 @@ export async function PUT(
   if (typeof body.content === 'string') data.content = body.content
   if ('thumbnail' in body) data.thumbnail = body.thumbnail
 
-  const tpl = await updateTemplate(id, data)
+  const tpl = await updateTemplate(id, result.ctx.workspaceId, data)
   if (!tpl) return notFound()
 
   return NextResponse.json(tpl)
@@ -49,6 +49,7 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await params
-  await deleteTemplate(id)
+  const deleted = await deleteTemplate(id, result.ctx.workspaceId)
+  if (!deleted) return notFound()
   return NextResponse.json({ success: true })
 }

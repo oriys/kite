@@ -46,8 +46,12 @@ interface BubbleMenuProps {
   editorRef: React.RefObject<HTMLDivElement | null>
   onAction: (action: string) => void
   onLinkAction: () => void
+  formattingEnabled?: boolean
+  commentsEnabled?: boolean
   onAiAction: (action: AiTransformAction, options?: { targetLanguage?: string }) => void
   onOpenAiCustomPrompt: () => void
+  availableAiActions?: readonly AiTransformAction[]
+  allowCustomPrompt?: boolean
   aiPendingAction?: AiTransformAction | null
   enabledModels: AiCatalogModel[]
   activeModelId: string | null
@@ -73,6 +77,14 @@ const AI_MENU_LANGUAGES_WIDTH = 224
 const AI_MENU_PROMPTS_WIDTH = 416
 const AI_MENU_OPEN_DELAY = 140
 const AI_MENU_CLOSE_DELAY = 110
+
+const DEFAULT_SELECTION_AI_ACTIONS = [
+  'polish',
+  'shorten',
+  'expand',
+  'translate',
+  'explain',
+] as const satisfies readonly AiTransformAction[]
 
 type AiFlyoutDirection = 'right' | 'left' | 'bottom'
 
@@ -242,8 +254,12 @@ export function DocBubbleMenu({
   editorRef,
   onAction,
   onLinkAction,
+  formattingEnabled = true,
+  commentsEnabled = true,
   onAiAction,
   onOpenAiCustomPrompt,
+  availableAiActions,
+  allowCustomPrompt = true,
   aiPendingAction,
   enabledModels,
   activeModelId,
@@ -264,6 +280,19 @@ export function DocBubbleMenu({
   const aiFlyoutCloseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeModel =
     enabledModels.find((model) => model.id === activeModelId) ?? enabledModels[0] ?? null
+  const selectionAiActions = availableAiActions ?? DEFAULT_SELECTION_AI_ACTIONS
+  const availableAiActionSet = React.useMemo(
+    () => new Set<AiTransformAction>(selectionAiActions),
+    [selectionAiActions],
+  )
+  const showRewriteActions =
+    availableAiActionSet.has('polish') ||
+    availableAiActionSet.has('shorten') ||
+    availableAiActionSet.has('expand') ||
+    availableAiActionSet.has('translate')
+  const showAnalysisActions =
+    availableAiActionSet.has('explain') || allowCustomPrompt
+  const hasAnyActions = formattingEnabled || commentsEnabled || showRewriteActions || showAnalysisActions
   const aiActionsDisabled =
     Boolean(aiPendingAction) || aiModelsLoading || enabledModels.length === 0 || !activeModel
   const translateLanguages = React.useMemo(
@@ -474,14 +503,14 @@ export function DocBubbleMenu({
     }
   }, [clearAiFlyoutTimers])
 
-  if ((!isVisible && !aiOpen) || !position) return null
+  if ((!isVisible && !aiOpen) || !position || !hasAnyActions) return null
 
   return (
     <>
       <div
         ref={menuRef}
         role="toolbar"
-        aria-label="Text formatting"
+        aria-label="Selected text actions"
         aria-orientation="horizontal"
         className="absolute z-50 flex items-center gap-0.5 rounded-lg border border-border/80 bg-background/95 p-1 shadow-lg backdrop-blur-md transition-all duration-200 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95"
         style={{
@@ -492,94 +521,107 @@ export function DocBubbleMenu({
         onMouseDown={(e) => e.preventDefault()}
       >
         <TooltipProvider delayDuration={400}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7"
-                onClick={() => onAction('bold')}
-              >
-                <Bold className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-[10px]">Bold</TooltipContent>
-          </Tooltip>
+          {formattingEnabled ? (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={() => onAction('bold')}
+                  >
+                    <Bold className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px]">Bold</TooltipContent>
+              </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7"
-                onClick={() => onAction('italic')}
-              >
-                <Italic className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-[10px]">Italic</TooltipContent>
-          </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={() => onAction('italic')}
+                  >
+                    <Italic className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px]">Italic</TooltipContent>
+              </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7"
-                onClick={() => onAction('strikethrough')}
-              >
-                <Strikethrough className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-[10px]">Strikethrough</TooltipContent>
-          </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={() => onAction('strikethrough')}
+                  >
+                    <Strikethrough className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px]">Strikethrough</TooltipContent>
+              </Tooltip>
 
-          <Separator orientation="vertical" className="mx-1 h-4" />
+              <Separator orientation="vertical" className="mx-1 h-4" />
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7"
-                onClick={() => onAction('code')}
-              >
-                <Code className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-[10px]">Inline Code</TooltipContent>
-          </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={() => onAction('code')}
+                  >
+                    <Code className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px]">Inline Code</TooltipContent>
+              </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7"
-                onClick={onLinkAction}
-              >
-                <Link2 className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-[10px]">Link</TooltipContent>
-          </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={onLinkAction}
+                  >
+                    <Link2 className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px]">Link</TooltipContent>
+              </Tooltip>
+            </>
+          ) : null}
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7"
-                onClick={() => onAction('comment')}
-              >
-                <MessageSquarePlus className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-[10px]">Comment</TooltipContent>
-          </Tooltip>
+          {formattingEnabled && commentsEnabled ? (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={() => onAction('comment')}
+                  >
+                    <MessageSquarePlus className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px]">Comment</TooltipContent>
+              </Tooltip>
 
-          <Separator orientation="vertical" className="mx-1 h-4" />
+              {(showRewriteActions || showAnalysisActions) ? (
+                <Separator orientation="vertical" className="mx-1 h-4" />
+              ) : null}
+            </>
+          ) : formattingEnabled && (showRewriteActions || showAnalysisActions) ? (
+            <Separator orientation="vertical" className="mx-1 h-4" />
+          ) : null}
 
+          {showRewriteActions || showAnalysisActions ? (
           <DropdownMenu
             open={aiOpen}
             onOpenChange={(open) => {
@@ -654,108 +696,124 @@ export function DocBubbleMenu({
 
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuItem
-                    className="rounded-lg px-2 py-2"
-                    disabled={aiActionsDisabled}
-                    onMouseEnter={closeAiFlyoutDelayed}
-                    onFocus={() => openAiFlyoutImmediate(null)}
-                    onSelect={() => {
-                      onAiAction('polish')
-                      closeAiMenu()
-                    }}
-                  >
-                    <AiMenuItemContent
-                      icon={<Sparkles className="size-4" />}
-                      title={AI_ACTION_LABELS.polish}
-                    />
-                  </DropdownMenuItem>
+                  {showRewriteActions ? (
+                    <>
+                      {availableAiActionSet.has('polish') ? (
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          disabled={aiActionsDisabled}
+                          onMouseEnter={closeAiFlyoutDelayed}
+                          onFocus={() => openAiFlyoutImmediate(null)}
+                          onSelect={() => {
+                            onAiAction('polish')
+                            closeAiMenu()
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<Sparkles className="size-4" />}
+                            title={AI_ACTION_LABELS.polish}
+                          />
+                        </DropdownMenuItem>
+                      ) : null}
 
-                  <DropdownMenuItem
-                    className="rounded-lg px-2 py-2"
-                    disabled={aiActionsDisabled}
-                    onMouseEnter={closeAiFlyoutDelayed}
-                    onFocus={() => openAiFlyoutImmediate(null)}
-                    onSelect={() => {
-                      onAiAction('shorten')
-                      closeAiMenu()
-                    }}
-                  >
-                    <AiMenuItemContent
-                      icon={<ShortenActionIcon className="size-4" />}
-                      title={AI_ACTION_LABELS.shorten}
-                    />
-                  </DropdownMenuItem>
+                      {availableAiActionSet.has('shorten') ? (
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          disabled={aiActionsDisabled}
+                          onMouseEnter={closeAiFlyoutDelayed}
+                          onFocus={() => openAiFlyoutImmediate(null)}
+                          onSelect={() => {
+                            onAiAction('shorten')
+                            closeAiMenu()
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<ShortenActionIcon className="size-4" />}
+                            title={AI_ACTION_LABELS.shorten}
+                          />
+                        </DropdownMenuItem>
+                      ) : null}
 
-                  <DropdownMenuItem
-                    className="rounded-lg px-2 py-2"
-                    disabled={aiActionsDisabled}
-                    onMouseEnter={closeAiFlyoutDelayed}
-                    onFocus={() => openAiFlyoutImmediate(null)}
-                    onSelect={() => {
-                      onAiAction('expand')
-                      closeAiMenu()
-                    }}
-                  >
-                    <AiMenuItemContent
-                      icon={<ExpandActionIcon className="size-4" />}
-                      title={AI_ACTION_LABELS.expand}
-                    />
-                  </DropdownMenuItem>
+                      {availableAiActionSet.has('expand') ? (
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          disabled={aiActionsDisabled}
+                          onMouseEnter={closeAiFlyoutDelayed}
+                          onFocus={() => openAiFlyoutImmediate(null)}
+                          onSelect={() => {
+                            onAiAction('expand')
+                            closeAiMenu()
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<ExpandActionIcon className="size-4" />}
+                            title={AI_ACTION_LABELS.expand}
+                          />
+                        </DropdownMenuItem>
+                      ) : null}
 
-                  <DropdownMenuItem
-                    className="rounded-lg px-2 py-2"
-                    disabled={aiActionsDisabled}
-                    onMouseEnter={(event) =>
-                      openAiFlyoutDelayed('languages', event.currentTarget as HTMLElement)
-                    }
-                    onFocus={(event) =>
-                      openAiFlyoutImmediate('languages', event.currentTarget as HTMLElement)
-                    }
-                    onSelect={(event) => {
-                      event.preventDefault()
-                      openAiFlyoutImmediate('languages', event.currentTarget as HTMLElement)
-                    }}
-                  >
-                    <AiMenuItemContent
-                      icon={<Languages className="size-4" />}
-                      title={AI_ACTION_LABELS.translate}
-                      trailing={<ChevronRight className="size-4 text-muted-foreground" />}
-                    />
-                  </DropdownMenuItem>
+                      {availableAiActionSet.has('translate') ? (
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          disabled={aiActionsDisabled}
+                          onMouseEnter={(event) =>
+                            openAiFlyoutDelayed('languages', event.currentTarget as HTMLElement)
+                          }
+                          onFocus={(event) =>
+                            openAiFlyoutImmediate('languages', event.currentTarget as HTMLElement)
+                          }
+                          onSelect={(event) => {
+                            event.preventDefault()
+                            openAiFlyoutImmediate('languages', event.currentTarget as HTMLElement)
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<Languages className="size-4" />}
+                            title={AI_ACTION_LABELS.translate}
+                            trailing={<ChevronRight className="size-4 text-muted-foreground" />}
+                          />
+                        </DropdownMenuItem>
+                      ) : null}
+                    </>
+                  ) : null}
 
-                  <DropdownMenuSeparator />
+                  {showRewriteActions && showAnalysisActions ? <DropdownMenuSeparator /> : null}
 
-                  <DropdownMenuItem
-                    className="rounded-lg px-2 py-2"
-                    disabled={aiActionsDisabled}
-                    onMouseEnter={closeAiFlyoutDelayed}
-                    onFocus={() => openAiFlyoutImmediate(null)}
-                    onSelect={() => {
-                      onAiAction('explain')
-                      closeAiMenu()
-                    }}
-                  >
-                    <AiMenuItemContent
-                      icon={<ExplainActionIcon className="size-4" />}
-                      title={AI_ACTION_LABELS.explain}
-                    />
-                  </DropdownMenuItem>
+                  {availableAiActionSet.has('explain') ? (
+                    <DropdownMenuItem
+                      className="rounded-lg px-2 py-2"
+                      disabled={aiActionsDisabled}
+                      onMouseEnter={closeAiFlyoutDelayed}
+                      onFocus={() => openAiFlyoutImmediate(null)}
+                      onSelect={() => {
+                        onAiAction('explain')
+                        closeAiMenu()
+                      }}
+                    >
+                      <AiMenuItemContent
+                        icon={<ExplainActionIcon className="size-4" />}
+                        title={AI_ACTION_LABELS.explain}
+                      />
+                    </DropdownMenuItem>
+                  ) : null}
 
-                  <DropdownMenuItem
-                    className="rounded-lg px-2 py-2"
-                    disabled={aiActionsDisabled}
-                    onMouseEnter={closeAiFlyoutDelayed}
-                    onFocus={() => openAiFlyoutImmediate(null)}
-                    onSelect={() => {
-                      closeAiMenu()
-                      onOpenAiCustomPrompt()
-                    }}
-                  >
-                    <AiMenuItemContent
-                      icon={<PencilLine className="size-4" />}
-                      title={`${AI_ACTION_LABELS.custom}...`}
-                    />
-                  </DropdownMenuItem>
+                  {allowCustomPrompt ? (
+                    <DropdownMenuItem
+                      className="rounded-lg px-2 py-2"
+                      disabled={aiActionsDisabled}
+                      onMouseEnter={closeAiFlyoutDelayed}
+                      onFocus={() => openAiFlyoutImmediate(null)}
+                      onSelect={() => {
+                        closeAiMenu()
+                        onOpenAiCustomPrompt()
+                      }}
+                    >
+                      <AiMenuItemContent
+                        icon={<PencilLine className="size-4" />}
+                        title={`${AI_ACTION_LABELS.custom}...`}
+                      />
+                    </DropdownMenuItem>
+                  ) : null}
                 </AiMenuCard>
 
                 {aiFlyoutPanel === 'models' ? (
@@ -924,6 +982,7 @@ export function DocBubbleMenu({
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
+          ) : null}
         </TooltipProvider>
       </div>
     </>

@@ -43,14 +43,18 @@ export async function listTemplates(
   })
 }
 
-export async function getTemplate(id: string) {
+export async function getTemplate(id: string, workspaceId: string) {
   return (await db.query.documentTemplates.findFirst({
-    where: eq(documentTemplates.id, id),
+    where: and(
+      eq(documentTemplates.id, id),
+      eq(documentTemplates.workspaceId, workspaceId),
+    ),
   })) ?? null
 }
 
 export async function updateTemplate(
   id: string,
+  workspaceId: string,
   data: Partial<{
     name: string
     description: string
@@ -62,15 +66,46 @@ export async function updateTemplate(
   const [tpl] = await db
     .update(documentTemplates)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(documentTemplates.id, id))
+    .where(
+      and(
+        eq(documentTemplates.id, id),
+        eq(documentTemplates.workspaceId, workspaceId),
+      ),
+    )
     .returning()
   return tpl ?? null
 }
 
-export async function deleteTemplate(id: string) {
-  await db
+export async function deleteTemplate(id: string, workspaceId: string) {
+  const deleted = await db
     .delete(documentTemplates)
-    .where(eq(documentTemplates.id, id))
+    .where(
+      and(
+        eq(documentTemplates.id, id),
+        eq(documentTemplates.workspaceId, workspaceId),
+      ),
+    )
+    .returning()
+
+  return deleted.length > 0
+}
+
+export async function duplicateTemplate(
+  id: string,
+  workspaceId: string,
+  userId: string,
+) {
+  const source = await getTemplate(id, workspaceId)
+  if (!source) return null
+
+  return createTemplate(workspaceId, {
+    name: `${source.name} (copy)`,
+    description: source.description,
+    category: source.category,
+    content: source.content,
+    thumbnail: source.thumbnail ?? undefined,
+    createdBy: userId,
+  })
 }
 
 export async function createDocumentFromTemplate(
@@ -79,7 +114,7 @@ export async function createDocumentFromTemplate(
   createdBy: string,
   title?: string,
 ) {
-  const tpl = await getTemplate(templateId)
+  const tpl = await getTemplate(templateId, workspaceId)
   if (!tpl) return null
 
   // Increment usage count

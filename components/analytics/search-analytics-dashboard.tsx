@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +31,15 @@ interface SearchAnalyticsData {
   topQueries: QueryCount[]
   zeroResultQueries: QueryCount[]
 }
+
+const tooltipStyle = {
+  borderRadius: '0.75rem',
+  border: '1px solid var(--analytics-grid)',
+  background: 'var(--analytics-surface)',
+  color: 'var(--foreground)',
+  fontSize: '0.75rem',
+  boxShadow: '0 18px 40px -28px color-mix(in oklab, var(--foreground) 20%, transparent)',
+} satisfies CSSProperties
 
 export function SearchAnalyticsDashboard() {
   const [data, setData] = useState<SearchAnalyticsData | null>(null)
@@ -89,48 +98,54 @@ export function SearchAnalyticsDashboard() {
     <div className="space-y-6">
       {/* Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
+        <Card className="border-border/70 bg-card/95">
           <CardHeader className="pb-2">
             <CardDescription>Total Searches</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
+              <Search className="h-4 w-4 text-[var(--analytics-ink-soft)]" />
               <span className="text-2xl font-semibold tabular-nums">{data.totalSearches}</span>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/70 bg-card/95">
           <CardHeader className="pb-2">
             <CardDescription>Zero-Result Rate</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
               <AlertTriangle
-                className={cn(
-                  'h-4 w-4',
-                  data.zeroResultRate > 0.2 ? 'text-tone-error-text' : 'text-tone-caution-text',
-                )}
+                className={cn('h-4 w-4')}
+                style={{
+                  color:
+                    data.zeroResultRate > 0.2
+                      ? 'var(--analytics-ink-strong)'
+                      : 'var(--analytics-ink-medium)',
+                }}
               />
               <span
-                className={cn(
-                  'text-2xl font-semibold tabular-nums',
-                  data.zeroResultRate > 0.2 ? 'text-tone-error-text' : 'text-tone-caution-text',
-                )}
+                className="text-2xl font-semibold tabular-nums"
+                style={{
+                  color:
+                    data.zeroResultRate > 0.2
+                      ? 'var(--analytics-ink-strong)'
+                      : 'var(--analytics-ink-medium)',
+                }}
               >
                 {zeroResultPct}%
               </span>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/70 bg-card/95">
           <CardHeader className="pb-2">
             <CardDescription>Success Rate</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-tone-success-text" />
-              <span className="text-2xl font-semibold tabular-nums text-tone-success-text">
+              <TrendingUp className="h-4 w-4 text-[var(--analytics-ink-medium)]" />
+              <span className="text-2xl font-semibold tabular-nums text-[var(--analytics-ink-medium)]">
                 {successPct}%
               </span>
             </div>
@@ -141,7 +156,7 @@ export function SearchAnalyticsDashboard() {
       {/* Charts */}
       <div className="grid gap-6 lg:grid-cols-2">
         {data.totalSearches > 0 && (
-          <Card>
+          <Card className="border-border/70 bg-card/95">
             <CardHeader>
               <CardTitle className="text-sm font-medium">Result Distribution</CardTitle>
             </CardHeader>
@@ -156,27 +171,28 @@ export function SearchAnalyticsDashboard() {
                     outerRadius={80}
                     paddingAngle={2}
                     dataKey="value"
+                    stroke="var(--card)"
+                    strokeWidth={3}
                   >
-                    <Cell fill="var(--chart-1)" />
-                    <Cell fill="var(--chart-5)" />
+                    <Cell fill="var(--analytics-ink-medium)" />
+                    <Cell fill="var(--analytics-ink-faint)" />
                   </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: '0.375rem',
-                      border: '1px solid var(--border)',
-                      background: 'var(--card)',
-                      fontSize: '0.75rem',
-                    }}
-                  />
+                  <Tooltip contentStyle={tooltipStyle} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-2 flex justify-center gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-chart-1" />
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: 'var(--analytics-ink-medium)' }}
+                  />
                   With results
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-chart-5" />
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: 'var(--analytics-ink-faint)' }}
+                  />
                   Zero results
                 </span>
               </div>
@@ -185,27 +201,20 @@ export function SearchAnalyticsDashboard() {
         )}
 
         {barData.length > 0 && (
-          <Card>
+          <Card className="border-border/70 bg-card/95">
             <CardHeader>
               <CardTitle className="text-sm font-medium">Top Queries by Volume</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={barData} layout="vertical" margin={{ left: 0, right: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--analytics-grid)" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10 }} className="fill-muted-foreground" />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={110} className="fill-muted-foreground" />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: '0.375rem',
-                      border: '1px solid var(--border)',
-                      background: 'var(--card)',
-                      fontSize: '0.75rem',
-                    }}
-                  />
+                  <Tooltip contentStyle={tooltipStyle} />
                   <Bar
                     dataKey="searches"
-                    fill="var(--chart-3)"
+                    fill="var(--analytics-ink-medium)"
                     radius={[0, 3, 3, 0]}
                     barSize={16}
                   />
@@ -268,7 +277,7 @@ export function SearchAnalyticsDashboard() {
                       <TableCell>
                         <Badge
                           variant="outline"
-                          className="border-tone-caution-border bg-tone-caution-bg text-tone-caution-text"
+                          className="border-border/70 bg-[var(--analytics-surface)] text-foreground"
                         >
                           {q.query}
                         </Badge>

@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
+import { createPortal } from 'react-dom'
 import StarterKit from '@tiptap/starter-kit'
 import { Table as TiptapTable } from '@tiptap/extension-table'
 import TableRow from '@tiptap/extension-table-row'
@@ -98,6 +99,9 @@ export function DocEditor({
   content,
   onChange,
   readOnly,
+  readOnlyAiActions = [],
+  commentsEnabled = true,
+  statsOverlayContainerRef,
   className,
   onModeChange,
   editorFocusRef,
@@ -199,6 +203,19 @@ export function DocEditor({
   const reducedMotion = useReducedMotion()
   const editingMode: ToolbarMode = mode === 'split' ? activePane : mode
   const aiDocumentPendingAction = ai.pendingScope === 'document' ? ai.pendingAction : null
+  const readOnlyAiActionSet = React.useMemo(
+    () => new Set<AiTransformAction>(readOnlyAiActions),
+    [readOnlyAiActions],
+  )
+  const availableSelectionAiActions = React.useMemo(
+    () => (readOnly ? readOnlyAiActions.filter((action) => action === 'explain') : []),
+    [readOnly, readOnlyAiActions],
+  )
+  const availableDocumentAiActions = React.useMemo(
+    () => (readOnly ? readOnlyAiActions.filter((action) => action !== 'explain') : []),
+    [readOnly, readOnlyAiActions],
+  )
+  const canShowSelectionAi = !readOnly || availableSelectionAiActions.length > 0
   const wysiwygOnLeft = resize.splitPaneLeading === 'wysiwyg'
   const aiPreviewOnLeft = Boolean(ai.preview) && aiPreviewSide === 'left'
   const splitPaneColumns = `minmax(0, ${resize.splitPaneRatio}fr) minmax(0, ${1 - resize.splitPaneRatio}fr)`
@@ -537,7 +554,8 @@ export function DocEditor({
 
   const handleAiAction = React.useCallback(
     (action: AiTransformAction, options?: { targetLanguage?: string }) => {
-      if (!editor || readOnly) return
+      if (!editor) return
+      if (readOnly && !readOnlyAiActionSet.has(action)) return
       const { from, to } = editor.state.selection
       if (from === to) return
       const text = editor.state.doc.textBetween(from, to, ' ')
@@ -561,12 +579,12 @@ export function DocEditor({
         targetLanguage: options?.targetLanguage,
       })
     },
-    [editor, readOnly, resolveActionModelSelection, runAiPreviewRequest],
+    [editor, readOnly, readOnlyAiActionSet, resolveActionModelSelection, runAiPreviewRequest],
   )
 
   const handleAiDocumentAction = React.useCallback(
     (action: AiTransformAction, options?: { targetLanguage?: string }) => {
-      if (readOnly) return
+      if (readOnly && !readOnlyAiActionSet.has(action)) return
       const text = latestMdRef.current
       if (!text.trim()) {
         toast.error('Document is empty', {
@@ -593,7 +611,7 @@ export function DocEditor({
         targetLanguage: options?.targetLanguage,
       })
     },
-    [readOnly, resolveActionModelSelection, runAiPreviewRequest],
+    [readOnly, readOnlyAiActionSet, resolveActionModelSelection, runAiPreviewRequest],
   )
 
   const handleAiPreviewOpenChange = React.useCallback((open: boolean) => {
@@ -620,7 +638,7 @@ export function DocEditor({
   }, [ai.preview, runAiPreviewRequest])
 
   const handleAcceptAiPreview = React.useCallback(() => {
-    if (!ai.preview || !ai.preview.resultText) return
+    if (!ai.preview || !ai.preview.resultText || readOnly) return
 
     handleAiPreviewOpenChange(false)
 
@@ -662,18 +680,19 @@ export function DocEditor({
       onChange(md)
       setSelectionInfo(null)
     })
-  }, [ai.preview, editor, handleAiPreviewOpenChange, onChange])
+  }, [ai.preview, editor, handleAiPreviewOpenChange, onChange, readOnly])
 
   const handleOpenAiCustomPrompt = React.useCallback(() => {
-    if (!editor) return
+    if (!editor || readOnly) return
     const { from, to } = editor.state.selection
     if (from === to) return
     const text = editor.state.doc.textBetween(from, to, ' ')
     customPromptSelectionRef.current = { from, to }
     dispatchAi({ type: 'OPEN_CUSTOM_PROMPT', selectionText: text })
-  }, [editor])
+  }, [editor, readOnly])
 
   const handleSubmitCustomPrompt = React.useCallback(async () => {
+    if (readOnly) return
     const sel = customPromptSelectionRef.current
     if (!sel || !ai.customPromptValue.trim()) return
 
@@ -698,7 +717,7 @@ export function DocEditor({
     })
 
     customPromptSelectionRef.current = null
-  }, [ai.customPromptValue, ai.customPromptSelectionText, editor, resolveActionModelSelection, runAiPreviewRequest])
+  }, [ai.customPromptValue, ai.customPromptSelectionText, editor, readOnly, resolveActionModelSelection, runAiPreviewRequest])
 
   // ── Bubble menu handler ──────────────────────────────────────────────────
 
@@ -719,6 +738,7 @@ export function DocEditor({
           editor.chain().focus().toggleCode().run()
           break
         case 'comment': {
+          if (!commentsEnabled) break
           if (!editor) break
           const { from, to } = editor.state.selection
           if (from === to) {
@@ -731,7 +751,7 @@ export function DocEditor({
         }
       }
     },
-    [editor, onComment],
+    [commentsEnabled, editor, onComment],
   )
 
   // ── Slash menu handler ───────────────────────────────────────────────────
@@ -917,12 +937,49 @@ export function DocEditor({
     [handleAiDocumentAction],
   )
 
+  const floatingStatsPillContent =
+    !readOnly && editor ? (
+      <div
+        className={cn(
+          'pointer-events-none absolute right-4 bottom-4 z-30 flex items-center gap-2 rounded-full border border-border/60 px-3 py-1 text-[10px] font-medium shadow-sm backdrop-blur-sm sm:right-5 sm:bottom-5',
+          selectionInfo
+            ? 'bg-background/90 text-muted-foreground animate-in fade-in slide-in-from-bottom-2'
+            : 'bg-background/80 text-muted-foreground/60',
+        )}
+      >
+        {selectionInfo ? (
+          <>
+            <span>
+              {selectionInfo.words}{' '}
+              {selectionInfo.words === 1 ? 'word' : 'words'}
+            </span>
+            <span className="opacity-40">/</span>
+            <span>
+              {selectionInfo.chars}{' '}
+              {selectionInfo.chars === 1 ? 'char' : 'chars'}
+            </span>
+          </>
+        ) : (
+          <>
+            <span>{editor.storage.characterCount?.characters() ?? 0} chars</span>
+            <span className="opacity-40">/</span>
+            <span>{editor.storage.characterCount?.words() ?? 0} words</span>
+          </>
+        )}
+      </div>
+    ) : null
+
+  const floatingStatsPill =
+    floatingStatsPillContent && statsOverlayContainerRef?.current
+      ? createPortal(floatingStatsPillContent, statsOverlayContainerRef.current)
+      : floatingStatsPillContent
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div
       className={cn(
-        'flex flex-col overflow-hidden rounded-md border border-border/75 bg-card/95',
+        'relative flex flex-col overflow-hidden rounded-md border border-border/75 bg-card/95',
         className,
       )}
     >
@@ -953,6 +1010,7 @@ export function DocEditor({
           onInsertCodeBlock={handleInsertCodeBlock}
           activeAiLabel={activeModel?.label ?? activeModelId}
           aiDisabled={Boolean(ai.pendingAction) || !activeModelId}
+          availableDocumentAiActions={readOnly ? availableDocumentAiActions : undefined}
           aiDocumentPendingAction={aiDocumentPendingAction}
           onAiDocumentAction={handleAiDocumentActionWrapper}
         />
@@ -1040,43 +1098,31 @@ export function DocEditor({
                     <div ref={editorWrapperRef} className="relative min-h-full">
                       <EditorContent editor={editor} />
 
-                      {!readOnly && hasRichEditor(mode) && editor && (
+                      {hasRichEditor(mode) && editor && canShowSelectionAi && (
                         <>
                           <DocBubbleMenu
                             editorRef={editorWrapperRef}
                             onAction={handleBubbleAction}
                             onLinkAction={openLinkInput}
+                            formattingEnabled={!readOnly}
+                            commentsEnabled={!readOnly && commentsEnabled}
                             onAiAction={handleAiAction}
                             onOpenAiCustomPrompt={handleOpenAiCustomPrompt}
+                            availableAiActions={readOnly ? availableSelectionAiActions : undefined}
+                            allowCustomPrompt={!readOnly}
                             aiPendingAction={ai.pendingAction}
                             enabledModels={enabledModels}
                             activeModelId={activeModel?.id ?? activeModelId}
                             onActiveModelChange={setActiveModelId}
                             aiModelsLoading={aiModelsLoading}
                           />
+                          {!readOnly ? (
                           <DocSlashMenu
                             ref={slashMenuRef}
                             editorRef={editorWrapperRef}
                             onSelect={handleSlashSelect}
                             onClose={handleSlashMenuClose}
                           />
-
-                          {selectionInfo ? (
-                            <div className="pointer-events-none absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-full border border-border/60 bg-background/90 px-3 py-1 text-[10px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2">
-                              <span>
-                                {selectionInfo.words} {selectionInfo.words === 1 ? 'word' : 'words'}
-                              </span>
-                              <span className="opacity-40">/</span>
-                              <span>
-                                {selectionInfo.chars} {selectionInfo.chars === 1 ? 'char' : 'chars'}
-                              </span>
-                            </div>
-                          ) : editor ? (
-                            <div className="pointer-events-none absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-[10px] font-medium text-muted-foreground/60 shadow-sm backdrop-blur-sm">
-                              <span>{editor.storage.characterCount?.characters() ?? 0} chars</span>
-                              <span className="opacity-40">/</span>
-                              <span>{editor.storage.characterCount?.words() ?? 0} words</span>
-                            </div>
                           ) : null}
                         </>
                       )}
@@ -1202,6 +1248,7 @@ export function DocEditor({
                 targetLanguage={ai.preview.targetLanguage}
                 customPrompt={ai.preview.customPrompt}
                 pending={ai.pendingAction === ai.preview.action}
+                previewOnly={readOnly}
                 onRetry={handleRetryAiPreview}
                 onAccept={handleAcceptAiPreview}
                 side={aiPreviewSide}
@@ -1338,6 +1385,8 @@ export function DocEditor({
           }}
           onSave={handleHeatmapSave}
         />
+
+        {floatingStatsPill}
       </div>
     </div>
   )
