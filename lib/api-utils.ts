@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from './auth'
 import { getDefaultWorkspace, verifyWorkspaceMembership } from './queries/workspaces'
 
-type MemberRole = 'owner' | 'editor' | 'viewer'
+type MemberRole = 'owner' | 'admin' | 'member' | 'guest'
 
 interface WorkspaceContext {
   userId: string
@@ -22,12 +22,13 @@ export async function getWorkspaceContext(userId: string) {
 /**
  * Authenticate user and verify workspace membership in one call.
  * Pass `requiredRole` to enforce minimum permissions:
- *   - 'viewer'  = any member
- *   - 'editor'  = editor or owner
+ *   - 'guest'   = any member (including guests)
+ *   - 'member'  = member, admin, or owner
+ *   - 'admin'   = admin or owner
  *   - 'owner'   = owner only
  */
 export async function withWorkspaceAuth(
-  requiredRole: MemberRole = 'viewer',
+  requiredRole: MemberRole = 'guest',
 ): Promise<{ ctx: WorkspaceContext } | { error: NextResponse }> {
   const user = await getAuthenticatedUser()
   if (!user?.id) return { error: unauthorized() }
@@ -45,9 +46,10 @@ export async function withWorkspaceAuth(
 }
 
 const ROLE_LEVELS: Record<MemberRole, number> = {
-  viewer: 0,
-  editor: 1,
-  owner: 2,
+  guest: 0,
+  member: 1,
+  admin: 2,
+  owner: 3,
 }
 
 function hasMinimumRole(actual: MemberRole, required: MemberRole): boolean {

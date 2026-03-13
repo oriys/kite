@@ -30,7 +30,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const { id } = await context.params

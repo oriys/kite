@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileText, Braces, BrainCircuit, PencilLine, Blocks, BarChart3, LinkIcon, Menu, Search, Shield, Webhook, Palette, LayoutTemplate, ClipboardCheck, ChevronDown } from 'lucide-react'
+import { FileText, Braces, BrainCircuit, PencilLine, Blocks, BarChart3, LinkIcon, Menu, Search, Shield, Webhook, Palette, LayoutTemplate, ClipboardCheck, ChevronDown, Settings } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -41,6 +41,7 @@ const NAV_ITEMS = [
   { href: '/docs/link-health', label: 'Link Health', icon: LinkIcon },
   { href: '/docs/components', label: 'Quick Insert', icon: Blocks },
   { href: '/docs/audit-logs', label: 'Audit Logs', icon: Shield },
+  { href: '/docs/settings/members', label: 'Settings', icon: Settings },
 ] as const
 
 const DESKTOP_NAV_LINK_CLASS =

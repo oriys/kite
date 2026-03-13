@@ -4,7 +4,7 @@ import { withWorkspaceAuth } from '@/lib/api-utils'
 import { listNotifications } from '@/lib/queries/notifications'
 
 export async function GET(request: NextRequest) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const { searchParams } = request.nextUrl

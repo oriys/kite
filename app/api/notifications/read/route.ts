@@ -4,7 +4,7 @@ import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { markNotificationRead } from '@/lib/queries/notifications'
 
 export async function POST(request: NextRequest) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)

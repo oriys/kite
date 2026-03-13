@@ -68,7 +68,7 @@ function normalizeDocument(raw: unknown): ImportDocumentPayload | null {
 }
 
 export async function POST(request: NextRequest) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)

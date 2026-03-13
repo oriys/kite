@@ -15,7 +15,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const authResult = await withWorkspaceAuth('editor')
+  const authResult = await withWorkspaceAuth('member')
   if ('error' in authResult) return authResult.error
   const { ctx } = authResult
 

@@ -7,7 +7,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { exportToMarkdown, exportToHtml } from '@/lib/export'
 
 export async function GET(request: NextRequest) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const { searchParams } = request.nextUrl

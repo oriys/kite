@@ -7,7 +7,7 @@ import {
 } from '@/lib/queries/api-environments'
 
 export async function GET(request: NextRequest) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const limit = Math.min(Number(request.nextUrl.searchParams.get('limit') ?? 50), 100)
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE() {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   await clearRequestHistory(result.ctx.workspaceId)

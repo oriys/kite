@@ -4,7 +4,7 @@ import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { createTemplate, listTemplates } from '@/lib/queries/templates'
 
 export async function GET(request: NextRequest) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const category = request.nextUrl.searchParams.get('category') as
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)

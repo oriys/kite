@@ -10,7 +10,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const { id } = await params
@@ -32,7 +32,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const { id } = await params

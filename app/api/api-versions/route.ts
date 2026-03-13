@@ -10,7 +10,7 @@ const MAX_SLUG_LENGTH = 32
 const VALID_STATUSES = ['active', 'beta', 'deprecated', 'retired'] as const
 
 export async function GET() {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const versions = await listApiVersions(result.ctx.workspaceId)
@@ -18,7 +18,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)

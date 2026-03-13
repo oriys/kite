@@ -4,7 +4,7 @@ import { searchDocuments } from '@/lib/search/searcher'
 import { logSearch } from '@/lib/queries/search-logs'
 
 export async function GET(req: NextRequest) {
-  const authResult = await withWorkspaceAuth('viewer')
+  const authResult = await withWorkspaceAuth('guest')
   if ('error' in authResult) return authResult.error
   const { ctx } = authResult
 

@@ -12,7 +12,7 @@ interface RouteContext {
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const { id } = await context.params

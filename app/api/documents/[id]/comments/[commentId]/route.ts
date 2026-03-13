@@ -11,7 +11,7 @@ export async function DELETE(
   _request: NextRequest,
   context: { params: Promise<{ id: string; commentId: string }> },
 ) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const { commentId } = await context.params
@@ -25,7 +25,7 @@ export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string; commentId: string }> },
 ) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const { commentId } = await context.params

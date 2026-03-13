@@ -7,7 +7,7 @@ import { documents } from '@/lib/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 
 export async function GET() {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const [checks, summary] = await Promise.all([
@@ -19,7 +19,7 @@ export async function GET() {
 }
 
 export async function POST() {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const publishedDocs = await db

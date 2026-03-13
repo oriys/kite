@@ -7,7 +7,7 @@ import { saveRequestHistory } from '@/lib/queries/api-environments'
  * CORS proxy — relays API requests from the playground to avoid browser CORS issues.
  */
 export async function POST(request: NextRequest) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)

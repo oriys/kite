@@ -11,7 +11,7 @@ interface RouteContext {
 }
 
 export async function GET(_request: Request, context: RouteContext) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const { documentId } = await context.params
@@ -20,7 +20,7 @@ export async function GET(_request: Request, context: RouteContext) {
 }
 
 export async function POST(_request: Request, context: RouteContext) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const { documentId } = await context.params

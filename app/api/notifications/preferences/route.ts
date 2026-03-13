@@ -7,7 +7,7 @@ import {
 } from '@/lib/queries/notifications'
 
 export async function GET() {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const prefs = await getNotificationPreferences(
@@ -18,7 +18,7 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)

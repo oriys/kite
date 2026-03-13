@@ -4,7 +4,7 @@ import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { getWorkspaceBranding, upsertWorkspaceBranding } from '@/lib/queries/branding'
 
 export async function GET() {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const branding = await getWorkspaceBranding(result.ctx.workspaceId)

@@ -16,7 +16,7 @@ export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const { id } = await context.params
@@ -31,7 +31,7 @@ export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const { id } = await context.params
@@ -96,7 +96,7 @@ export async function DELETE(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const { id } = await context.params

@@ -7,7 +7,7 @@ import {
 } from '@/lib/queries/api-environments'
 
 export async function GET() {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const items = await listEnvironments(result.ctx.workspaceId)
@@ -15,7 +15,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)

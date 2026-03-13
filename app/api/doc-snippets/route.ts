@@ -58,7 +58,7 @@ function parseSnippetBody(body: Record<string, unknown>): DocSnippetMutation | n
 }
 
 export async function GET() {
-  const result = await withWorkspaceAuth('viewer')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const snippets = await listDocSnippets(result.ctx.workspaceId)
@@ -66,7 +66,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const result = await withWorkspaceAuth('editor')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)

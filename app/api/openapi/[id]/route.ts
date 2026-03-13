@@ -12,7 +12,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const authResult = await withWorkspaceAuth('viewer')
+  const authResult = await withWorkspaceAuth('guest')
   if ('error' in authResult) return authResult.error
   const { ctx } = authResult
 
@@ -33,7 +33,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const authResult = await withWorkspaceAuth('editor')
+  const authResult = await withWorkspaceAuth('member')
   if ('error' in authResult) return authResult.error
   const { ctx } = authResult
 
