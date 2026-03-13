@@ -46,6 +46,18 @@
   --method-delete: oklch(0.55 0.2 25);
   --method-patch: oklch(0.67 0.1 312);
 
+  /* Diff comparison tokens */
+  --diff-add-bg: oklch(0.95 0.04 145);
+  --diff-add-border: oklch(0.86 0.08 145);
+  --diff-add-text: oklch(0.38 0.08 145);
+  --diff-remove-bg: oklch(0.96 0.03 25);
+  --diff-remove-border: oklch(0.86 0.06 25);
+  --diff-remove-text: oklch(0.42 0.12 25);
+  --diff-change-bg: oklch(0.96 0.03 83);
+  --diff-change-border: oklch(0.88 0.06 83);
+  --diff-gutter: oklch(0.94 0.003 90);
+  --diff-gutter-text: oklch(0.58 0.006 85);
+
   /* Semantic tone tokens – used by StatusBadge, ApiResponseBadge, etc. */
   --tone-success-border: oklch(0.84 0.08 145);
   --tone-success-bg: oklch(0.62 0.11 145 / 0.10);
@@ -125,6 +137,17 @@
   --method-put: oklch(0.82 0.13 83);
   --method-delete: oklch(0.62 0.18 25);
   --method-patch: oklch(0.73 0.1 312);
+
+  --diff-add-bg: oklch(0.28 0.04 145);
+  --diff-add-border: oklch(0.38 0.06 145);
+  --diff-add-text: oklch(0.78 0.08 145);
+  --diff-remove-bg: oklch(0.28 0.04 25);
+  --diff-remove-border: oklch(0.40 0.06 25);
+  --diff-remove-text: oklch(0.80 0.08 25);
+  --diff-change-bg: oklch(0.28 0.04 83);
+  --diff-change-border: oklch(0.40 0.06 83);
+  --diff-gutter: oklch(0.26 0.004 85);
+  --diff-gutter-text: oklch(0.58 0.006 90);
 
   --tone-success-border: oklch(0.38 0.08 145);
   --tone-success-bg: oklch(0.70 0.11 145 / 0.10);
@@ -838,4 +861,14 @@
   background-color: oklch(0.46 0.05 86);
   color: inherit;
   -webkit-text-fill-color: currentColor;
+}
+
+/* Pointer cursor opt-in (toggled via Appearance settings) */
+.use-pointer-cursors button,
+.use-pointer-cursors [role="button"],
+.use-pointer-cursors [data-slot="select-trigger"],
+.use-pointer-cursors [data-slot="switch"],
+.use-pointer-cursors [data-slot="slider-thumb"],
+.use-pointer-cursors [data-slot="toggle-group-item"] {
+  cursor: pointer;
 }

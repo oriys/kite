@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { FileText, Clock, Trash2 } from 'lucide-react'
+import { FileText, Clock, GitCompareArrows, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { type Doc, STATUS_CONFIG, getDocEditorHref } from '@/lib/documents'
@@ -112,7 +112,9 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                     {preview || 'Empty document'}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="pt-0 pr-14">
+                <CardContent
+                  className={cn('pt-0', doc.canDelete ? 'pr-20' : 'pr-12')}
+                >
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="size-3" />
@@ -122,17 +124,17 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                   </div>
                 </CardContent>
               </Link>
-              {doc.canDelete ? (
-                <div className="absolute bottom-6 right-6 z-10">
+              <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1">
+                {doc.canDelete ? (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        className="size-6 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                        className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                         aria-label={`Delete ${doc.title}`}
                       >
-                        <Trash2 className="size-3 text-muted-foreground" />
+                        <Trash2 className="size-3.5 text-muted-foreground" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
@@ -153,8 +155,21 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </div>
-              ) : null}
+                ) : null}
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon-sm"
+                  className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  <Link
+                    href={`/docs/compare?doc=${encodeURIComponent(doc.id)}&mode=version`}
+                    aria-label={`Compare ${doc.title}`}
+                  >
+                    <GitCompareArrows className="size-3.5 text-muted-foreground" />
+                  </Link>
+                </Button>
+              </div>
             </Card>
           </div>
         )

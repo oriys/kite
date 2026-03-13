@@ -70,11 +70,19 @@ function mapFeatureVisibilityUpdates(
 }
 
 export async function getUserFeatureVisibility(userId: string) {
-  const row = await db.query.userFeaturePreferences.findFirst({
-    where: eq(userFeaturePreferences.userId, userId),
-  })
+  try {
+    const row = await db.query.userFeaturePreferences.findFirst({
+      where: eq(userFeaturePreferences.userId, userId),
+    })
 
-  return mapRowToFeatureVisibility(row)
+    return mapRowToFeatureVisibility(row)
+  } catch (error) {
+    console.error('Failed to load user feature visibility', {
+      userId,
+      error,
+    })
+    return mergePersonalFeatureVisibility()
+  }
 }
 
 export async function updateUserFeatureVisibility(
@@ -87,21 +95,30 @@ export async function updateUserFeatureVisibility(
     return getUserFeatureVisibility(userId)
   }
 
-  const [row] = await db
-    .insert(userFeaturePreferences)
-    .values({
-      userId,
-      ...dbUpdates,
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: [userFeaturePreferences.userId],
-      set: {
+  try {
+    const [row] = await db
+      .insert(userFeaturePreferences)
+      .values({
+        userId,
         ...dbUpdates,
         updatedAt: new Date(),
-      },
-    })
-    .returning()
+      })
+      .onConflictDoUpdate({
+        target: [userFeaturePreferences.userId],
+        set: {
+          ...dbUpdates,
+          updatedAt: new Date(),
+        },
+      })
+      .returning()
 
-  return mapRowToFeatureVisibility(row)
+    return mapRowToFeatureVisibility(row)
+  } catch (error) {
+    console.error('Failed to update user feature visibility', {
+      userId,
+      updates: dbUpdates,
+      error,
+    })
+    return getUserFeatureVisibility(userId)
+  }
 }

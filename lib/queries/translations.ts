@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../db'
-import { documentTranslations, documents } from '../schema'
+import { documentPermissions, documentTranslations, documents } from '../schema'
 
 export async function createTranslationLink(
   sourceDocumentId: string,
@@ -13,6 +13,117 @@ export async function createTranslationLink(
     .values({ sourceDocumentId, translatedDocumentId, sourceLocale, targetLocale })
     .returning()
   return link
+}
+
+export async function createTranslatedDocument(input: {
+  sourceDocumentId: string
+  workspaceId: string
+  actorId: string
+  targetLocale: string
+  sourceSnapshot?: {
+    title?: string
+    content?: string
+    visibility?: 'public' | 'partner' | 'private'
+    apiVersionId?: string | null
+    sourceLocale?: string
+  }
+}) {
+  const existing = await db
+    .select({
+      documentId: documentTranslations.translatedDocumentId,
+    })
+    .from(documentTranslations)
+    .where(
+      and(
+        eq(documentTranslations.sourceDocumentId, input.sourceDocumentId),
+        eq(documentTranslations.targetLocale, input.targetLocale),
+        isNull(documentTranslations.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  if (existing[0]) {
+    return {
+      created: false,
+      documentId: existing[0].documentId,
+    }
+  }
+
+  return db.transaction(async (tx) => {
+    const [sourceDocument] = await tx
+      .select({
+        id: documents.id,
+        workspaceId: documents.workspaceId,
+        title: documents.title,
+        content: documents.content,
+        visibility: documents.visibility,
+        apiVersionId: documents.apiVersionId,
+        locale: documents.locale,
+      })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.id, input.sourceDocumentId),
+          eq(documents.workspaceId, input.workspaceId),
+          isNull(documents.deletedAt),
+        ),
+      )
+
+    if (!sourceDocument) {
+      return null
+    }
+
+    const permissionRows = await tx
+      .select({
+        userId: documentPermissions.userId,
+        level: documentPermissions.level,
+        grantedBy: documentPermissions.grantedBy,
+      })
+      .from(documentPermissions)
+      .where(eq(documentPermissions.documentId, input.sourceDocumentId))
+
+    const [document] = await tx
+      .insert(documents)
+      .values({
+        workspaceId: sourceDocument.workspaceId,
+        title: input.sourceSnapshot?.title?.trim() || sourceDocument.title,
+        content: input.sourceSnapshot?.content ?? sourceDocument.content,
+        summary: '',
+        visibility: input.sourceSnapshot?.visibility ?? sourceDocument.visibility,
+        apiVersionId:
+          input.sourceSnapshot?.apiVersionId === undefined
+            ? sourceDocument.apiVersionId
+            : input.sourceSnapshot.apiVersionId,
+        locale: input.targetLocale,
+        createdBy: input.actorId,
+      })
+      .returning()
+
+    if (permissionRows.length > 0) {
+      await tx.insert(documentPermissions).values(
+        permissionRows.map((permission) => ({
+          documentId: document.id,
+          userId: permission.userId,
+          level: permission.level,
+          grantedBy: permission.grantedBy,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })),
+      )
+    }
+
+    await tx.insert(documentTranslations).values({
+      sourceDocumentId: input.sourceDocumentId,
+      translatedDocumentId: document.id,
+      sourceLocale: input.sourceSnapshot?.sourceLocale ?? sourceDocument.locale,
+      targetLocale: input.targetLocale,
+    })
+
+    return {
+      created: true,
+      documentId: document.id,
+    }
+  })
 }
 
 export async function getTranslationsForDocument(documentId: string) {

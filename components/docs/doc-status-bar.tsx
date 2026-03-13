@@ -8,6 +8,7 @@ import {
   Clock,
   Copy,
   FileText,
+  GitCompareArrows,
   Loader2,
   RotateCcw,
   Trash2,
@@ -423,7 +424,11 @@ export function DocStatusBar({
                   Duplicate
                 </DropdownMenuItem>
               ) : null}
-              {doc.canDuplicate && doc.canDelete ? <DropdownMenuSeparator /> : null}
+              <DropdownMenuItem onClick={() => router.push(`/docs/compare?doc=${encodeURIComponent(doc.id)}&mode=version`)}>
+                <GitCompareArrows className="mr-2 size-3.5" />
+                Compare Versions
+              </DropdownMenuItem>
+              {doc.canDelete ? <DropdownMenuSeparator /> : null}
               {doc.canDelete ? (
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"

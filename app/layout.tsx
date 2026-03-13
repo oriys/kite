@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { AppearanceProvider } from '@/components/appearance-provider'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SessionProvider } from '@/lib/auth-client'
 import { Toaster } from '@/components/ui/sonner'
@@ -37,9 +38,11 @@ export default function RootLayout({
         className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <SessionProvider>
-            {children}
-          </SessionProvider>
+          <AppearanceProvider>
+            <SessionProvider>
+              {children}
+            </SessionProvider>
+          </AppearanceProvider>
           <Toaster richColors closeButton position="top-right" />
         </ThemeProvider>
         {shouldRenderAnalytics ? <Analytics /> : null}

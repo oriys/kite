@@ -114,6 +114,10 @@ export function DocEditorPageClient() {
   const router = useRouter()
   const docId = searchParams.get('doc')
   const { doc, loading, update, transition, remove, duplicate, refresh } = useDocument(docId)
+  const [availableLocales, setAvailableLocales] = React.useState<
+    { code: string; documentId?: string }[]
+  >([])
+  const [pendingLocale, setPendingLocale] = React.useState<string | null>(null)
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
   const [, setEditorMode] = React.useState<EditorViewMode>('wysiwyg')
@@ -154,12 +158,61 @@ export function DocEditorPageClient() {
       setInitializedDocId(null)
       setTitle('')
       setContent('')
+      setAvailableLocales([])
+      setPendingLocale(null)
       return
     }
     if (docId !== initializedDocId) {
       setInitializedDocId(null)
     }
   }, [docId, initializedDocId])
+
+  React.useEffect(() => {
+    const currentDocId = doc?.id
+
+    if (!currentDocId) {
+      setAvailableLocales([])
+      return
+    }
+
+    let cancelled = false
+
+    async function loadTranslations() {
+      try {
+        const response = await fetch(`/api/documents/${currentDocId}/translations`)
+        if (!response.ok) {
+          if (!cancelled) {
+            setAvailableLocales([])
+          }
+          return
+        }
+
+        const data = (await response.json()) as {
+          currentLocale: string
+          translations: { locale: string; documentId: string }[]
+        }
+
+        if (cancelled) return
+
+        setAvailableLocales(
+          data.translations.map((translation) => ({
+            code: translation.locale,
+            documentId: translation.documentId,
+          })),
+        )
+      } catch {
+        if (!cancelled) {
+          setAvailableLocales([])
+        }
+      }
+    }
+
+    void loadTranslations()
+
+    return () => {
+      cancelled = true
+    }
+  }, [doc?.id])
 
   // ── Online/offline detection ────────────────────────────────────────────
 
@@ -504,7 +557,59 @@ export function DocEditorPageClient() {
               <ExportMenu documentId={doc.id} documentTitle={title} />
               <LocaleSwitcher
                 currentLocale={doc.locale ?? 'en'}
-                onLocaleChange={() => {}}
+                availableLocales={availableLocales}
+                pendingLocale={pendingLocale}
+                onLocaleChange={async (locale, targetDocumentId) => {
+                  if (locale === (doc.locale ?? 'en')) {
+                    return
+                  }
+
+                  if (targetDocumentId) {
+                    router.push(getDocEditorHref(targetDocumentId))
+                    return
+                  }
+
+                  setPendingLocale(locale)
+                  try {
+                    const response = await fetch(`/api/documents/${doc.id}/translations`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        targetLocale: locale,
+                        title,
+                        content,
+                        visibility,
+                        apiVersionId: doc.apiVersionId,
+                        sourceLocale: doc.locale ?? 'en',
+                      }),
+                    })
+
+                    const data = await response.json().catch(() => null) as
+                      | { documentId?: string; error?: string }
+                      | null
+
+                    if (!response.ok || !data?.documentId) {
+                      throw new Error(
+                        data && 'error' in data && typeof data.error === 'string'
+                          ? data.error
+                          : 'Could not create the translation document.',
+                      )
+                    }
+
+                    router.push(getDocEditorHref(data.documentId))
+                  } catch (error) {
+                    toast.error('Translation creation failed', {
+                      description:
+                        error instanceof Error
+                          ? error.message
+                          : 'Could not create the translation document.',
+                    })
+                  } finally {
+                    setPendingLocale(null)
+                  }
+                }}
               />
               <PresenceAvatars documentId={doc.id} currentUserId={doc.createdBy ?? ''} />
               <Button

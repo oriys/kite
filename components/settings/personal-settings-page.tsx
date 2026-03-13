@@ -4,19 +4,15 @@ import * as React from 'react'
 import Link from 'next/link'
 import {
   BrainCircuit,
-  Monitor,
-  Moon,
+  Palette,
   PencilLine,
   RotateCcw,
-  Sun,
 } from 'lucide-react'
-import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 
 import { usePersonalSettings } from '@/components/personal-settings-provider'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
 import { useDocEditorWidth } from '@/hooks/use-doc-editor-width'
-import { useMounted } from '@/hooks/use-mounted'
 import {
   DOC_EDITOR_WIDTH_DEFAULT,
   DOC_EDITOR_WIDTH_PRESETS,
@@ -56,26 +52,6 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
-type ThemeChoice = 'system' | 'light' | 'dark'
-
-const THEME_OPTIONS: ReadonlyArray<{
-  value: ThemeChoice
-  label: string
-  icon: React.ComponentType<React.ComponentProps<'svg'>>
-}> = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-]
-
-function normalizeThemeChoice(value: string | undefined): ThemeChoice {
-  if (value === 'light' || value === 'dark') {
-    return value
-  }
-
-  return 'system'
-}
-
 export function PersonalSettingsPage({
   initialNotificationPreferences,
   workspaceName,
@@ -83,8 +59,6 @@ export function PersonalSettingsPage({
   initialNotificationPreferences: NotificationPreferenceValues
   workspaceName: string
 }) {
-  const mounted = useMounted()
-  const { theme, setTheme } = useTheme()
   const { documentWidth, resetDocumentWidth, setDocumentWidth } =
     useDocEditorWidth()
   const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
@@ -100,20 +74,8 @@ export function PersonalSettingsPage({
   const [pendingNotificationKey, setPendingNotificationKey] =
     React.useState<NotificationPreferenceKey | null>(null)
 
-  const selectedTheme = normalizeThemeChoice(mounted ? theme : undefined)
   const editorDefaultsChanged =
     documentWidth !== DOC_EDITOR_WIDTH_DEFAULT || aiPanelSide !== 'right'
-
-  const handleThemeChange = React.useCallback(
-    (value: string) => {
-      if (!value) {
-        return
-      }
-
-      setTheme(normalizeThemeChoice(value))
-    },
-    [setTheme],
-  )
 
   const handleDocumentWidthChange = React.useCallback(
     (value: string) => {
@@ -272,42 +234,18 @@ export function PersonalSettingsPage({
           </CardAction>
           <CardTitle>Appearance</CardTitle>
           <CardDescription>
-            Choose how Kite should look every time you open it in this browser.
+            Theme, colors, fonts, contrast, and pointer cursors are now managed
+            on a dedicated page.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <FieldGroup className="gap-4">
-            <Field>
-              <FieldTitle>Color theme</FieldTitle>
-              <FieldDescription>
-                Pick a fixed light or dark theme, or follow the system setting.
-              </FieldDescription>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                value={selectedTheme}
-                onValueChange={handleThemeChange}
-                className="flex w-full flex-wrap"
-              >
-                {THEME_OPTIONS.map((option) => {
-                  const Icon = option.icon
-
-                  return (
-                    <ToggleGroupItem
-                      key={option.value}
-                      value={option.value}
-                      disabled={!mounted}
-                      className="flex-1"
-                    >
-                      <Icon />
-                      {option.label}
-                    </ToggleGroupItem>
-                  )
-                })}
-              </ToggleGroup>
-            </Field>
-          </FieldGroup>
-        </CardContent>
+        <CardFooter className="border-t pt-4">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/docs/settings/appearance">
+              <Palette data-icon="inline-start" />
+              Appearance settings
+            </Link>
+          </Button>
+        </CardFooter>
       </Card>
 
       <Card>

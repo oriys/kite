@@ -1,6 +1,6 @@
 'use client'
 
-import { Globe, ChevronDown } from 'lucide-react'
+import { Globe, ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -24,12 +24,14 @@ const LOCALES = [
 interface LocaleSwitcherProps {
   currentLocale: string
   availableLocales?: { code: string; label?: string; documentId?: string }[]
+  pendingLocale?: string | null
   onLocaleChange: (locale: string, documentId?: string) => void
 }
 
 export function LocaleSwitcher({
   currentLocale,
   availableLocales = [],
+  pendingLocale = null,
   onLocaleChange,
 }: LocaleSwitcherProps) {
   const currentLabel =
@@ -57,16 +59,20 @@ export function LocaleSwitcher({
         {mergedLocales.map((locale) => (
           <DropdownMenuItem
             key={locale.code}
-            disabled={!locale.available}
+            disabled={locale.code === currentLocale || pendingLocale === locale.code}
             className={
               locale.code === currentLocale ? 'bg-accent/10 font-medium' : ''
             }
             onClick={() => onLocaleChange(locale.code, locale.documentId)}
           >
             <span className="flex-1">{locale.label}</span>
-            {!locale.available && (
-              <span className="text-[10px] text-muted-foreground">—</span>
-            )}
+            {pendingLocale === locale.code ? (
+              <Loader2 className="size-3 animate-spin text-muted-foreground" />
+            ) : !locale.available ? (
+              <span className="text-[10px] font-medium text-muted-foreground">
+                Create
+              </span>
+            ) : null}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

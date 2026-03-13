@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { SlidersHorizontal, Users, UsersRound } from 'lucide-react'
+import { Palette, SlidersHorizontal, Users, UsersRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const SETTINGS_NAV = [
@@ -13,6 +13,11 @@ const SETTINGS_NAV = [
         href: '/docs/settings/personal',
         label: 'Personal',
         icon: SlidersHorizontal,
+      },
+      {
+        href: '/docs/settings/appearance',
+        label: 'Appearance',
+        icon: Palette,
       },
     ],
   },

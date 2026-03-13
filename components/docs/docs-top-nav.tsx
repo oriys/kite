@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   FileText,
+  GitCompareArrows,
   LayoutTemplate,
   LinkIcon,
   Menu,
@@ -49,6 +50,7 @@ import { NotificationBell } from '@/components/notification-bell'
 
 const NAV_ITEMS = [
   { href: '/docs', label: 'Documents', icon: FileText },
+  { href: '/docs/compare', label: 'Compare', icon: GitCompareArrows },
   {
     href: '/docs/openapi',
     label: 'OpenAPI',
@@ -145,6 +147,9 @@ function getVisibleCount(
 function isActive(pathname: string, href: string) {
   if (href === '/docs') {
     return pathname === '/docs' || pathname.startsWith('/docs/editor')
+  }
+  if (href === '/docs/compare') {
+    return pathname.startsWith('/docs/compare')
   }
   if (href === '/docs/ai') {
     return pathname === '/docs/ai'
