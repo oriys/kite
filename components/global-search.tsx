@@ -173,7 +173,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                 heading="Documents"
                 className={cn(
                   'overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground',
-                  isQueryDirty && 'opacity-60',
+                  isQueryDirty && 'pointer-events-none grayscale-[30%]',
                 )}
               >
                 {results.map((result) => (

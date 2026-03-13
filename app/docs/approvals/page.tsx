@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
 
 interface ApprovalItem {
   id: string
@@ -93,8 +94,8 @@ export default function ApprovalsPage() {
       </div>
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          Loading…
+        <div className="py-16 text-center">
+          <Spinner className="mx-auto size-5 text-muted-foreground" />
         </div>
       ) : items.length === 0 ? (
         <Card>

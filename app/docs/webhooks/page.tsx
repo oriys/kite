@@ -9,6 +9,7 @@ import {
   ToggleRight,
   Play,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +29,13 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { Spinner } from '@/components/ui/spinner'
 import { Label } from '@/components/ui/label'
 
 const EVENTS = [
@@ -63,6 +71,7 @@ export default function WebhooksPage() {
   const [url, setUrl] = React.useState('')
   const [selectedEvents, setSelectedEvents] = React.useState<string[]>([])
   const [creating, setCreating] = React.useState(false)
+  const [testingId, setTestingId] = React.useState<string | null>(null)
 
   const refresh = React.useCallback(async () => {
     const res = await fetch('/api/webhooks')
@@ -109,7 +118,23 @@ export default function WebhooksPage() {
   }
 
   const handleTest = async (id: string) => {
-    await fetch(`/api/webhooks/${id}/test`, { method: 'POST' })
+    setTestingId(id)
+    try {
+      const res = await fetch(`/api/webhooks/${id}/test`, { method: 'POST' })
+      if (res.ok) {
+        toast.success('Test event sent successfully')
+      } else {
+        toast.error('Test event failed', {
+          description: `Server responded with ${res.status}`,
+        })
+      }
+    } catch {
+      toast.error('Test event failed', {
+        description: 'Could not reach the server',
+      })
+    } finally {
+      setTestingId(null)
+    }
   }
 
   return (
@@ -189,8 +214,8 @@ export default function WebhooksPage() {
       </div>
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          Loading…
+        <div className="py-16 text-center">
+          <Spinner className="mx-auto size-5 text-muted-foreground" />
         </div>
       ) : webhooks.length === 0 ? (
         <Card>
@@ -217,37 +242,56 @@ export default function WebhooksPage() {
                     </Badge>
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => handleTest(wh.id)}
-                      title="Send test event"
-                    >
-                      <Play className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => handleToggle(wh.id, wh.isActive)}
-                      title={wh.isActive ? 'Disable' : 'Enable'}
-                    >
-                      {wh.isActive ? (
-                        <ToggleRight className="h-3.5 w-3.5" />
-                      ) : (
-                        <ToggleLeft className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive"
-                      onClick={() => handleDelete(wh.id)}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <TooltipProvider delayDuration={0}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            disabled={testingId === wh.id}
+                            onClick={() => handleTest(wh.id)}
+                          >
+                            {testingId === wh.id ? (
+                              <Spinner className="h-3.5 w-3.5" />
+                            ) : (
+                              <Play className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Send test event</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => handleToggle(wh.id, wh.isActive)}
+                          >
+                            {wh.isActive ? (
+                              <ToggleRight className="h-3.5 w-3.5" />
+                            ) : (
+                              <ToggleLeft className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{wh.isActive ? 'Disable' : 'Enable'}</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => handleDelete(wh.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Delete webhook</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
               </CardHeader>

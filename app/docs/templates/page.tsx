@@ -45,6 +45,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 export default function TemplatesPage() {
   const router = useRouter()
@@ -190,8 +197,8 @@ export default function TemplatesPage() {
       </div>
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          Loading…
+        <div className="py-16 text-center">
+          <Spinner className="mx-auto size-5 text-muted-foreground" />
         </div>
       ) : templates.length === 0 ? (
         <Card>
@@ -241,46 +248,60 @@ export default function TemplatesPage() {
                   </div>
 
                   <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        router.push(getTemplateEditorHref(template.id))
-                      }}
-                      title="Edit template"
-                    >
-                      <PencilLine className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      disabled={isBusy}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void handleDuplicate(template.id)
-                      }}
-                      title="Duplicate template"
-                    >
-                      <Copy className="size-3.5" />
-                    </Button>
-                    {!template.isBuiltIn ? (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive"
-                        disabled={isBusy}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void handleDelete(template.id)
-                        }}
-                        title="Delete template"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    ) : null}
+                    <TooltipProvider delayDuration={0}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              router.push(getTemplateEditorHref(template.id))
+                            }}
+                          >
+                            <PencilLine className="size-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Edit template</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            disabled={isBusy}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void handleDuplicate(template.id)
+                            }}
+                          >
+                            <Copy className="size-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Duplicate template</TooltipContent>
+                      </Tooltip>
+                      {!template.isBuiltIn ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive"
+                              disabled={isBusy}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void handleDelete(template.id)
+                              }}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete template</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </TooltipProvider>
                   </div>
                 </CardContent>
               </Card>

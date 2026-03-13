@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Spinner } from '@/components/ui/spinner'
 
 interface AuditLog {
   id: string
@@ -119,8 +120,8 @@ export default function AuditLogsPage() {
       </div>
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          Loading audit logs…
+        <div className="py-16 text-center">
+          <Spinner className="mx-auto size-5 text-muted-foreground" />
         </div>
       ) : logs.length === 0 ? (
         <div className="py-16 text-center text-sm text-muted-foreground">
