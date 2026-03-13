@@ -5,7 +5,9 @@ import {
   upsertPresence,
   removePresence,
   getActiveEditors,
+  clearPresenceForDocument,
 } from '@/lib/queries/active-editors'
+import { getDocument } from '@/lib/queries/documents'
 
 export async function GET(request: NextRequest) {
   const result = await withWorkspaceAuth('viewer')
@@ -13,6 +15,12 @@ export async function GET(request: NextRequest) {
 
   const documentId = request.nextUrl.searchParams.get('documentId')
   if (!documentId) return badRequest('documentId is required')
+
+  const document = await getDocument(documentId, result.ctx.workspaceId)
+  if (!document) {
+    await clearPresenceForDocument(documentId)
+    return NextResponse.json([])
+  }
 
   const editors = await getActiveEditors(documentId)
   return NextResponse.json(editors)
@@ -27,6 +35,12 @@ export async function POST(request: NextRequest) {
 
   const { documentId, cursorPosition } = body
   if (!documentId) return badRequest('documentId is required')
+
+  const document = await getDocument(documentId, result.ctx.workspaceId)
+  if (!document) {
+    await clearPresenceForDocument(documentId)
+    return NextResponse.json({ success: true, stale: true })
+  }
 
   const editor = await upsertPresence(
     documentId,
@@ -44,6 +58,12 @@ export async function DELETE(request: NextRequest) {
   const documentId = request.nextUrl.searchParams.get('documentId')
   if (!documentId) return badRequest('documentId is required')
 
-  await removePresence(documentId, result.ctx.userId)
+  const document = await getDocument(documentId, result.ctx.workspaceId)
+  if (!document) {
+    await clearPresenceForDocument(documentId)
+  } else {
+    await removePresence(documentId, result.ctx.userId)
+  }
+
   return NextResponse.json({ success: true })
 }

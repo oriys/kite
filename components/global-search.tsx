@@ -123,16 +123,16 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogHeader className="sr-only">
-        <DialogTitle>Search documents</DialogTitle>
-        <DialogDescription>
-          Full-text search across all workspace documents
-        </DialogDescription>
-      </DialogHeader>
       <DialogContent
         className="overflow-hidden p-0 sm:max-w-[560px]"
         showCloseButton={false}
       >
+        <DialogHeader className="sr-only">
+          <DialogTitle id="global-search-title">Search documents</DialogTitle>
+          <DialogDescription id="global-search-description">
+            Full-text search across all workspace documents
+          </DialogDescription>
+        </DialogHeader>
         <CommandPrimitive
           className="flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground"
           shouldFilter={false}

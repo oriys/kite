@@ -39,6 +39,10 @@ export async function removePresence(documentId: string, userId: string) {
     )
 }
 
+export async function clearPresenceForDocument(documentId: string) {
+  await db.delete(activeEditors).where(eq(activeEditors.documentId, documentId))
+}
+
 export async function getActiveEditors(documentId: string) {
   const cutoff = new Date(Date.now() - PRESENCE_TIMEOUT_MS)
 
