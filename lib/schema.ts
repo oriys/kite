@@ -105,7 +105,11 @@ export const workspaceMembers = pgTable(
     }),
     joinedAt: timestamp('joined_at', { mode: 'date' }).notNull().defaultNow(),
   },
-  (wm) => [primaryKey({ columns: [wm.userId, wm.workspaceId] })],
+  (wm) => [
+    primaryKey({ columns: [wm.userId, wm.workspaceId] }),
+    index('workspace_members_workspace_role_idx').on(wm.workspaceId, wm.role),
+    index('workspace_members_workspace_status_idx').on(wm.workspaceId, wm.status),
+  ],
 )
 
 // ─── Workspace Invites ──────────────────────────────────────────
@@ -194,6 +198,12 @@ export const visibilityEnum = pgEnum('visibility_level', [
   'private',
 ])
 
+export const documentPermissionLevelEnum = pgEnum('document_permission_level', [
+  'view',
+  'edit',
+  'manage',
+])
+
 export const documents = pgTable(
   'documents',
   {
@@ -223,6 +233,29 @@ export const documents = pgTable(
     index('documents_created_by_idx').on(t.createdBy),
     index('documents_api_version_id_idx').on(t.apiVersionId),
     index('documents_locale_idx').on(t.locale),
+  ],
+)
+
+export const documentPermissions = pgTable(
+  'document_permissions',
+  {
+    documentId: text('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    level: documentPermissionLevelEnum('level').notNull(),
+    grantedBy: text('granted_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.documentId, t.userId] }),
+    index('document_permissions_document_id_idx').on(t.documentId),
+    index('document_permissions_user_id_idx').on(t.userId),
   ],
 )
 
@@ -270,6 +303,7 @@ export const documentVersions = pgTable(
   },
   (t) => [
     index('document_versions_document_id_idx').on(t.documentId),
+    index('document_versions_document_saved_at_idx').on(t.documentId, t.savedAt),
   ],
 )
 
@@ -587,6 +621,12 @@ export const inlineComments = pgTable(
   (t) => [
     index('inline_comments_document_id_idx').on(t.documentId),
     index('inline_comments_parent_id_idx').on(t.parentId),
+    index('inline_comments_document_deleted_created_idx').on(
+      t.documentId,
+      t.deletedAt,
+      t.createdAt,
+    ),
+    index('inline_comments_parent_deleted_idx').on(t.parentId, t.deletedAt),
   ],
 )
 
@@ -733,6 +773,12 @@ export const auditLogs = pgTable(
     index('audit_logs_actor_id_idx').on(t.actorId),
     index('audit_logs_resource_idx').on(t.resourceType, t.resourceId),
     index('audit_logs_created_at_idx').on(t.createdAt),
+    index('audit_logs_workspace_actor_idx').on(t.workspaceId, t.actorId),
+    index('audit_logs_workspace_action_created_idx').on(
+      t.workspaceId,
+      t.action,
+      t.createdAt,
+    ),
   ],
 )
 
@@ -789,6 +835,12 @@ export const notifications = pgTable(
     index('notifications_workspace_id_idx').on(t.workspaceId),
     index('notifications_is_read_idx').on(t.isRead),
     index('notifications_created_at_idx').on(t.createdAt),
+    index('notifications_recipient_workspace_read_created_idx').on(
+      t.recipientId,
+      t.workspaceId,
+      t.isRead,
+      t.createdAt,
+    ),
   ],
 )
 
@@ -825,6 +877,73 @@ export const notificationPreferences = pgTable(
     webhookFailureEnabled: boolean('webhook_failure_enabled').notNull().default(true),
   },
   (t) => [primaryKey({ columns: [t.userId, t.workspaceId] })],
+)
+
+export const userFeaturePreferences = pgTable(
+  'user_feature_preferences',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    openApiEnabled: boolean('openapi_enabled').notNull().default(true),
+    templatesEnabled: boolean('templates_enabled').notNull().default(true),
+    aiWorkspaceEnabled: boolean('ai_workspace_enabled').notNull().default(true),
+    analyticsEnabled: boolean('analytics_enabled').notNull().default(true),
+    approvalsEnabled: boolean('approvals_enabled').notNull().default(true),
+    webhooksEnabled: boolean('webhooks_enabled').notNull().default(true),
+    linkHealthEnabled: boolean('link_health_enabled').notNull().default(true),
+    quickInsertEnabled: boolean('quick_insert_enabled').notNull().default(true),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId] })],
+)
+
+export const aiProviderTypeEnum = pgEnum('ai_provider_type', [
+  'openai_compatible',
+  'anthropic',
+  'gemini',
+])
+
+export const aiProviderConfigs = pgTable(
+  'ai_provider_configs',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    providerType: aiProviderTypeEnum('provider_type').notNull(),
+    baseUrl: text('base_url'),
+    apiKey: text('api_key').notNull(),
+    defaultModelId: text('default_model_id'),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
+  },
+  (t) => [index('ai_provider_configs_workspace_id_idx').on(t.workspaceId)],
+)
+
+export const aiWorkspaceSettings = pgTable(
+  'ai_workspace_settings',
+  {
+    workspaceId: text('workspace_id')
+      .primaryKey()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    defaultModelId: text('default_model_id'),
+    enabledModelIds: jsonb('enabled_model_ids')
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    promptSettings: jsonb('prompt_settings')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+  },
 )
 
 // ─── F12: Webhooks ──────────────────────────────────────────────
@@ -873,6 +992,7 @@ export const webhooks = pgTable(
   },
   (t) => [
     index('webhooks_workspace_id_idx').on(t.workspaceId),
+    index('webhooks_workspace_active_idx').on(t.workspaceId, t.isActive),
   ],
 )
 
@@ -898,6 +1018,7 @@ export const webhookDeliveries = pgTable(
   (t) => [
     index('webhook_deliveries_webhook_id_idx').on(t.webhookId),
     index('webhook_deliveries_created_at_idx').on(t.createdAt),
+    index('webhook_deliveries_webhook_created_idx').on(t.webhookId, t.createdAt),
   ],
 )
 
@@ -987,6 +1108,7 @@ export const approvalReviewers = pgTable(
   (t) => [
     index('approval_reviewers_request_id_idx').on(t.requestId),
     index('approval_reviewers_reviewer_id_idx').on(t.reviewerId),
+    index('approval_reviewers_reviewer_request_idx').on(t.reviewerId, t.requestId),
     uniqueIndex('approval_reviewers_request_reviewer_idx').on(
       t.requestId,
       t.reviewerId,
@@ -1183,6 +1305,11 @@ export const apiRequestHistory = pgTable(
     index('api_request_history_workspace_id_idx').on(t.workspaceId),
     index('api_request_history_user_id_idx').on(t.userId),
     index('api_request_history_created_at_idx').on(t.createdAt),
+    index('api_request_history_workspace_user_created_idx').on(
+      t.workspaceId,
+      t.userId,
+      t.createdAt,
+    ),
   ],
 )
 

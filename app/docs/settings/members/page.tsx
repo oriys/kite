@@ -100,27 +100,59 @@ export default function MembersPage() {
   const workspaceId = useWorkspaceId()
   const [members, setMembers] = React.useState<Member[]>([])
   const [invites, setInvites] = React.useState<Invite[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const [membersLoading, setMembersLoading] = React.useState(true)
+  const [invitesLoading, setInvitesLoading] = React.useState(true)
   const [search, setSearch] = React.useState('')
+  const [debouncedSearch, setDebouncedSearch] = React.useState('')
+  const hasLoadedMembersRef = React.useRef(false)
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim())
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [search])
 
   const fetchMembers = React.useCallback(async () => {
     if (!workspaceId) return
-    const res = await fetch(`/api/workspaces/${workspaceId}/members`)
-    if (res.ok) setMembers(await res.json())
-  }, [workspaceId])
+    if (!hasLoadedMembersRef.current) {
+      setMembersLoading(true)
+    }
+    const params = new URLSearchParams()
+    if (debouncedSearch) params.set('search', debouncedSearch)
+    try {
+      const res = await fetch(
+        `/api/workspaces/${workspaceId}/members${params.size ? `?${params.toString()}` : ''}`,
+      )
+      if (res.ok) {
+        setMembers(await res.json())
+      }
+    } finally {
+      hasLoadedMembersRef.current = true
+      setMembersLoading(false)
+    }
+  }, [workspaceId, debouncedSearch])
 
   const fetchInvites = React.useCallback(async () => {
     if (!workspaceId) return
+    setInvitesLoading(true)
     const res = await fetch(`/api/workspaces/${workspaceId}/invites`)
     if (res.ok) setInvites(await res.json())
+    setInvitesLoading(false)
   }, [workspaceId])
 
   React.useEffect(() => {
     if (!workspaceId) return
-    Promise.all([fetchMembers(), fetchInvites()]).finally(() =>
-      setLoading(false),
-    )
-  }, [workspaceId, fetchMembers, fetchInvites])
+    void fetchInvites()
+  }, [workspaceId, fetchInvites])
+
+  React.useEffect(() => {
+    if (!workspaceId) return
+    void fetchMembers()
+  }, [workspaceId, fetchMembers])
 
   const handleRoleChange = async (userId: string, role: MemberRole) => {
     if (!workspaceId) return
@@ -171,15 +203,7 @@ export default function MembersPage() {
     }
   }
 
-  const filtered = search
-    ? members.filter(
-        (m) =>
-          m.name?.toLowerCase().includes(search.toLowerCase()) ||
-          m.email?.toLowerCase().includes(search.toLowerCase()),
-      )
-    : members
-
-  if (loading) {
+  if (membersLoading || invitesLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Spinner className="h-5 w-5" />
@@ -229,13 +253,13 @@ export default function MembersPage() {
           <span />
         </div>
 
-        {filtered.length === 0 && (
+        {members.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             {search ? 'No members found.' : 'No members yet.'}
           </div>
         )}
 
-        {filtered.map((member) => {
+        {members.map((member) => {
           const initials = (member.name ?? member.email ?? '?')
             .split(/[\s@]/)
             .map((s) => s[0])

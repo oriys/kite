@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
+import {
+  withWorkspaceAuth,
+  badRequest,
+  forbidden,
+} from '@/lib/api-utils'
 import {
   upsertPresence,
   removePresence,
@@ -8,6 +12,7 @@ import {
   clearPresenceForDocument,
 } from '@/lib/queries/active-editors'
 import { getDocument } from '@/lib/queries/documents'
+import { buildDocumentAccessMap } from '@/lib/queries/document-permissions'
 
 export async function GET(request: NextRequest) {
   const result = await withWorkspaceAuth('guest')
@@ -21,6 +26,11 @@ export async function GET(request: NextRequest) {
     await clearPresenceForDocument(documentId)
     return NextResponse.json([])
   }
+
+  const access = (
+    await buildDocumentAccessMap([document], result.ctx.userId, result.ctx.role)
+  ).get(document.id)
+  if (!access?.canView) return forbidden()
 
   const editors = await getActiveEditors(documentId)
   return NextResponse.json(editors)
@@ -42,6 +52,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, stale: true })
   }
 
+  const access = (
+    await buildDocumentAccessMap([document], result.ctx.userId, result.ctx.role)
+  ).get(document.id)
+  if (!access?.canEdit) return forbidden()
+
   const editor = await upsertPresence(
     documentId,
     result.ctx.userId,
@@ -62,6 +77,11 @@ export async function DELETE(request: NextRequest) {
   if (!document) {
     await clearPresenceForDocument(documentId)
   } else {
+    const access = (
+      await buildDocumentAccessMap([document], result.ctx.userId, result.ctx.role)
+    ).get(document.id)
+    if (!access?.canView) return forbidden()
+
     await removePresence(documentId, result.ctx.userId)
   }
 

@@ -11,6 +11,7 @@ export const VALID_STATUSES: readonly DocStatus[] = [
 
 export const MAX_TITLE_LENGTH = 255
 export const MAX_CONTENT_SIZE = 10 * 1024 * 1024 // 10 MB
+export const DOCUMENT_PERMISSION_LEVELS = ['view', 'edit', 'manage'] as const
 
 export const ALLOWED_TRANSITIONS: Record<DocStatus, readonly DocStatus[]> = {
   draft: ['review', 'archived'],
@@ -35,4 +36,10 @@ export const MAX_IMPORT_COUNT = 200
 
 export function isValidStatus(value: string): value is DocStatus {
   return (VALID_STATUSES as readonly string[]).includes(value)
+}
+
+export function isValidDocumentPermissionLevel(
+  value: string,
+): value is (typeof DOCUMENT_PERMISSION_LEVELS)[number] {
+  return (DOCUMENT_PERMISSION_LEVELS as readonly string[]).includes(value)
 }

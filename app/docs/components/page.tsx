@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 
+import { FeatureGuard } from '@/components/docs/feature-guard'
 import { DocSnippetManagerPage } from '@/components/docs/doc-snippet-manager-page'
 
 export const metadata: Metadata = {
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 }
 
 export default function DocComponentsPage() {
-  return <DocSnippetManagerPage />
+  return (
+    <FeatureGuard featureId="quickInsert">
+      <DocSnippetManagerPage />
+    </FeatureGuard>
+  )
 }

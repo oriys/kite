@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { FeatureGuard } from '@/components/docs/feature-guard'
 import {
   getTemplateCategoryLabel,
   getTemplateEditorHref,
@@ -121,7 +122,8 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <FeatureGuard featureId="templates">
+      <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
@@ -309,6 +311,7 @@ export default function TemplatesPage() {
           })}
         </div>
       )}
-    </div>
+      </div>
+    </FeatureGuard>
   )
 }

@@ -425,10 +425,11 @@ function CreateTeamDialog({
   teams: Team[]
   onSuccess: () => void
 }) {
+  const NO_PARENT_TEAM = '__no-parent-team__'
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
-  const [parentId, setParentId] = React.useState<string>('')
+  const [parentId, setParentId] = React.useState<string>(NO_PARENT_TEAM)
   const [loading, setLoading] = React.useState(false)
 
   const handleCreate = async () => {
@@ -437,7 +438,7 @@ function CreateTeamDialog({
       const body: Record<string, string | null> = {
         name,
         description,
-        parentId: parentId || null,
+        parentId: parentId === NO_PARENT_TEAM ? null : parentId,
       }
       const res = await fetch(`/api/workspaces/${workspaceId}/teams`, {
         method: 'POST',
@@ -448,7 +449,7 @@ function CreateTeamDialog({
         toast.success('Team created')
         setName('')
         setDescription('')
-        setParentId('')
+        setParentId(NO_PARENT_TEAM)
         setOpen(false)
         onSuccess()
       } else {
@@ -503,7 +504,7 @@ function CreateTeamDialog({
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value={NO_PARENT_TEAM}>None</SelectItem>
                   {teams.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}

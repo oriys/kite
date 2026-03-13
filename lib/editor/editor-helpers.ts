@@ -46,6 +46,8 @@ export interface DocEditorProps {
   documentWidth?: number
   onDocumentWidthChange?: (width: number) => void
   onDocumentResizeStateChange?: (active: boolean) => void
+  fullscreen?: boolean
+  onFullscreenChange?: (fullscreen: boolean) => void
   aiPreviewSide?: DocEditorAiPanelSide
   onAiPreviewSideChange?: (side: DocEditorAiPanelSide) => void
   onComment?: (selection: CommentSelection) => void

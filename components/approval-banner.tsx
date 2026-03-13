@@ -105,7 +105,12 @@ export function ApprovalBanner({
 
     async function loadApproval() {
       try {
-        const response = await fetch(`/api/approvals?status=pending`, {
+        const params = new URLSearchParams({
+          status: 'pending',
+          documentId,
+          limit: '1',
+        })
+        const response = await fetch(`/api/approvals?${params.toString()}`, {
           cache: 'no-store',
         })
 
@@ -116,10 +121,7 @@ export function ApprovalBanner({
         const data = (await response.json().catch(() => [])) as ApprovalRequest[]
         if (!active) return
 
-        const match = data.find(
-          (a) => a.documentId === documentId && a.status === 'pending',
-        )
-        setApproval(match ?? null)
+        setApproval(data[0] ?? null)
       } catch {
         if (!active) return
         setApproval(null)

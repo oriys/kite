@@ -10,6 +10,8 @@ import {
   Columns2,
   Italic,
   Loader2,
+  Maximize2,
+  Minimize2,
   Redo2,
   Sparkles,
   Strikethrough,
@@ -522,9 +524,11 @@ const DOCUMENT_TRANSLATE_LANGUAGES = [
 
 const DEFAULT_DOCUMENT_AI_ACTIONS = [
   'polish',
+  'autofix',
   'shorten',
   'expand',
   'translate',
+  'diagram',
   'review',
   'score',
   'summarize',
@@ -534,12 +538,14 @@ const DEFAULT_DOCUMENT_AI_ACTIONS = [
 
 const DOCUMENT_REWRITE_ACTIONS = [
   'polish',
+  'autofix',
   'shorten',
   'expand',
   'translate',
 ] as const satisfies readonly AiTransformAction[]
 
 const DOCUMENT_REVIEW_ACTIONS = [
+  'diagram',
   'review',
   'score',
   'summarize',
@@ -594,6 +600,8 @@ interface DocToolbarProps {
   onInsertCodeBlock?: (language: string) => void
   activeAiLabel?: string | null
   aiDisabled?: boolean
+  fullscreen?: boolean
+  onFullscreenChange?: (fullscreen: boolean) => void
   availableDocumentAiActions?: readonly AiTransformAction[]
   aiDocumentPendingAction?: AiTransformAction | null
   onAiDocumentAction?: (
@@ -604,10 +612,12 @@ interface DocToolbarProps {
 
 const AI_PENDING_LABELS: Record<AiTransformAction, string> = {
   polish: 'Polishing',
+  autofix: 'Fixing',
   shorten: 'Shortening',
   expand: 'Expanding',
   translate: 'Translating',
   explain: 'Explaining',
+  diagram: 'Drawing diagram',
   review: 'Reviewing',
   score: 'Scoring',
   summarize: 'Summarizing',
@@ -634,6 +644,8 @@ export function DocToolbar({
   onInsertCodeBlock,
   activeAiLabel,
   aiDisabled,
+  fullscreen = false,
+  onFullscreenChange,
   availableDocumentAiActions,
   aiDocumentPendingAction,
   onAiDocumentAction,
@@ -682,6 +694,7 @@ export function DocToolbar({
   const canUseDocumentAi =
     documentAiActions.length > 0 && !aiDisabled && Boolean(onAiDocumentAction)
   const isDocumentAiWorking = Boolean(aiDocumentPendingAction)
+  const canToggleFullscreen = Boolean(onFullscreenChange)
   const documentAiButtonLabel = aiDocumentPendingAction
     ? `${AI_PENDING_LABELS[aiDocumentPendingAction]}…`
     : 'AI Actions'
@@ -823,6 +836,33 @@ export function DocToolbar({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 border-l border-border/50 pl-2">
+          {canToggleFullscreen ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={fullscreen ? 'secondary' : 'ghost'}
+                  size="icon-sm"
+                  aria-label={fullscreen ? 'Exit fullscreen mode' : 'Enter fullscreen mode'}
+                  aria-pressed={fullscreen}
+                  className={cn(fullscreen && 'text-foreground')}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                  }}
+                  onClick={() => onFullscreenChange?.(!fullscreen)}
+                >
+                  {fullscreen ? (
+                    <Minimize2 className="size-3.5" />
+                  ) : (
+                    <Maximize2 className="size-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {fullscreen ? 'Exit full screen' : 'Enter full screen'}
+                <span className="ml-2 text-muted-foreground">Esc</span>
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           <DropdownMenu modal={false}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -894,6 +934,19 @@ export function DocToolbar({
                         />
                       </DropdownMenuItem>
                     ) : null}
+                    {availableDocumentAiActionSet.has('autofix') ? (
+                      <DropdownMenuItem
+                        className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                        onSelect={() => onAiDocumentAction?.('autofix')}
+                      >
+                        <DocumentAiMenuItemContent
+                          icon={BadgeCheck}
+                          label={AI_ACTION_LABELS.autofix}
+                          description="Fix spelling and formatting only."
+                          shortcut="Replace"
+                        />
+                      </DropdownMenuItem>
+                    ) : null}
                     {availableDocumentAiActionSet.has('shorten') ? (
                       <DropdownMenuItem
                         className="items-start gap-2.5 rounded-lg px-2 py-1.5"
@@ -960,6 +1013,19 @@ export function DocToolbar({
                     <DropdownMenuLabel className="px-2 pb-1 pt-0 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                       Review
                     </DropdownMenuLabel>
+                    {availableDocumentAiActionSet.has('diagram') ? (
+                      <DropdownMenuItem
+                        className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                        onSelect={() => onAiDocumentAction?.('diagram')}
+                      >
+                        <DocumentAiMenuItemContent
+                          icon={Columns2}
+                          label={AI_ACTION_LABELS.diagram}
+                          description="Build a streamed diagram preview."
+                          shortcut="Preview"
+                        />
+                      </DropdownMenuItem>
+                    ) : null}
                     {availableDocumentAiActionSet.has('review') ? (
                       <DropdownMenuItem
                         className="items-start gap-2.5 rounded-lg px-2 py-1.5"

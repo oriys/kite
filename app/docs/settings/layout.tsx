@@ -3,7 +3,7 @@ import { SettingsSidebar } from '@/components/settings/settings-sidebar'
 
 export const metadata: Metadata = {
   title: 'Settings — Kite',
-  description: 'Manage workspace members, teams, and settings.',
+  description: 'Manage personal preferences and workspace administration.',
 }
 
 export default function SettingsLayout({

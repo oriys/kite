@@ -24,7 +24,15 @@ export interface TeamMember {
 
 export async function listTeams(workspaceId: string): Promise<Team[]> {
   const rows = await db
-    .select()
+    .select({
+      id: teams.id,
+      workspaceId: teams.workspaceId,
+      name: teams.name,
+      description: teams.description,
+      parentId: teams.parentId,
+      createdAt: teams.createdAt,
+      updatedAt: teams.updatedAt,
+    })
     .from(teams)
     .where(
       and(eq(teams.workspaceId, workspaceId), isNull(teams.deletedAt)),
@@ -39,7 +47,15 @@ export async function getTeam(
   teamId: string,
 ): Promise<Team | null> {
   const [row] = await db
-    .select()
+    .select({
+      id: teams.id,
+      workspaceId: teams.workspaceId,
+      name: teams.name,
+      description: teams.description,
+      parentId: teams.parentId,
+      createdAt: teams.createdAt,
+      updatedAt: teams.updatedAt,
+    })
     .from(teams)
     .where(
       and(
@@ -98,7 +114,13 @@ export async function updateTeam(
   const [updated] = await db
     .update(teams)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(teams.id, teamId), eq(teams.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(teams.id, teamId),
+        eq(teams.workspaceId, workspaceId),
+        isNull(teams.deletedAt),
+      ),
+    )
     .returning()
 
   await emitAuditEvent({
@@ -125,7 +147,13 @@ export async function deleteTeam(
   await db
     .update(teams)
     .set({ deletedAt: new Date() })
-    .where(and(eq(teams.id, teamId), eq(teams.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(teams.id, teamId),
+        eq(teams.workspaceId, workspaceId),
+        isNull(teams.deletedAt),
+      ),
+    )
 
   await emitAuditEvent({
     workspaceId,

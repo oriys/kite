@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { documentFeedback, documents, searchLogs } from '@/lib/schema'
-import { eq, and, sql, desc, isNull } from 'drizzle-orm'
+import { eq, and, sql, desc, asc, isNull } from 'drizzle-orm'
 
 export async function submitFeedback(data: {
   documentId: string
@@ -39,24 +39,32 @@ export async function getDocumentFeedbackSummary(documentId: string) {
 }
 
 export async function getWorkspaceFeedbackRanking(workspaceId: string, limit = 20) {
+  const helpfulCount = sql<number>`
+    count(*) filter (where ${documentFeedback.isHelpful} = true)::int
+  `
+  const notHelpfulCount = sql<number>`
+    count(*) filter (where ${documentFeedback.isHelpful} = false)::int
+  `
+  const ratio = sql<number>`
+    case when count(*) > 0
+      then (count(*) filter (where ${documentFeedback.isHelpful} = true))::float / count(*)
+      else 0
+    end
+  `
+
   return db
     .select({
       documentId: documentFeedback.documentId,
       title: documents.title,
-      helpful: sql<number>`count(*) filter (where ${documentFeedback.isHelpful} = true)::int`,
-      notHelpful: sql<number>`count(*) filter (where ${documentFeedback.isHelpful} = false)::int`,
-      ratio: sql<number>`
-        case when count(*) > 0
-          then (count(*) filter (where ${documentFeedback.isHelpful} = true))::float / count(*)
-          else 0
-        end
-      `,
+      helpful: helpfulCount,
+      notHelpful: notHelpfulCount,
+      ratio,
     })
     .from(documentFeedback)
     .innerJoin(documents, eq(documentFeedback.documentId, documents.id))
     .where(and(eq(documents.workspaceId, workspaceId), isNull(documents.deletedAt)))
     .groupBy(documentFeedback.documentId, documents.title)
-    .orderBy(sql`ratio asc`)
+    .orderBy(asc(ratio))
     .limit(limit)
 }
 

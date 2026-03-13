@@ -40,10 +40,25 @@ export async function listTemplates(
   ]
   if (category) conditions.push(eq(documentTemplates.category, category))
 
-  return db.query.documentTemplates.findMany({
-    where: and(...conditions),
-    orderBy: [desc(documentTemplates.usageCount), desc(documentTemplates.createdAt)],
-  })
+  return db
+    .select({
+      id: documentTemplates.id,
+      workspaceId: documentTemplates.workspaceId,
+      name: documentTemplates.name,
+      description: documentTemplates.description,
+      category: documentTemplates.category,
+      isBuiltIn: documentTemplates.isBuiltIn,
+      usageCount: documentTemplates.usageCount,
+      createdBy: documentTemplates.createdBy,
+      createdAt: documentTemplates.createdAt,
+      updatedAt: documentTemplates.updatedAt,
+    })
+    .from(documentTemplates)
+    .where(and(...conditions))
+    .orderBy(
+      desc(documentTemplates.usageCount),
+      desc(documentTemplates.createdAt),
+    )
 }
 
 export async function getTemplate(id: string, workspaceId: string) {

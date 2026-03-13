@@ -4,7 +4,12 @@ import { eq, and, isNull } from 'drizzle-orm'
 
 export async function listPartnerGroups(workspaceId: string) {
   return db
-    .select()
+    .select({
+      id: partnerGroups.id,
+      workspaceId: partnerGroups.workspaceId,
+      name: partnerGroups.name,
+      createdAt: partnerGroups.createdAt,
+    })
     .from(partnerGroups)
     .where(and(eq(partnerGroups.workspaceId, workspaceId), isNull(partnerGroups.deletedAt)))
     .orderBy(partnerGroups.createdAt)

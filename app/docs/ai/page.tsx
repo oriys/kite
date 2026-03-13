@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 
+import { FeatureGuard } from '@/components/docs/feature-guard'
 import { DocAiManagerPage } from '@/components/docs/doc-ai-manager-page'
 
 export const metadata: Metadata = {
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 }
 
 export default function DocAiPage() {
-  return <DocAiManagerPage />
+  return (
+    <FeatureGuard featureId="aiWorkspace">
+      <DocAiManagerPage />
+    </FeatureGuard>
+  )
 }

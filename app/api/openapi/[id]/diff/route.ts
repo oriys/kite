@@ -3,7 +3,7 @@ import { withWorkspaceAuth, notFound, badRequest } from '@/lib/api-utils'
 import { parseOpenAPISpec } from '@/lib/openapi/parser'
 import { diffEndpoints } from '@/lib/openapi/differ'
 import {
-  getOpenapiSource,
+  getOpenapiSourceWithContent,
   getLatestSnapshot,
 } from '@/lib/queries/openapi'
 
@@ -19,7 +19,7 @@ export async function GET(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getOpenapiSource(id)
+  const source = await getOpenapiSourceWithContent(id)
 
   if (!source || source.workspaceId !== ctx.workspaceId) {
     return notFound()

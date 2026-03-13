@@ -88,7 +88,7 @@ export function DocsAiMenu({
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="font-medium text-foreground">AI Prompts</span>
                 <span className="text-xs leading-5 text-muted-foreground">
-                  Adjust system and action prompts for this browser.
+                  Adjust system and action prompts for this workspace.
                 </span>
               </span>
               {pathname.startsWith('/docs/ai/prompts') ? (

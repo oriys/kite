@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
+import {
+  getOutboundRequestErrorMessage,
+  parsePublicHttpUrl,
+} from '@/lib/outbound-http'
 import { saveRequestHistory } from '@/lib/queries/api-environments'
 
 /**
@@ -20,18 +24,9 @@ export async function POST(request: NextRequest) {
 
   let targetUrl: URL
   try {
-    targetUrl = new URL(url)
-  } catch {
-    return badRequest('Invalid URL')
-  }
-
-  // Disallow internal requests
-  if (
-    targetUrl.hostname === 'localhost' ||
-    targetUrl.hostname === '127.0.0.1' ||
-    targetUrl.hostname === '0.0.0.0'
-  ) {
-    return badRequest('Cannot proxy to localhost')
+    targetUrl = parsePublicHttpUrl(url)
+  } catch (error) {
+    return badRequest(error instanceof Error ? error.message : 'Invalid URL')
   }
 
   const reqHeaders: Record<string, string> = {}
@@ -48,6 +43,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const fetchOptions: RequestInit = {
+      cache: 'no-store',
       method: method.toUpperCase(),
       headers: reqHeaders,
       signal: AbortSignal.timeout(30000),
@@ -79,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        error: err instanceof Error ? err.message : 'Request failed',
+        error: getOutboundRequestErrorMessage(err, 30_000),
         durationMs,
       },
       { status: 502 },

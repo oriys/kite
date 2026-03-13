@@ -3,10 +3,17 @@ import { db } from '../db'
 import { apiVersions, documents } from '../schema'
 
 export async function listApiVersions(workspaceId: string) {
-  return db.query.apiVersions.findMany({
-    where: and(eq(apiVersions.workspaceId, workspaceId), isNull(apiVersions.deletedAt)),
-    orderBy: [asc(apiVersions.sortOrder), asc(apiVersions.createdAt)],
-  })
+  return db
+    .select({
+      id: apiVersions.id,
+      label: apiVersions.label,
+      slug: apiVersions.slug,
+      status: apiVersions.status,
+      isDefault: apiVersions.isDefault,
+    })
+    .from(apiVersions)
+    .where(and(eq(apiVersions.workspaceId, workspaceId), isNull(apiVersions.deletedAt)))
+    .orderBy(asc(apiVersions.sortOrder), asc(apiVersions.createdAt))
 }
 
 export async function getApiVersion(id: string) {
@@ -104,13 +111,24 @@ export async function cloneVersionDocuments(
   targetVersionId: string,
   workspaceId: string,
 ) {
-  const sourceDocs = await db.query.documents.findMany({
-    where: and(
+  const sourceDocs = await db
+    .select({
+      workspaceId: documents.workspaceId,
+      title: documents.title,
+      content: documents.content,
+      summary: documents.summary,
+      status: documents.status,
+      visibility: documents.visibility,
+      createdBy: documents.createdBy,
+    })
+    .from(documents)
+    .where(
+      and(
       eq(documents.apiVersionId, sourceVersionId),
       eq(documents.workspaceId, workspaceId),
       isNull(documents.deletedAt),
-    ),
-  })
+      ),
+    )
 
   if (sourceDocs.length === 0) return []
 

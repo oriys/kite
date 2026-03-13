@@ -1,8 +1,14 @@
-import { requestAiTextCompletion } from '@/lib/ai-server'
+import {
+  requestAiTextCompletion,
+  resolveAiModelSelection,
+  resolveWorkspaceAiProviders,
+} from '@/lib/ai-server'
 import {
   isDocumentTitleMissing,
   UNTITLED_DOCUMENT_TITLE,
 } from '@/lib/documents'
+import { getAiWorkspaceSettings } from '@/lib/queries/ai'
+import { logServerError } from '@/lib/server-errors'
 
 const MAX_SUMMARY_SOURCE_LENGTH = 6000
 const MAX_SUMMARY_RESULT_LENGTH = 120
@@ -122,6 +128,7 @@ function extractStructuredMetadata(raw: string) {
 }
 
 export async function generateDocumentMetadata(input: {
+  workspaceId: string
   title: string
   content: string
 }) {
@@ -139,7 +146,28 @@ export async function generateDocumentMetadata(input: {
   const sourceText = plainContent.slice(0, MAX_SUMMARY_SOURCE_LENGTH)
 
   try {
+    const [providers, workspaceSettings] = await Promise.all([
+      resolveWorkspaceAiProviders(input.workspaceId),
+      getAiWorkspaceSettings(input.workspaceId),
+    ])
+
+    const selection = resolveAiModelSelection({
+      defaultModelId: workspaceSettings?.defaultModelId ?? null,
+      enabledModelIds: Array.isArray(workspaceSettings?.enabledModelIds)
+        ? workspaceSettings.enabledModelIds.filter(
+            (value): value is string => typeof value === 'string',
+          )
+        : [],
+      providers,
+    })
+
+    if (!selection) {
+      throw new Error('No AI model configured for document metadata generation.')
+    }
+
     const completion = await requestAiTextCompletion({
+      provider: selection.provider,
+      model: selection.modelId,
       systemPrompt: [
         'You generate document metadata for an editor.',
         'Return strict JSON only with exactly two string fields: "summary" and "title".',
@@ -183,7 +211,14 @@ export async function generateDocumentMetadata(input: {
           )
         : '',
     }
-  } catch {
+  } catch (error) {
+    logServerError('Failed to generate document metadata with AI.', error, {
+      workspaceId: input.workspaceId,
+      titleLength: title.length,
+      contentLength: sourceText.length,
+      shouldGenerateTitle,
+    })
+
     return {
       summary: createFallbackSummary(title, sourceText),
       title: shouldGenerateTitle ? createFallbackTitle(input.content) : '',
@@ -192,6 +227,7 @@ export async function generateDocumentMetadata(input: {
 }
 
 export async function generateDocumentSummary(input: {
+  workspaceId: string
   title: string
   content: string
 }) {

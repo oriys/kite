@@ -11,6 +11,16 @@ import type { ParsedEndpoint } from '@/lib/openapi/parser'
 type NewOpenapiSource = typeof openapiSources.$inferInsert
 type OpenapiSource = typeof openapiSources.$inferSelect
 
+async function hasOpenapiSource(id: string) {
+  const [source] = await db
+    .select({ id: openapiSources.id })
+    .from(openapiSources)
+    .where(and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)))
+    .limit(1)
+
+  return Boolean(source)
+}
+
 export async function createOpenapiSource(
   data: Omit<NewOpenapiSource, 'id' | 'createdAt' | 'lastSyncedAt'>,
 ): Promise<OpenapiSource> {
@@ -24,23 +34,58 @@ export async function createOpenapiSource(
 export async function getOpenapiSource(id: string) {
   return db.query.openapiSources.findFirst({
     where: and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)),
+    columns: {
+      id: true,
+      workspaceId: true,
+      name: true,
+      sourceType: true,
+      sourceUrl: true,
+      parsedVersion: true,
+      openapiVersion: true,
+      lastSyncedAt: true,
+      createdAt: true,
+    },
     with: {
       snapshots: {
         orderBy: [desc(openapiSnapshots.snapshotAt)],
         limit: 5,
+        columns: {
+          id: true,
+          sourceId: true,
+          parsedVersion: true,
+          checksum: true,
+          snapshotAt: true,
+        },
       },
     },
   })
 }
 
-export async function listOpenapiSources(workspaceId: string) {
-  return db.query.openapiSources.findMany({
-    where: and(
-      eq(openapiSources.workspaceId, workspaceId),
-      isNull(openapiSources.deletedAt),
-    ),
-    orderBy: [desc(openapiSources.createdAt)],
+export async function getOpenapiSourceWithContent(id: string) {
+  return db.query.openapiSources.findFirst({
+    where: and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)),
   })
+}
+
+export async function listOpenapiSources(workspaceId: string) {
+  return db
+    .select({
+      id: openapiSources.id,
+      name: openapiSources.name,
+      sourceType: openapiSources.sourceType,
+      parsedVersion: openapiSources.parsedVersion,
+      openapiVersion: openapiSources.openapiVersion,
+      createdAt: openapiSources.createdAt,
+      lastSyncedAt: openapiSources.lastSyncedAt,
+    })
+    .from(openapiSources)
+    .where(
+      and(
+        eq(openapiSources.workspaceId, workspaceId),
+        isNull(openapiSources.deletedAt),
+      ),
+    )
+    .orderBy(desc(openapiSources.createdAt))
 }
 
 /**
@@ -127,10 +172,7 @@ export async function deleteOpenapiSource(id: string) {
 }
 
 export async function getEndpointsBySource(sourceId: string) {
-  const source = await db.query.openapiSources.findFirst({
-    where: and(eq(openapiSources.id, sourceId), isNull(openapiSources.deletedAt)),
-  })
-  if (!source) return []
+  if (!(await hasOpenapiSource(sourceId))) return []
 
   return db.query.apiEndpoints.findMany({
     where: eq(apiEndpoints.sourceId, sourceId),
@@ -139,10 +181,7 @@ export async function getEndpointsBySource(sourceId: string) {
 }
 
 export async function getLatestSnapshot(sourceId: string) {
-  const source = await db.query.openapiSources.findFirst({
-    where: and(eq(openapiSources.id, sourceId), isNull(openapiSources.deletedAt)),
-  })
-  if (!source) return null
+  if (!(await hasOpenapiSource(sourceId))) return null
 
   return db.query.openapiSnapshots.findFirst({
     where: eq(openapiSnapshots.sourceId, sourceId),

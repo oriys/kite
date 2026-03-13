@@ -6,12 +6,30 @@ import {
   listAuthConfigs,
 } from '@/lib/queries/api-environments'
 
+function serializeAuthConfigSummary(config: {
+  id: string
+  workspaceId: string
+  name: string
+  authType: 'none' | 'bearer' | 'api_key' | 'basic' | 'oauth2'
+  createdAt: Date
+  updatedAt: Date
+}) {
+  return {
+    id: config.id,
+    workspaceId: config.workspaceId,
+    name: config.name,
+    authType: config.authType,
+    createdAt: config.createdAt,
+    updatedAt: config.updatedAt,
+  }
+}
+
 export async function GET() {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const items = await listAuthConfigs(result.ctx.workspaceId)
-  return NextResponse.json(items)
+  return NextResponse.json(items.map((item) => serializeAuthConfigSummary(item)))
 }
 
 export async function POST(request: NextRequest) {
@@ -37,5 +55,5 @@ export async function POST(request: NextRequest) {
     config,
   )
 
-  return NextResponse.json(ac, { status: 201 })
+  return NextResponse.json(serializeAuthConfigSummary(ac), { status: 201 })
 }

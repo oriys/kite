@@ -22,6 +22,7 @@ import {
   type AiCatalogModel,
   type AiTransformAction,
 } from '@/lib/ai'
+import { usePersonalSettings } from '@/components/personal-settings-provider'
 import { cn } from '@/lib/utils'
 import { DocAiPromptInlineManager } from '@/components/docs/doc-ai-prompt-inline-manager'
 import { DocAiGlyph } from '@/components/docs/doc-ai-glyph'
@@ -80,10 +81,12 @@ const AI_MENU_CLOSE_DELAY = 110
 
 const DEFAULT_SELECTION_AI_ACTIONS = [
   'polish',
+  'autofix',
   'shorten',
   'expand',
   'translate',
   'explain',
+  'diagram',
 ] as const satisfies readonly AiTransformAction[]
 
 type AiFlyoutDirection = 'right' | 'left' | 'bottom'
@@ -164,6 +167,60 @@ function ExplainActionIcon({ className }: { className?: string }) {
       />
       <path
         d="M6.5 6.75h3M6.5 9.25h2"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function AutoFixActionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M3.5 4.5h5M3.5 8h3M3.5 11.5h4.5M10.5 3.75l.9 1.8 2 .28-1.45 1.4.34 1.97-1.79-.93-1.79.93.34-1.97-1.45-1.4 2-.28.9-1.8Z"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function DiagramActionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
+      <rect
+        x="2.5"
+        y="3"
+        width="4"
+        height="3"
+        rx="0.75"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <rect
+        x="9.5"
+        y="3"
+        width="4"
+        height="3"
+        rx="0.75"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <rect
+        x="6"
+        y="10"
+        width="4"
+        height="3"
+        rx="0.75"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+      <path
+        d="M6.5 4.5h3M8 6v4"
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinecap="round"
@@ -266,6 +323,7 @@ export function DocBubbleMenu({
   onActiveModelChange,
   aiModelsLoading,
 }: BubbleMenuProps) {
+  const { featureVisibility } = usePersonalSettings()
   const router = useRouter()
   const [position, setPosition] = React.useState<BubbleMenuPosition | null>(null)
   const [isVisible, setIsVisible] = React.useState(false)
@@ -287,11 +345,14 @@ export function DocBubbleMenu({
   )
   const showRewriteActions =
     availableAiActionSet.has('polish') ||
+    availableAiActionSet.has('autofix') ||
     availableAiActionSet.has('shorten') ||
     availableAiActionSet.has('expand') ||
     availableAiActionSet.has('translate')
   const showAnalysisActions =
-    availableAiActionSet.has('explain') || allowCustomPrompt
+    availableAiActionSet.has('explain') ||
+    availableAiActionSet.has('diagram') ||
+    allowCustomPrompt
   const hasAnyActions = formattingEnabled || commentsEnabled || showRewriteActions || showAnalysisActions
   const aiActionsDisabled =
     Boolean(aiPendingAction) || aiModelsLoading || enabledModels.length === 0 || !activeModel
@@ -716,6 +777,25 @@ export function DocBubbleMenu({
                         </DropdownMenuItem>
                       ) : null}
 
+                      {availableAiActionSet.has('autofix') ? (
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          disabled={aiActionsDisabled}
+                          onMouseEnter={closeAiFlyoutDelayed}
+                          onFocus={() => openAiFlyoutImmediate(null)}
+                          onSelect={() => {
+                            onAiAction('autofix')
+                            closeAiMenu()
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<AutoFixActionIcon className="size-4" />}
+                            title={AI_ACTION_LABELS.autofix}
+                            description="Correct spelling and formatting only."
+                          />
+                        </DropdownMenuItem>
+                      ) : null}
+
                       {availableAiActionSet.has('shorten') ? (
                         <DropdownMenuItem
                           className="rounded-lg px-2 py-2"
@@ -793,6 +873,24 @@ export function DocBubbleMenu({
                       <AiMenuItemContent
                         icon={<ExplainActionIcon className="size-4" />}
                         title={AI_ACTION_LABELS.explain}
+                      />
+                    </DropdownMenuItem>
+                  ) : null}
+
+                  {availableAiActionSet.has('diagram') ? (
+                    <DropdownMenuItem
+                      className="rounded-lg px-2 py-2"
+                      disabled={aiActionsDisabled}
+                      onMouseEnter={closeAiFlyoutDelayed}
+                      onFocus={() => openAiFlyoutImmediate(null)}
+                      onSelect={() => {
+                        onAiAction('diagram')
+                        closeAiMenu()
+                      }}
+                    >
+                      <AiMenuItemContent
+                        icon={<DiagramActionIcon className="size-4" />}
+                        title={AI_ACTION_LABELS.diagram}
                       />
                     </DropdownMenuItem>
                   ) : null}
@@ -879,40 +977,55 @@ export function DocBubbleMenu({
                       </DropdownMenuItem>
                     )}
 
-                    <DropdownMenuSeparator />
+                    {featureVisibility.aiWorkspace ? (
+                      <>
+                        <DropdownMenuSeparator />
 
-                    <DropdownMenuItem
-                      className="rounded-lg px-2 py-2"
-                      onSelect={() => {
-                        closeAiMenu()
-                        router.push('/docs/ai')
-                      }}
-                    >
-                      <AiMenuItemContent
-                        icon={<ManageActionIcon className="size-4" />}
-                        title="Manage enabled AI"
-                      />
-                    </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          onSelect={() => {
+                            closeAiMenu()
+                            router.push('/docs/ai')
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<ManageActionIcon className="size-4" />}
+                            title="Manage enabled AI"
+                          />
+                        </DropdownMenuItem>
 
-                    <DropdownMenuItem
-                      className="rounded-lg px-2 py-2"
-                      onMouseEnter={(event) =>
-                        openAiFlyoutDelayed('prompts', event.currentTarget as HTMLElement)
-                      }
-                      onFocus={(event) =>
-                        openAiFlyoutImmediate('prompts', event.currentTarget as HTMLElement)
-                      }
-                      onSelect={(event) => {
-                        event.preventDefault()
-                        openAiFlyoutImmediate('prompts', event.currentTarget as HTMLElement)
-                      }}
-                    >
-                      <AiMenuItemContent
-                        icon={<PencilLine className="size-4" />}
-                        title="Manage AI prompts"
-                        trailing={<ChevronRight className="size-4 text-muted-foreground" />}
-                      />
-                    </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          onMouseEnter={(event) =>
+                            openAiFlyoutDelayed(
+                              'prompts',
+                              event.currentTarget as HTMLElement,
+                            )
+                          }
+                          onFocus={(event) =>
+                            openAiFlyoutImmediate(
+                              'prompts',
+                              event.currentTarget as HTMLElement,
+                            )
+                          }
+                          onSelect={(event) => {
+                            event.preventDefault()
+                            openAiFlyoutImmediate(
+                              'prompts',
+                              event.currentTarget as HTMLElement,
+                            )
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<PencilLine className="size-4" />}
+                            title="Manage AI prompts"
+                            trailing={
+                              <ChevronRight className="size-4 text-muted-foreground" />
+                            }
+                          />
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
                   </AiMenuCard>
                 ) : null}
 

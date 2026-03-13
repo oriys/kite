@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { FeatureGuard } from '@/components/docs/feature-guard'
 import { SpecUploadDialog } from '@/components/openapi/spec-upload-dialog'
 import { EndpointReference } from '@/components/openapi/endpoint-reference'
 import { SpecDiffViewer } from '@/components/openapi/spec-diff-viewer'
@@ -160,14 +161,17 @@ export default function OpenApiPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <RefreshCw className="size-5 animate-spin text-muted-foreground" />
-      </div>
+      <FeatureGuard featureId="openApi">
+        <div className="flex items-center justify-center py-20">
+          <RefreshCw className="size-5 animate-spin text-muted-foreground" />
+        </div>
+      </FeatureGuard>
     )
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <FeatureGuard featureId="openApi">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
@@ -349,11 +353,12 @@ export default function OpenApiPage() {
         </div>
       )}
 
-      <SpecUploadDialog
-        open={uploadOpen}
-        onOpenChange={setUploadOpen}
-        onSuccess={handleUploadSuccess}
-      />
-    </div>
+        <SpecUploadDialog
+          open={uploadOpen}
+          onOpenChange={setUploadOpen}
+          onSuccess={handleUploadSuccess}
+        />
+      </div>
+    </FeatureGuard>
   )
 }

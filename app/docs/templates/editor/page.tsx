@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 
+import { FeatureGuard } from '@/components/docs/feature-guard'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TemplateEditorPageClient } from '@/components/templates/template-editor-page'
 
@@ -14,8 +15,10 @@ function TemplateEditorPageFallback() {
 
 export default function TemplateEditorPage() {
   return (
-    <Suspense fallback={<TemplateEditorPageFallback />}>
-      <TemplateEditorPageClient />
-    </Suspense>
+    <FeatureGuard featureId="templates">
+      <Suspense fallback={<TemplateEditorPageFallback />}>
+        <TemplateEditorPageClient />
+      </Suspense>
+    </FeatureGuard>
   )
 }

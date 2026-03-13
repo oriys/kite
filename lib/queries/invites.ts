@@ -148,7 +148,15 @@ export async function acceptInvite(
   userId: string,
 ): Promise<{ workspaceId: string; role: MemberRole }> {
   const [invite] = await db
-    .select()
+    .select({
+      id: workspaceInvites.id,
+      workspaceId: workspaceInvites.workspaceId,
+      role: workspaceInvites.role,
+      type: workspaceInvites.type,
+      invitedBy: workspaceInvites.invitedBy,
+      expiresAt: workspaceInvites.expiresAt,
+      acceptedAt: workspaceInvites.acceptedAt,
+    })
     .from(workspaceInvites)
     .where(eq(workspaceInvites.token, token))
 
@@ -158,7 +166,7 @@ export async function acceptInvite(
 
   // Check if already a member
   const [existing] = await db
-    .select()
+    .select({ userId: workspaceMembers.userId })
     .from(workspaceMembers)
     .where(
       and(

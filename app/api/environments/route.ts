@@ -6,12 +6,32 @@ import {
   listEnvironments,
 } from '@/lib/queries/api-environments'
 
+function serializeEnvironmentSummary(environment: {
+  id: string
+  workspaceId: string
+  name: string
+  baseUrl: string
+  isDefault: boolean
+  createdAt: Date
+  updatedAt: Date
+}) {
+  return {
+    id: environment.id,
+    workspaceId: environment.workspaceId,
+    name: environment.name,
+    baseUrl: environment.baseUrl,
+    isDefault: environment.isDefault,
+    createdAt: environment.createdAt,
+    updatedAt: environment.updatedAt,
+  }
+}
+
 export async function GET() {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const items = await listEnvironments(result.ctx.workspaceId)
-  return NextResponse.json(items)
+  return NextResponse.json(items.map((item) => serializeEnvironmentSummary(item)))
 }
 
 export async function POST(request: NextRequest) {
@@ -38,5 +58,5 @@ export async function POST(request: NextRequest) {
     variables,
   )
 
-  return NextResponse.json(env, { status: 201 })
+  return NextResponse.json(serializeEnvironmentSummary(env), { status: 201 })
 }

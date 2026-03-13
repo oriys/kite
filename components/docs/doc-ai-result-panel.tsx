@@ -5,11 +5,14 @@ import { Check, RefreshCw, X } from 'lucide-react'
 import {
   AI_ACTION_LABELS,
   isAiAppendResultAction,
+  isAiDiagramAction,
+  isAiPreviewOnlyAction,
   isAiRewriteAction,
   type AiTransformAction,
 } from '@/lib/ai'
 import { type DocEditorAiPanelSide } from '@/lib/doc-editor-layout'
 import { cn } from '@/lib/utils'
+import { DocAiDiagramPreview } from '@/components/docs/doc-ai-diagram-preview'
 import { DocAiGlyph } from '@/components/docs/doc-ai-glyph'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -47,8 +50,12 @@ export function DocAiResultPanel({
   side = 'right',
   onClose,
 }: DocAiResultPanelProps) {
+  const isDiagram = isAiDiagramAction(action)
+  const effectivePreviewOnly = previewOnly || isAiPreviewOnlyAction(action)
   const documentTitle =
-    action === 'review'
+    isDiagram
+      ? 'Document diagram'
+      : action === 'review'
       ? 'Document review'
       : action === 'score'
         ? 'Document scorecard'
@@ -63,6 +70,8 @@ export function DocAiResultPanel({
   const description =
     previewOnly
       ? 'Preview the AI output here. This document is read-only in its current status, so applying changes is disabled.'
+      : isDiagram
+        ? 'Review the streamed analysis and embedded diagram here. Diagram previews stay in the panel and are not inserted into the document.'
       : scope === 'document' && isAiRewriteAction(action)
         ? 'Review the AI rewrite here. Accepting it will replace the current document.'
         : scope === 'document' && isAiAppendResultAction(action)
@@ -89,7 +98,10 @@ export function DocAiResultPanel({
   return (
     <aside
       className={cn(
-        'flex h-full min-h-0 flex-col overflow-hidden border-t border-border/70 bg-[linear-gradient(180deg,rgba(15,23,42,0.03),transparent_24%)] xl:border-t-0',
+        'flex h-full min-h-0 flex-col overflow-hidden border-t border-border/70 xl:border-t-0',
+        isDiagram
+          ? 'bg-background'
+          : 'bg-[linear-gradient(180deg,rgba(15,23,42,0.03),transparent_24%)]',
         side === 'left' ? 'xl:border-r' : 'xl:border-l',
       )}
     >
@@ -100,7 +112,11 @@ export function DocAiResultPanel({
               AI Result
             </p>
             <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-              {scope === 'document' ? documentTitle : 'Selection draft'}
+              {scope === 'document'
+                ? documentTitle
+                : isDiagram
+                  ? 'Selection diagram'
+                  : 'Selection draft'}
             </h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {description}
@@ -124,10 +140,10 @@ export function DocAiResultPanel({
           <Badge variant="outline" className="max-w-full truncate" title={modelId}>
             {modelId}
           </Badge>
-          {previewOnly ? <Badge variant="secondary">Preview only</Badge> : null}
+          {effectivePreviewOnly ? <Badge variant="secondary">Preview only</Badge> : null}
           <Badge variant={pending ? 'secondary' : 'outline'}>
             <DocAiGlyph className={cn('size-[0.8rem]', pending && 'animate-pulse')} />
-            {pending ? 'Refreshing' : 'Ready'}
+            {pending ? (isDiagram ? 'Streaming' : 'Refreshing') : 'Ready'}
           </Badge>
         </div>
         {customPrompt ? (
@@ -144,10 +160,14 @@ export function DocAiResultPanel({
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-5 py-5">
-          <MarkdownPreview
-            content={resultText}
-            className="prose-editorial max-w-none text-[15px] leading-7"
-          />
+          {isDiagram ? (
+            <DocAiDiagramPreview resultText={resultText} pending={pending} />
+          ) : (
+            <MarkdownPreview
+              content={resultText}
+              className="prose-editorial max-w-none text-[15px] leading-7"
+            />
+          )}
         </div>
       </ScrollArea>
 
@@ -160,7 +180,7 @@ export function DocAiResultPanel({
             <RefreshCw className={pending ? 'animate-spin' : undefined} />
             {pending ? 'Retrying…' : 'Retry'}
           </Button>
-          {!previewOnly ? (
+          {!effectivePreviewOnly ? (
             <Button onClick={onAccept} disabled={pending}>
               <Check />
               {acceptLabel}

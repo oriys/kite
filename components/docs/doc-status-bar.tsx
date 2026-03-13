@@ -248,7 +248,9 @@ export function DocStatusBar({
   const config = STATUS_CONFIG[doc.status]
   const wc = wordCount(doc.content)
   const recentVersions = doc.versions.slice(0, 6)
+  const totalVersions = doc.versionCount ?? doc.versions.length
   const [diffVersionId, setDiffVersionId] = React.useState<string | null>(null)
+  const hasSecondaryActions = doc.canDuplicate || doc.canDelete
 
   return (
     <div className={cn(
@@ -308,15 +310,15 @@ export function DocStatusBar({
           )}
         </span>
 
-        {doc.versions.length > 0 ? (
+        {totalVersions > 0 ? (
           <Popover onOpenChange={(open) => { if (!open) setDiffVersionId(null) }}>
             <PopoverTrigger asChild>
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-muted-foreground/80 transition-colors hover:bg-muted/45 hover:text-foreground"
               >
-                <span>{doc.versions.length}</span>
-                <span>{doc.versions.length === 1 ? 'revision' : 'revisions'}</span>
+                <span>{totalVersions}</span>
+                <span>{totalVersions === 1 ? 'revision' : 'revisions'}</span>
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" className={cn('p-0', diffVersionId ? 'w-[540px]' : 'w-80')}>
@@ -376,7 +378,7 @@ export function DocStatusBar({
       {/* Right — actions */}
       <div className="flex items-center gap-2">
         {/* Revert to draft (from review/published/archived) */}
-        {doc.status !== 'draft' && (
+        {doc.canTransition && doc.status !== 'draft' && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -407,30 +409,36 @@ export function DocStatusBar({
         )}
 
         {/* More actions */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs">
-              More
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onDuplicate}>
-              <Copy className="mr-2 size-3.5" />
-              Duplicate
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={onDelete}
-            >
-              <Trash2 className="mr-2 size-3.5" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {hasSecondaryActions ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs">
+                More
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {doc.canDuplicate ? (
+                <DropdownMenuItem onClick={onDuplicate}>
+                  <Copy className="mr-2 size-3.5" />
+                  Duplicate
+                </DropdownMenuItem>
+              ) : null}
+              {doc.canDuplicate && doc.canDelete ? <DropdownMenuSeparator /> : null}
+              {doc.canDelete ? (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={onDelete}
+                >
+                  <Trash2 className="mr-2 size-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
 
         {/* Primary lifecycle action */}
-        {config.next && config.nextLabel && (
+        {doc.canTransition && config.next && config.nextLabel && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button size="sm" className="h-7 px-3 text-xs">

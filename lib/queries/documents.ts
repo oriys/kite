@@ -1,4 +1,14 @@
-import { eq, and, desc, notInArray, sql, isNull } from 'drizzle-orm'
+import {
+  and,
+  desc,
+  eq,
+  ilike,
+  isNull,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
 import { db } from '../db'
 import {
   documents,
@@ -34,8 +44,9 @@ export async function listDocuments(
   limit = 100,
   offset = 0,
   apiVersionId?: string,
+  searchQuery?: string,
 ) {
-  const conditions = [
+  const conditions: SQL<unknown>[] = [
     eq(documents.workspaceId, workspaceId),
     isNull(documents.deletedAt),
   ]
@@ -45,20 +56,39 @@ export async function listDocuments(
   if (apiVersionId) {
     conditions.push(eq(documents.apiVersionId, apiVersionId))
   }
+  if (searchQuery?.trim()) {
+    const pattern = `%${searchQuery.trim()}%`
+    conditions.push(
+      or(
+        ilike(documents.title, pattern),
+        ilike(documents.summary, pattern),
+        ilike(documents.content, pattern),
+      )!,
+    )
+  }
 
-  const docs = await db.query.documents.findMany({
-    where: and(...conditions),
-    orderBy: [desc(documents.updatedAt)],
-    limit,
-    offset,
-    with: {
-      versions: {
-        orderBy: [desc(documentVersions.savedAt)],
-      },
-    },
-  })
-
-  return docs
+  return db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      content: sql<string>`''`,
+      summary: documents.summary,
+      preview:
+        sql<string>`coalesce(nullif(${documents.summary}, ''), left(${documents.content}, 240))`,
+      status: documents.status,
+      visibility: documents.visibility,
+      locale: documents.locale,
+      apiVersionId: documents.apiVersionId,
+      createdAt: documents.createdAt,
+      updatedAt: documents.updatedAt,
+      workspaceId: documents.workspaceId,
+      createdBy: documents.createdBy,
+    })
+    .from(documents)
+    .where(and(...conditions))
+    .orderBy(desc(documents.updatedAt))
+    .limit(limit)
+    .offset(offset)
 }
 
 export async function getDocument(id: string, workspaceId: string) {
@@ -71,11 +101,22 @@ export async function getDocument(id: string, workspaceId: string) {
     with: {
       versions: {
         orderBy: [desc(documentVersions.savedAt)],
+        limit: 6,
       },
     },
   })
 
-  return doc ?? null
+  if (!doc) return null
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(documentVersions)
+    .where(eq(documentVersions.documentId, id))
+
+  return {
+    ...doc,
+    versionCount: Number(count),
+  }
 }
 
 export async function createDocument(

@@ -1,4 +1,4 @@
-import { desc, eq, and } from 'drizzle-orm'
+import { desc, eq, and, inArray, type SQL } from 'drizzle-orm'
 import { db } from '../db'
 import {
   approvalRequests,
@@ -51,35 +51,76 @@ export async function createApprovalRequest(
 
 export async function listApprovalRequests(
   workspaceId: string,
-  options: { status?: ApprovalStatus; reviewerId?: string; limit?: number; offset?: number } = {},
+  options: {
+    status?: ApprovalStatus
+    reviewerId?: string
+    documentId?: string
+    limit?: number
+    offset?: number
+  } = {},
 ) {
-  const { status, reviewerId, limit = 30, offset = 0 } = options
-  const conditions = [eq(approvalRequests.workspaceId, workspaceId)]
+  const { status, reviewerId, documentId, limit = 30, offset = 0 } = options
+  const conditions: SQL<unknown>[] = [eq(approvalRequests.workspaceId, workspaceId)]
   if (status) conditions.push(eq(approvalRequests.status, status))
+  if (documentId) conditions.push(eq(approvalRequests.documentId, documentId))
+  if (reviewerId) {
+    const reviewerRequestIds = db
+      .select({ requestId: approvalReviewers.requestId })
+      .from(approvalReviewers)
+      .where(eq(approvalReviewers.reviewerId, reviewerId))
+
+    conditions.push(inArray(approvalRequests.id, reviewerRequestIds))
+  }
 
   const query = db.query.approvalRequests.findMany({
     where: and(...conditions),
     orderBy: [desc(approvalRequests.createdAt)],
     limit,
     offset,
+    columns: {
+      id: true,
+      documentId: true,
+      status: true,
+      title: true,
+      description: true,
+      requiredApprovals: true,
+      deadline: true,
+      createdAt: true,
+    },
     with: {
-      document: true,
-      requester: true,
+      document: {
+        columns: {
+          id: true,
+          title: true,
+        },
+      },
+      requester: {
+        columns: {
+          id: true,
+          name: true,
+          image: true,
+        },
+      },
       reviewers: {
-        with: { reviewer: true },
+        columns: {
+          id: true,
+          reviewerId: true,
+          decision: true,
+        },
+        with: {
+          reviewer: {
+            columns: {
+              id: true,
+              name: true,
+              image: true,
+            },
+          },
+        },
       },
     },
   })
 
-  const results = await query
-
-  if (reviewerId) {
-    return results.filter((r) =>
-      r.reviewers.some((rev) => rev.reviewerId === reviewerId),
-    )
-  }
-
-  return results
+  return query
 }
 
 export async function getApprovalRequest(id: string) {

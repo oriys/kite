@@ -1,4 +1,5 @@
 export type DocStatus = 'draft' | 'review' | 'published' | 'archived'
+export type DocPermissionLevel = 'view' | 'edit' | 'manage'
 export type DocAnnotationStatus = 'open' | 'resolved'
 export type DocEvaluationScore = 1 | 2 | 3 | 4 | 5
 
@@ -19,6 +20,19 @@ export interface DocVersion {
   content: string
   savedAt: string
   wordCount: number
+}
+
+export interface DocPermissionAssignment {
+  userId: string
+  name: string | null
+  email: string | null
+  image: string | null
+  role: 'owner' | 'admin' | 'member' | 'guest'
+  status: 'active' | 'disabled'
+  level: DocPermissionLevel
+  grantedBy: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface DocAnnotation {
@@ -47,6 +61,8 @@ export interface Doc {
   title: string
   content: string
   summary: string
+  preview?: string
+  wordCount?: number
   status: DocStatus
   visibility: 'public' | 'partner' | 'private'
   locale: string | null
@@ -55,6 +71,14 @@ export interface Doc {
   updatedAt: string
   workspaceId: string
   createdBy: string | null
+  accessLevel: DocPermissionLevel | null
+  hasCustomPermissions: boolean
+  canEdit: boolean
+  canManagePermissions: boolean
+  canDelete: boolean
+  canDuplicate: boolean
+  canTransition: boolean
+  versionCount?: number
   versions: DocVersion[]
 }
 

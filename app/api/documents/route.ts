@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { listDocuments, createDocument } from '@/lib/queries/documents'
+import {
+  attachDocumentAccess,
+  buildDocumentAccessMap,
+} from '@/lib/queries/document-permissions'
 import { isValidStatus, MAX_TITLE_LENGTH, MAX_CONTENT_SIZE } from '@/lib/constants'
 import type { DocStatus } from '@/lib/documents'
 
@@ -12,6 +16,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const rawStatus = searchParams.get('status')
   const rawApiVersionId = searchParams.get('api_version_id')
+  const rawSearchQuery = searchParams.get('q')
 
   let statusFilter: DocStatus | undefined
   if (rawStatus) {
@@ -19,8 +24,25 @@ export async function GET(request: NextRequest) {
     statusFilter = rawStatus
   }
 
-  const docs = await listDocuments(result.ctx.workspaceId, statusFilter, 100, 0, rawApiVersionId ?? undefined)
-  return NextResponse.json(docs)
+  const docs = await listDocuments(
+    result.ctx.workspaceId,
+    statusFilter,
+    100,
+    0,
+    rawApiVersionId ?? undefined,
+    rawSearchQuery?.trim() || undefined,
+  )
+  const accessMap = await buildDocumentAccessMap(
+    docs,
+    result.ctx.userId,
+    result.ctx.role,
+  )
+
+  return NextResponse.json(
+    docs
+      .filter((doc) => accessMap.get(doc.id)?.canView)
+      .map((doc) => attachDocumentAccess(doc, accessMap.get(doc.id)!)),
+  )
 }
 
 export async function POST(request: NextRequest) {
@@ -43,5 +65,14 @@ export async function POST(request: NextRequest) {
     result.ctx.userId,
   )
 
-  return NextResponse.json(doc, { status: 201 })
+  const accessMap = await buildDocumentAccessMap(
+    [doc],
+    result.ctx.userId,
+    result.ctx.role,
+  )
+
+  return NextResponse.json(
+    attachDocumentAccess(doc, accessMap.get(doc.id)!),
+    { status: 201 },
+  )
 }

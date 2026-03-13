@@ -13,10 +13,16 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const status = searchParams.get('status') as 'pending' | 'approved' | 'rejected' | 'cancelled' | null
   const reviewerId = searchParams.get('reviewerId')
+  const documentId = searchParams.get('documentId')
+  const limit = Math.min(Number(searchParams.get('limit') ?? 30), 100)
+  const offset = Number(searchParams.get('offset') ?? 0)
 
   const items = await listApprovalRequests(result.ctx.workspaceId, {
     status: status ?? undefined,
     reviewerId: reviewerId ?? undefined,
+    documentId: documentId ?? undefined,
+    limit,
+    offset,
   })
 
   return NextResponse.json(items)

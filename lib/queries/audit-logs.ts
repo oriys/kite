@@ -54,31 +54,29 @@ export async function listAuditLogs(
   if (from) conditions.push(gte(auditLogs.createdAt, from))
   if (to) conditions.push(lte(auditLogs.createdAt, to))
 
-  const logs = await db
-    .select({
-      id: auditLogs.id,
-      actorId: auditLogs.actorId,
-      actorName: users.name,
-      actorImage: users.image,
-      action: auditLogs.action,
-      resourceType: auditLogs.resourceType,
-      resourceId: auditLogs.resourceId,
-      resourceTitle: auditLogs.resourceTitle,
-      metadata: auditLogs.metadata,
-      ipAddress: auditLogs.ipAddress,
-      createdAt: auditLogs.createdAt,
-    })
-    .from(auditLogs)
-    .leftJoin(users, eq(auditLogs.actorId, users.id))
-    .where(and(...conditions))
-    .orderBy(desc(auditLogs.createdAt))
-    .limit(limit)
-    .offset(offset)
-
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(auditLogs)
-    .where(and(...conditions))
+  const [logs, [{ count }]] = await Promise.all([
+    db
+      .select({
+        id: auditLogs.id,
+        actorName: users.name,
+        actorImage: users.image,
+        action: auditLogs.action,
+        resourceType: auditLogs.resourceType,
+        resourceTitle: auditLogs.resourceTitle,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.actorId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(auditLogs)
+      .where(and(...conditions)),
+  ])
 
   return { logs, total: Number(count) }
 }

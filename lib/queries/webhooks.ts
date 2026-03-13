@@ -1,5 +1,9 @@
 import { desc, eq, and, isNull } from 'drizzle-orm'
 import { db } from '../db'
+import {
+  getOutboundRequestErrorMessage,
+  parsePublicHttpUrl,
+} from '../outbound-http'
 import { webhooks, webhookDeliveries } from '../schema'
 
 export async function createWebhook(
@@ -18,10 +22,19 @@ export async function createWebhook(
 }
 
 export async function listWebhooks(workspaceId: string) {
-  return db.query.webhooks.findMany({
-    where: and(eq(webhooks.workspaceId, workspaceId), isNull(webhooks.deletedAt)),
-    orderBy: [desc(webhooks.createdAt)],
-  })
+  return db
+    .select({
+      id: webhooks.id,
+      name: webhooks.name,
+      url: webhooks.url,
+      events: webhooks.events,
+      isActive: webhooks.isActive,
+      createdAt: webhooks.createdAt,
+      updatedAt: webhooks.updatedAt,
+    })
+    .from(webhooks)
+    .where(and(eq(webhooks.workspaceId, workspaceId), isNull(webhooks.deletedAt)))
+    .orderBy(desc(webhooks.createdAt))
 }
 
 export async function getWebhook(id: string) {
@@ -59,12 +72,22 @@ export async function listWebhookDeliveries(
   limit = 20,
   offset = 0,
 ) {
-  return db.query.webhookDeliveries.findMany({
-    where: eq(webhookDeliveries.webhookId, webhookId),
-    orderBy: [desc(webhookDeliveries.createdAt)],
-    limit,
-    offset,
-  })
+  return db
+    .select({
+      id: webhookDeliveries.id,
+      event: webhookDeliveries.event,
+      status: webhookDeliveries.status,
+      statusCode: webhookDeliveries.statusCode,
+      errorMessage: webhookDeliveries.errorMessage,
+      attemptCount: webhookDeliveries.attemptCount,
+      deliveredAt: webhookDeliveries.deliveredAt,
+      createdAt: webhookDeliveries.createdAt,
+    })
+    .from(webhookDeliveries)
+    .where(eq(webhookDeliveries.webhookId, webhookId))
+    .orderBy(desc(webhookDeliveries.createdAt))
+    .limit(limit)
+    .offset(offset)
 }
 
 /** Dispatch a webhook event to all matching webhooks in a workspace */
@@ -107,7 +130,8 @@ async function deliverWebhook(
   let errorMessage: string | null = null
 
   try {
-    const response = await fetch(wh.url, {
+    const targetUrl = parsePublicHttpUrl(wh.url)
+    const response = await fetch(targetUrl.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -122,7 +146,7 @@ async function deliverWebhook(
     status = response.ok ? 'success' : 'failed'
     if (!response.ok) errorMessage = `HTTP ${response.status}`
   } catch (err) {
-    errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    errorMessage = getOutboundRequestErrorMessage(err, 10_000)
   }
 
   await db.insert(webhookDeliveries).values({

@@ -31,6 +31,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { VersionSwitcher } from '@/components/version-switcher'
 import { TemplatePicker } from '@/components/template-picker'
+import { usePersonalSettings } from '@/components/personal-settings-provider'
 
 const statuses: (DocStatus | 'all')[] = ['all', 'draft', 'review', 'published', 'archived']
 const SUMMARY_REFRESH_INTERVAL_MS = 1500
@@ -38,28 +39,35 @@ const SUMMARY_REFRESH_MAX_ATTEMPTS = 6
 
 export default function DocsPage() {
   const router = useRouter()
+  const { featureVisibility } = usePersonalSettings()
   const [filter, setFilter] = React.useState<DocStatus | 'all'>('all')
   const [currentVersionId, setCurrentVersionId] = React.useState<string | null>(null)
-  const { items, loading, create, remove, refresh } = useDocuments(undefined, currentVersionId)
   const [newTitle, setNewTitle] = React.useState('')
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const pendingSummaryRefreshRef = React.useRef(false)
+  const { items, loading, create, remove, refresh } = useDocuments(
+    undefined,
+    currentVersionId,
+    debouncedSearchQuery,
+  )
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim())
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [searchQuery])
 
   const filteredItems = React.useMemo(
     () => {
-      let result = filter === 'all' ? items : items.filter((doc) => doc.status === filter)
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase()
-        result = result.filter(
-          (doc) =>
-            doc.title.toLowerCase().includes(q) ||
-            doc.content.toLowerCase().includes(q),
-        )
-      }
-      return result
+      return filter === 'all' ? items : items.filter((doc) => doc.status === filter)
     },
-    [filter, items, searchQuery],
+    [filter, items],
   )
 
   const counts = React.useMemo(() => {
@@ -71,6 +79,7 @@ export default function DocsPage() {
   }, [items])
 
   React.useEffect(() => {
+    if (debouncedSearchQuery) return
     if (loading || pendingSummaryRefreshRef.current) return
 
     const queuedIds = getPendingDocumentSummaryIds()
@@ -89,8 +98,10 @@ export default function DocsPage() {
         const queuedDoc = docs.find((doc) => doc.id === queuedId)
         if (
           !queuedDoc ||
-          !queuedDoc.content.trim() ||
-          (queuedDoc.summary.trim() && !isDocumentTitleMissing(queuedDoc.title))
+          (
+            queuedDoc.summary.trim().length > 0 ||
+            !isDocumentTitleMissing(queuedDoc.title)
+          )
         ) {
           clearPendingDocumentSummary(queuedId)
         }
@@ -118,7 +129,7 @@ export default function DocsPage() {
         window.clearTimeout(timer)
       }
     }
-  }, [loading, refresh])
+  }, [debouncedSearchQuery, loading, refresh])
 
   const handleCreate = async () => {
     const title = newTitle.trim() || 'Untitled'
@@ -139,7 +150,7 @@ export default function DocsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3">
-          <TemplatePicker />
+          {featureVisibility.templates ? <TemplatePicker /> : null}
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-8">

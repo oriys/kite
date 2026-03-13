@@ -1,10 +1,10 @@
 'use client'
 
 import * as React from 'react'
+import { toast } from 'sonner'
+
 import {
   AI_MODEL_PREFERENCES_EVENT,
-  AI_MODEL_PREFERENCES_STORAGE_KEY,
-  createDefaultAiModelPreferences,
   sanitizeAiModelPreferences,
   type AiCatalogModel,
   type AiModelPreferences,
@@ -17,99 +17,164 @@ function arePreferencesEqual(
   return (
     left.activeModelId === right.activeModelId &&
     left.enabledModelIds.length === right.enabledModelIds.length &&
-    left.enabledModelIds.every((value, index) => value === right.enabledModelIds[index])
+    left.enabledModelIds.every(
+      (value, index) => value === right.enabledModelIds[index],
+    )
   )
 }
 
-function readStoredPreferences() {
-  if (typeof window === 'undefined') return null
+function getInitialPreferences(
+  models: AiCatalogModel[],
+  defaultModelId?: string,
+  initialEnabledModelIds: string[] = [],
+) {
+  const sanitized = sanitizeAiModelPreferences(
+    {
+      activeModelId: defaultModelId?.trim() || '',
+      enabledModelIds: initialEnabledModelIds,
+    },
+    models,
+  )
 
-  try {
-    const raw = window.localStorage.getItem(AI_MODEL_PREFERENCES_STORAGE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as Partial<AiModelPreferences>
-  } catch {
-    return null
+  if (
+    sanitized.enabledModelIds.length === 0 &&
+    sanitized.activeModelId === null &&
+    defaultModelId?.trim()
+  ) {
+    return {
+      activeModelId: null,
+      enabledModelIds: [],
+    } satisfies AiModelPreferences
   }
+
+  return sanitized
 }
 
-function persistPreferences(nextPreferences: AiModelPreferences) {
+function dispatchPreferencesEvent(preferences: AiModelPreferences) {
   if (typeof window === 'undefined') return
 
-  window.localStorage.setItem(
-    AI_MODEL_PREFERENCES_STORAGE_KEY,
-    JSON.stringify(nextPreferences),
+  window.dispatchEvent(
+    new CustomEvent<AiModelPreferences>(AI_MODEL_PREFERENCES_EVENT, {
+      detail: preferences,
+    }),
   )
-  window.dispatchEvent(new CustomEvent(AI_MODEL_PREFERENCES_EVENT))
+}
+
+async function parseResponseError(response: Response) {
+  const body = await response.json().catch(() => null)
+  return typeof body?.error === 'string'
+    ? body.error
+    : 'Unable to save AI model settings'
 }
 
 export function useAiPreferences(
   models: AiCatalogModel[],
   defaultModelId?: string,
+  initialEnabledModelIds: string[] = [],
 ) {
   const [preferences, setPreferences] = React.useState<AiModelPreferences>(() =>
-    createDefaultAiModelPreferences(models, defaultModelId),
+    getInitialPreferences(models, defaultModelId, initialEnabledModelIds),
   )
   const preferencesRef = React.useRef(preferences)
+  const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
     preferencesRef.current = preferences
   }, [preferences])
 
-  const syncPreferences = React.useCallback(() => {
-    const storedPreferences = readStoredPreferences()
-    const nextPreferences = storedPreferences
-      ? sanitizeAiModelPreferences(storedPreferences, models)
-      : createDefaultAiModelPreferences(models, defaultModelId)
+  React.useEffect(() => {
+    const nextPreferences = getInitialPreferences(
+      models,
+      defaultModelId,
+      initialEnabledModelIds,
+    )
 
     setPreferences((current) =>
       arePreferencesEqual(current, nextPreferences) ? current : nextPreferences,
     )
+    preferencesRef.current = nextPreferences
+  }, [defaultModelId, initialEnabledModelIds, models])
 
-    if (
-      !storedPreferences ||
-      !arePreferencesEqual(
-        sanitizeAiModelPreferences(storedPreferences, models),
-        nextPreferences,
+  React.useEffect(() => {
+    const handlePreferencesChange = (event: Event) => {
+      const nextPreferences = sanitizeAiModelPreferences(
+        (event as CustomEvent<AiModelPreferences>).detail,
+        models,
       )
-    ) {
-      persistPreferences(nextPreferences)
-    }
-  }, [defaultModelId, models])
 
-  React.useEffect(() => {
-    syncPreferences()
-  }, [syncPreferences])
-
-  React.useEffect(() => {
-    const handleStorage = (event: StorageEvent) => {
-      if (
-        event.key &&
-        event.key !== AI_MODEL_PREFERENCES_STORAGE_KEY
-      ) {
-        return
-      }
-
-      syncPreferences()
+      setPreferences((current) =>
+        arePreferencesEqual(current, nextPreferences) ? current : nextPreferences,
+      )
+      preferencesRef.current = nextPreferences
     }
 
-    const handleCustomEvent = () => {
-      syncPreferences()
-    }
-
-    window.addEventListener('storage', handleStorage)
-    window.addEventListener(AI_MODEL_PREFERENCES_EVENT, handleCustomEvent)
+    window.addEventListener(AI_MODEL_PREFERENCES_EVENT, handlePreferencesChange)
 
     return () => {
-      window.removeEventListener('storage', handleStorage)
-      window.removeEventListener(AI_MODEL_PREFERENCES_EVENT, handleCustomEvent)
+      window.removeEventListener(
+        AI_MODEL_PREFERENCES_EVENT,
+        handlePreferencesChange,
+      )
     }
-  }, [syncPreferences])
+  }, [models])
+
+  const persistPreferences = React.useCallback(
+    async (nextPreferences: AiModelPreferences, previous: AiModelPreferences) => {
+      setSaving(true)
+
+      try {
+        const response = await fetch('/api/ai/settings/models', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            defaultModelId: nextPreferences.activeModelId,
+            enabledModelIds: nextPreferences.enabledModelIds,
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(await parseResponseError(response))
+        }
+
+        const saved = (await response.json()) as {
+          defaultModelId?: string
+          enabledModelIds?: string[]
+        }
+        const normalized = sanitizeAiModelPreferences(
+          {
+            activeModelId: saved.defaultModelId ?? nextPreferences.activeModelId,
+            enabledModelIds:
+              saved.enabledModelIds ?? nextPreferences.enabledModelIds,
+          },
+          models,
+        )
+
+        preferencesRef.current = normalized
+        setPreferences(normalized)
+        dispatchPreferencesEvent(normalized)
+      } catch (error) {
+        preferencesRef.current = previous
+        setPreferences(previous)
+        toast.error('Unable to save AI model settings', {
+          description:
+            error instanceof Error ? error.message : 'Please try again.',
+        })
+      } finally {
+        setSaving(false)
+      }
+    },
+    [models],
+  )
 
   const updatePreferences = React.useCallback(
     (updater: (current: AiModelPreferences) => AiModelPreferences) => {
       const currentPreferences = preferencesRef.current
-      const nextPreferences = updater(currentPreferences)
+      const nextPreferences = sanitizeAiModelPreferences(
+        updater(currentPreferences),
+        models,
+      )
 
       if (arePreferencesEqual(currentPreferences, nextPreferences)) {
         return
@@ -117,9 +182,10 @@ export function useAiPreferences(
 
       preferencesRef.current = nextPreferences
       setPreferences(nextPreferences)
-      persistPreferences(nextPreferences)
+      dispatchPreferencesEvent(nextPreferences)
+      void persistPreferences(nextPreferences, currentPreferences)
     },
-    [],
+    [models, persistPreferences],
   )
 
   const toggleModel = React.useCallback(
@@ -158,11 +224,22 @@ export function useAiPreferences(
   )
 
   const resetToDefault = React.useCallback(() => {
-    const nextPreferences = createDefaultAiModelPreferences(models, defaultModelId)
+    const nextPreferences = getInitialPreferences(
+      models,
+      defaultModelId,
+      initialEnabledModelIds,
+    )
+
+    if (arePreferencesEqual(preferencesRef.current, nextPreferences)) {
+      return
+    }
+
+    const previous = preferencesRef.current
     preferencesRef.current = nextPreferences
     setPreferences(nextPreferences)
-    persistPreferences(nextPreferences)
-  }, [defaultModelId, models])
+    dispatchPreferencesEvent(nextPreferences)
+    void persistPreferences(nextPreferences, previous)
+  }, [defaultModelId, initialEnabledModelIds, models, persistPreferences])
 
   const enabledModels = React.useMemo(() => {
     const positionById = new Map(
@@ -187,6 +264,7 @@ export function useAiPreferences(
     activeModel,
     activeModelId: preferences.activeModelId,
     enabledModelIds: preferences.enabledModelIds,
+    saving,
     toggleModel,
     setActiveModelId,
     resetToDefault,

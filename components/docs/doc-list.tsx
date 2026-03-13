@@ -3,8 +3,9 @@
 import Link from 'next/link'
 import { FileText, Clock, Trash2 } from 'lucide-react'
 
-import { cn, wordCount } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { type Doc, STATUS_CONFIG, getDocEditorHref } from '@/lib/documents'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -76,7 +77,8 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
     <div className={cn('grid gap-3 sm:grid-cols-2 xl:grid-cols-3', className)}>
       {documents.map((doc) => {
         const config = STATUS_CONFIG[doc.status]
-        const wc = wordCount(doc.content)
+        const wc = typeof doc.wordCount === 'number' ? doc.wordCount : null
+        const preview = doc.summary || excerpt(doc.preview || doc.content)
 
         return (
           <div key={doc.id} className="group">
@@ -91,6 +93,11 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                       {doc.title || 'Untitled'}
                     </CardTitle>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                      {doc.hasCustomPermissions ? (
+                        <Badge variant="outline" className="h-5 px-2 text-[10px]">
+                          Restricted
+                        </Badge>
+                      ) : null}
                       {doc.visibility && doc.visibility !== 'public' && (
                         <VisibilityBadge visibility={doc.visibility} compact />
                       )}
@@ -102,7 +109,7 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                     </div>
                   </div>
                   <CardDescription className="line-clamp-2 text-xs leading-5">
-                    {doc.summary || excerpt(doc.content) || 'Empty document'}
+                    {preview || 'Empty document'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0 pr-14">
@@ -111,41 +118,43 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
                       <Clock className="size-3" />
                       {formatDate(doc.updatedAt)}
                     </span>
-                    <span>{wc.toLocaleString()} words</span>
+                    {wc !== null ? <span>{wc.toLocaleString()} words</span> : null}
                   </div>
                 </CardContent>
               </Link>
-              <div className="absolute bottom-6 right-6 z-10">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-6 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                      aria-label={`Delete ${doc.title}`}
-                    >
-                      <Trash2 className="size-3 text-muted-foreground" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete document</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Permanently delete &ldquo;{doc.title}&rdquo;? This cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        onClick={() => onDelete(doc.id)}
+              {doc.canDelete ? (
+                <div className="absolute bottom-6 right-6 z-10">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-6 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                        aria-label={`Delete ${doc.title}`}
                       >
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
+                        <Trash2 className="size-3 text-muted-foreground" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete document</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Permanently delete &ldquo;{doc.title}&rdquo;? This cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => onDelete(doc.id)}
+                        >
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              ) : null}
             </Card>
           </div>
         )

@@ -1,12 +1,11 @@
 'use client'
 
 import * as React from 'react'
+import { toast } from 'sonner'
 
 import { AI_TRANSFORM_ACTIONS } from '@/lib/ai'
 import {
   AI_PROMPTS_EVENT,
-  AI_PROMPTS_STORAGE_KEY,
-  countCustomizedAiPrompts,
   createDefaultAiPromptSettings,
   sanitizeAiPromptSettings,
   type AiPromptSettings,
@@ -27,109 +26,163 @@ function arePromptSettingsEqual(
   )
 }
 
-function readStoredPrompts() {
-  if (typeof window === 'undefined') return null
-
-  try {
-    const raw = window.localStorage.getItem(AI_PROMPTS_STORAGE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as Partial<AiPromptSettings>
-  } catch {
-    return null
-  }
-}
-
-function persistPrompts(nextPrompts: AiPromptSettings) {
+function dispatchPromptsEvent(prompts: AiPromptSettings) {
   if (typeof window === 'undefined') return
 
-  window.localStorage.setItem(
-    AI_PROMPTS_STORAGE_KEY,
-    JSON.stringify(nextPrompts),
+  window.dispatchEvent(
+    new CustomEvent<AiPromptSettings>(AI_PROMPTS_EVENT, {
+      detail: prompts,
+    }),
   )
-  window.dispatchEvent(new CustomEvent(AI_PROMPTS_EVENT))
+}
+
+async function parseResponseError(response: Response) {
+  const body = await response.json().catch(() => null)
+  return typeof body?.error === 'string'
+    ? body.error
+    : 'Unable to save AI prompt settings'
 }
 
 export function useAiPrompts() {
   const [prompts, setPrompts] = React.useState<AiPromptSettings>(() =>
     createDefaultAiPromptSettings(),
   )
+  const [loading, setLoading] = React.useState(true)
   const promptsRef = React.useRef(prompts)
 
   React.useEffect(() => {
     promptsRef.current = prompts
   }, [prompts])
 
-  const syncPrompts = React.useCallback(() => {
-    const storedPrompts = readStoredPrompts()
-    const nextPrompts = sanitizeAiPromptSettings(storedPrompts)
+  const syncPrompts = React.useCallback(async () => {
+    setLoading(true)
 
-    setPrompts((current) =>
-      arePromptSettingsEqual(current, nextPrompts) ? current : nextPrompts,
-    )
+    try {
+      const response = await fetch('/api/ai/settings/prompts', {
+        cache: 'no-store',
+      })
 
-    if (
-      !storedPrompts ||
-      !arePromptSettingsEqual(
-        sanitizeAiPromptSettings(storedPrompts),
-        nextPrompts,
-      )
-    ) {
-      persistPrompts(nextPrompts)
-    }
-  }, [])
-
-  React.useEffect(() => {
-    syncPrompts()
-  }, [syncPrompts])
-
-  React.useEffect(() => {
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key && event.key !== AI_PROMPTS_STORAGE_KEY) {
-        return
+      if (!response.ok) {
+        throw new Error(await parseResponseError(response))
       }
 
-      syncPrompts()
-    }
+      const nextPrompts = sanitizeAiPromptSettings(
+        (await response.json()) as Partial<AiPromptSettings>,
+      )
 
-    const handleCustomEvent = () => {
-      syncPrompts()
+      promptsRef.current = nextPrompts
+      setPrompts((current) =>
+        arePromptSettingsEqual(current, nextPrompts) ? current : nextPrompts,
+      )
+    } catch (error) {
+      const fallback = createDefaultAiPromptSettings()
+      promptsRef.current = fallback
+      setPrompts((current) =>
+        arePromptSettingsEqual(current, fallback) ? current : fallback,
+      )
+      toast.error('Unable to load AI prompt settings', {
+        description:
+          error instanceof Error ? error.message : 'Please try again.',
+      })
+    } finally {
+      setLoading(false)
     }
+  }, [])
 
-    window.addEventListener('storage', handleStorage)
-    window.addEventListener(AI_PROMPTS_EVENT, handleCustomEvent)
-
-    return () => {
-      window.removeEventListener('storage', handleStorage)
-      window.removeEventListener(AI_PROMPTS_EVENT, handleCustomEvent)
-    }
+  React.useEffect(() => {
+    void syncPrompts()
   }, [syncPrompts])
 
-  const savePrompts = React.useCallback((nextPrompts: AiPromptSettings) => {
-    const sanitized = sanitizeAiPromptSettings(nextPrompts)
+  React.useEffect(() => {
+    const handlePromptEvent = (event: Event) => {
+      const nextPrompts = sanitizeAiPromptSettings(
+        (event as CustomEvent<AiPromptSettings>).detail,
+      )
 
-    if (arePromptSettingsEqual(promptsRef.current, sanitized)) {
-      return sanitized
+      promptsRef.current = nextPrompts
+      setPrompts((current) =>
+        arePromptSettingsEqual(current, nextPrompts) ? current : nextPrompts,
+      )
     }
 
-    promptsRef.current = sanitized
-    setPrompts(sanitized)
-    persistPrompts(sanitized)
+    window.addEventListener(AI_PROMPTS_EVENT, handlePromptEvent)
 
-    return sanitized
+    return () => {
+      window.removeEventListener(AI_PROMPTS_EVENT, handlePromptEvent)
+    }
   }, [])
+
+  const persistPrompts = React.useCallback(
+    async (nextPrompts: AiPromptSettings, previous: AiPromptSettings) => {
+      try {
+        const response = await fetch('/api/ai/settings/prompts', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ prompts: nextPrompts }),
+        })
+
+        if (!response.ok) {
+          throw new Error(await parseResponseError(response))
+        }
+
+        const saved = sanitizeAiPromptSettings(
+          (await response.json()) as Partial<AiPromptSettings>,
+        )
+        promptsRef.current = saved
+        setPrompts(saved)
+        dispatchPromptsEvent(saved)
+      } catch (error) {
+        promptsRef.current = previous
+        setPrompts(previous)
+        toast.error('Unable to save AI prompt settings', {
+          description:
+            error instanceof Error ? error.message : 'Please try again.',
+        })
+      }
+    },
+    [],
+  )
+
+  const savePrompts = React.useCallback(
+    (nextPrompts: AiPromptSettings) => {
+      const sanitized = sanitizeAiPromptSettings(nextPrompts)
+
+      if (arePromptSettingsEqual(promptsRef.current, sanitized)) {
+        return sanitized
+      }
+
+      const previous = promptsRef.current
+      promptsRef.current = sanitized
+      setPrompts(sanitized)
+      dispatchPromptsEvent(sanitized)
+      void persistPrompts(sanitized, previous)
+
+      return sanitized
+    },
+    [persistPrompts],
+  )
 
   const resetPrompts = React.useCallback(() => {
     const nextPrompts = createDefaultAiPromptSettings()
+
+    if (arePromptSettingsEqual(promptsRef.current, nextPrompts)) {
+      return nextPrompts
+    }
+
+    const previous = promptsRef.current
     promptsRef.current = nextPrompts
     setPrompts(nextPrompts)
-    persistPrompts(nextPrompts)
+    dispatchPromptsEvent(nextPrompts)
+    void persistPrompts(nextPrompts, previous)
 
     return nextPrompts
-  }, [])
+  }, [persistPrompts])
 
   return {
     prompts,
-    customizedCount: countCustomizedAiPrompts(prompts),
+    loading,
     savePrompts,
     resetPrompts,
   }

@@ -28,14 +28,11 @@ import { Spinner } from '@/components/ui/spinner'
 
 interface AuditLog {
   id: string
-  actorId: string | null
   actorName: string | null
   actorImage: string | null
   action: string
   resourceType: string
-  resourceId: string
   resourceTitle: string | null
-  metadata: Record<string, unknown>
   ipAddress: string | null
   createdAt: string
 }

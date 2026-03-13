@@ -1,6 +1,10 @@
 import { desc, eq, and, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { notifications, users, notificationPreferences } from '../schema'
+import {
+  mergeNotificationPreferences,
+  type NotificationPreferenceValues,
+} from '../notification-preferences'
+import { notifications, notificationPreferences } from '../schema'
 
 type NotificationType = (typeof notifications.$inferInsert)['type']
 
@@ -47,46 +51,39 @@ export async function listNotifications(
   options: { limit?: number; offset?: number; unreadOnly?: boolean } = {},
 ) {
   const { limit = 30, offset = 0, unreadOnly = false } = options
-  const conditions = [
+  const baseConditions = [
     eq(notifications.recipientId, userId),
     eq(notifications.workspaceId, workspaceId),
   ]
-  if (unreadOnly) conditions.push(eq(notifications.isRead, false))
+  const listConditions = unreadOnly
+    ? [...baseConditions, eq(notifications.isRead, false)]
+    : baseConditions
 
-  const items = await db
-    .select({
-      id: notifications.id,
-      type: notifications.type,
-      title: notifications.title,
-      body: notifications.body,
-      linkUrl: notifications.linkUrl,
-      resourceType: notifications.resourceType,
-      resourceId: notifications.resourceId,
-      actorId: notifications.actorId,
-      actorName: users.name,
-      actorImage: users.image,
-      isRead: notifications.isRead,
-      createdAt: notifications.createdAt,
-    })
-    .from(notifications)
-    .leftJoin(users, eq(notifications.actorId, users.id))
-    .where(and(...conditions))
-    .orderBy(desc(notifications.createdAt))
-    .limit(limit)
-    .offset(offset)
+  const [items, unreadRows] = await Promise.all([
+    db
+      .select({
+        id: notifications.id,
+        type: notifications.type,
+        title: notifications.title,
+        body: notifications.body,
+        linkUrl: notifications.linkUrl,
+        resourceType: notifications.resourceType,
+        resourceId: notifications.resourceId,
+        isRead: notifications.isRead,
+        createdAt: notifications.createdAt,
+      })
+      .from(notifications)
+      .where(and(...listConditions))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(notifications)
+      .where(and(...baseConditions, eq(notifications.isRead, false))),
+  ])
 
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(notifications)
-    .where(
-      and(
-        eq(notifications.recipientId, userId),
-        eq(notifications.workspaceId, workspaceId),
-        eq(notifications.isRead, false),
-      ),
-    )
-
-  return { items, unreadCount: Number(count) }
+  return { items, unreadCount: Number(unreadRows[0]?.count ?? 0) }
 }
 
 export async function markNotificationRead(id: string, userId: string) {
@@ -124,27 +121,14 @@ export async function getNotificationPreferences(
       eq(notificationPreferences.workspaceId, workspaceId),
     ),
   })
-  return (
-    prefs ?? {
-      commentEnabled: true,
-      mentionEnabled: true,
-      approvalEnabled: true,
-      statusChangeEnabled: true,
-      webhookFailureEnabled: true,
-    }
-  )
+
+  return mergeNotificationPreferences(prefs)
 }
 
 export async function updateNotificationPreferences(
   userId: string,
   workspaceId: string,
-  prefs: Partial<{
-    commentEnabled: boolean
-    mentionEnabled: boolean
-    approvalEnabled: boolean
-    statusChangeEnabled: boolean
-    webhookFailureEnabled: boolean
-  }>,
+  prefs: Partial<NotificationPreferenceValues>,
 ) {
   const [result] = await db
     .insert(notificationPreferences)
@@ -157,7 +141,8 @@ export async function updateNotificationPreferences(
       set: prefs,
     })
     .returning()
-  return result
+
+  return mergeNotificationPreferences(result)
 }
 
 /** Extract @mentions from text content, returns array of usernames */

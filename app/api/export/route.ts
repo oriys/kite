@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
-import { db } from '@/lib/db'
-import { documents } from '@/lib/schema'
-import { and, eq, isNull } from 'drizzle-orm'
+import {
+  withWorkspaceAuth,
+  badRequest,
+  forbidden,
+  notFound,
+} from '@/lib/api-utils'
+import { getDocument } from '@/lib/queries/documents'
+import { buildDocumentAccessMap } from '@/lib/queries/document-permissions'
 import { exportToMarkdown, exportToHtml } from '@/lib/export'
 
 export async function GET(request: NextRequest) {
@@ -19,10 +23,13 @@ export async function GET(request: NextRequest) {
   if (!['markdown', 'html'].includes(format))
     return badRequest('Format must be markdown or html')
 
-  const doc = await db.query.documents.findFirst({
-    where: and(eq(documents.id, documentId), isNull(documents.deletedAt)),
-  })
+  const doc = await getDocument(documentId, result.ctx.workspaceId)
   if (!doc) return notFound()
+
+  const access = (
+    await buildDocumentAccessMap([doc], result.ctx.userId, result.ctx.role)
+  ).get(doc.id)
+  if (!access?.canView) return forbidden()
 
   if (format === 'markdown') {
     const md = exportToMarkdown(doc.title, doc.content)

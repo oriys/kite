@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm'
+import { eq, and, desc, ilike, or, sql, type SQL } from 'drizzle-orm'
 import { db } from '../db'
 import { workspaceMembers, users } from '../schema'
 import { emitAuditEvent } from './audit-logs'
@@ -21,10 +21,16 @@ export async function listWorkspaceMembers(
   workspaceId: string,
   options: { search?: string; role?: MemberRole; status?: MemberStatus } = {},
 ): Promise<WorkspaceMember[]> {
-  const conditions = [eq(workspaceMembers.workspaceId, workspaceId)]
+  const conditions: SQL<unknown>[] = [eq(workspaceMembers.workspaceId, workspaceId)]
 
   if (options.role) conditions.push(eq(workspaceMembers.role, options.role))
   if (options.status) conditions.push(eq(workspaceMembers.status, options.status))
+  if (options.search?.trim()) {
+    const pattern = `%${options.search.trim()}%`
+    conditions.push(
+      or(ilike(users.name, pattern), ilike(users.email, pattern))!,
+    )
+  }
 
   const rows = await db
     .select({
@@ -41,15 +47,6 @@ export async function listWorkspaceMembers(
     .innerJoin(users, eq(workspaceMembers.userId, users.id))
     .where(and(...conditions))
     .orderBy(desc(workspaceMembers.joinedAt))
-
-  if (options.search) {
-    const q = options.search.toLowerCase()
-    return rows.filter(
-      (r) =>
-        r.name?.toLowerCase().includes(q) ||
-        r.email?.toLowerCase().includes(q),
-    )
-  }
 
   return rows as WorkspaceMember[]
 }

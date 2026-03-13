@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { searchDocuments } from '@/lib/search/searcher'
 import { logSearch } from '@/lib/queries/search-logs'
+import { logServerError } from '@/lib/server-errors'
 
 export async function GET(req: NextRequest) {
   const authResult = await withWorkspaceAuth('guest')
@@ -22,7 +23,14 @@ export async function GET(req: NextRequest) {
     userId: ctx.userId,
     query: trimmed,
     resultCount: results.length,
-  }).catch(() => {})
+  }).catch((error) => {
+    logServerError('Failed to log search analytics.', error, {
+      workspaceId: ctx.workspaceId,
+      userId: ctx.userId,
+      query: trimmed,
+      resultCount: results.length,
+    })
+  })
 
   return NextResponse.json({ results, query: trimmed })
 }

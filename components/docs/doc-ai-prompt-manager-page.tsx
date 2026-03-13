@@ -86,13 +86,14 @@ export function DocAiPromptManagerPage() {
   const {
     items: aiModels,
     defaultModelId,
+    enabledModelIds: initialEnabledModelIds,
     loading: aiModelsLoading,
   } = useAiModels()
   const {
     enabledModels,
     activeModel,
     activeModelId,
-  } = useAiPreferences(aiModels, defaultModelId)
+  } = useAiPreferences(aiModels, defaultModelId, initialEnabledModelIds)
   const { prompts, savePrompts, resetPrompts } = useAiPrompts()
   const defaults = React.useMemo(() => createDefaultAiPromptSettings(), [])
   const [draftPrompts, setDraftPrompts] = React.useState<AiPromptSettings>(prompts)
@@ -166,7 +167,7 @@ export function DocAiPromptManagerPage() {
     const savedPrompts = savePrompts(preparedDraft)
     setDraftPrompts(savedPrompts)
     toast.success('AI action settings saved', {
-      description: 'Each editor action now uses its configured model and prompt on this browser.',
+      description: 'Each editor action now uses its configured model and prompt for this workspace.',
     })
   }, [preparedDraft, savePrompts])
 
@@ -225,10 +226,11 @@ export function DocAiPromptManagerPage() {
         <div className="grid gap-3">
           <Alert>
             <Bot />
-            <AlertTitle>Browser-local routing</AlertTitle>
+            <AlertTitle>Workspace-shared routing</AlertTitle>
             <AlertDescription>
-              Overrides live in local storage on this browser. If a dedicated model disappears,
-              the action quietly falls back to the current workspace default when you save.
+              Prompt overrides now live in the workspace database. If a dedicated model
+              disappears, the action falls back to the current workspace default when you
+              save.
             </AlertDescription>
           </Alert>
           {enabledModels.length === 0 ? (

@@ -53,7 +53,12 @@ export async function verifyWorkspaceMembership(
   workspaceId: string,
 ) {
   const [member] = await db
-    .select()
+    .select({
+      userId: workspaceMembers.userId,
+      workspaceId: workspaceMembers.workspaceId,
+      role: workspaceMembers.role,
+      status: workspaceMembers.status,
+    })
     .from(workspaceMembers)
     .where(
       and(

@@ -3,9 +3,28 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { FileText, Braces, BrainCircuit, PencilLine, Blocks, BarChart3, LinkIcon, Menu, Search, Shield, Webhook, Palette, LayoutTemplate, ClipboardCheck, ChevronDown, Settings } from 'lucide-react'
+import {
+  BarChart3,
+  Blocks,
+  Braces,
+  BrainCircuit,
+  ChevronDown,
+  ClipboardCheck,
+  FileText,
+  LayoutTemplate,
+  LinkIcon,
+  Menu,
+  Palette,
+  PencilLine,
+  Search,
+  Settings,
+  Shield,
+  Webhook,
+} from 'lucide-react'
 
+import { usePersonalSettings } from '@/components/personal-settings-provider'
 import { cn } from '@/lib/utils'
+import type { PersonalFeatureId } from '@/lib/personal-settings'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -30,16 +49,61 @@ import { NotificationBell } from '@/components/notification-bell'
 
 const NAV_ITEMS = [
   { href: '/docs', label: 'Documents', icon: FileText },
-  { href: '/docs/openapi', label: 'OpenAPI', icon: Braces },
-  { href: '/docs/ai', label: 'AI Models', icon: BrainCircuit },
-  { href: '/docs/ai/prompts', label: 'AI Prompts', icon: PencilLine },
-  { href: '/docs/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/docs/templates', label: 'Templates', icon: LayoutTemplate },
-  { href: '/docs/approvals', label: 'Approvals', icon: ClipboardCheck },
-  { href: '/docs/webhooks', label: 'Webhooks', icon: Webhook },
+  {
+    href: '/docs/openapi',
+    label: 'OpenAPI',
+    icon: Braces,
+    featureId: 'openApi' as PersonalFeatureId,
+  },
+  {
+    href: '/docs/ai',
+    label: 'AI Models',
+    icon: BrainCircuit,
+    featureId: 'aiWorkspace' as PersonalFeatureId,
+  },
+  {
+    href: '/docs/ai/prompts',
+    label: 'AI Prompts',
+    icon: PencilLine,
+    featureId: 'aiWorkspace' as PersonalFeatureId,
+  },
+  {
+    href: '/docs/analytics',
+    label: 'Analytics',
+    icon: BarChart3,
+    featureId: 'analytics' as PersonalFeatureId,
+  },
+  {
+    href: '/docs/templates',
+    label: 'Templates',
+    icon: LayoutTemplate,
+    featureId: 'templates' as PersonalFeatureId,
+  },
+  {
+    href: '/docs/approvals',
+    label: 'Approvals',
+    icon: ClipboardCheck,
+    featureId: 'approvals' as PersonalFeatureId,
+  },
+  {
+    href: '/docs/webhooks',
+    label: 'Webhooks',
+    icon: Webhook,
+    featureId: 'webhooks' as PersonalFeatureId,
+  },
   { href: '/docs/branding', label: 'Branding', icon: Palette },
-  { href: '/docs/link-health', label: 'Link Health', icon: LinkIcon },
-  { href: '/docs/components', label: 'Quick Insert', icon: Blocks },
+  {
+    href: '/docs/link-health',
+    label: 'Link Health',
+    icon: LinkIcon,
+    featureId: 'linkHealth' as PersonalFeatureId,
+  },
+  {
+    href: '/docs/components',
+    label: 'Quick Insert',
+    icon: Blocks,
+    featureId: 'quickInsert' as PersonalFeatureId,
+  },
   { href: '/docs/audit-logs', label: 'Audit Logs', icon: Shield },
   { href: '/docs/settings/members', label: 'Settings', icon: Settings },
 ] as const
@@ -90,13 +154,20 @@ function isActive(pathname: string, href: string) {
 
 export function DocsTopNav() {
   const pathname = usePathname()
+  const { featureVisibility } = usePersonalSettings()
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [searchOpen, setSearchOpen] = React.useState(false)
   const desktopNavRef = React.useRef<HTMLDivElement | null>(null)
   const desktopMeasureRef = React.useRef<HTMLDivElement | null>(null)
-  const [visibleCount, setVisibleCount] = React.useState<number>(
-    NAV_ITEMS.length,
+  const navItems = React.useMemo(
+    () =>
+      NAV_ITEMS.filter(
+        (item) =>
+          !('featureId' in item) || featureVisibility[item.featureId],
+      ),
+    [featureVisibility],
   )
+  const [visibleCount, setVisibleCount] = React.useState<number>(navItems.length)
 
   React.useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -120,10 +191,10 @@ export function DocsTopNav() {
       desktopMeasureRef.current.children,
     ) as HTMLElement[]
 
-    if (measurements.length < NAV_ITEMS.length + 1) return
+    if (measurements.length < navItems.length + 1) return
 
     const itemWidths = measurements
-      .slice(0, NAV_ITEMS.length)
+      .slice(0, navItems.length)
       .map((item) => item.offsetWidth)
     const overflowWidth = measurements.at(-1)?.offsetWidth ?? 0
     const nextVisibleCount = getVisibleCount(maxWidth, itemWidths, overflowWidth)
@@ -131,7 +202,7 @@ export function DocsTopNav() {
     setVisibleCount((currentCount) =>
       currentCount === nextVisibleCount ? currentCount : nextVisibleCount,
     )
-  }, [])
+  }, [navItems.length])
 
   React.useEffect(() => {
     recomputeDesktopNav()
@@ -156,10 +227,10 @@ export function DocsTopNav() {
       resizeObserver.disconnect()
       window.removeEventListener('resize', recomputeDesktopNav)
     }
-  }, [recomputeDesktopNav])
+  }, [navItems.length, recomputeDesktopNav])
 
-  const visibleItems = NAV_ITEMS.slice(0, visibleCount)
-  const overflowItems = NAV_ITEMS.slice(visibleCount)
+  const visibleItems = navItems.slice(0, visibleCount)
+  const overflowItems = navItems.slice(visibleCount)
 
   return (
     <header className="shrink-0 border-b border-border/60 bg-card/50 backdrop-blur-sm">
@@ -284,10 +355,10 @@ export function DocsTopNav() {
               aria-hidden="true"
               className="pointer-events-none absolute top-0 left-0 invisible flex w-max items-center gap-1"
             >
-              {NAV_ITEMS.map((item) => (
-                <span
-                  key={item.href}
-                  className={cn(
+               {navItems.map((item) => (
+                 <span
+                   key={item.href}
+                   className={cn(
                     DESKTOP_NAV_LINK_CLASS,
                     DESKTOP_NAV_LINK_IDLE_CLASS,
                   )}

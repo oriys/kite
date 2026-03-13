@@ -8,8 +8,6 @@ interface Notification {
   title: string
   body: string
   linkUrl: string | null
-  actorName: string | null
-  actorImage: string | null
   isRead: boolean
   createdAt: string
 }

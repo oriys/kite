@@ -39,6 +39,7 @@ import { DocFeedback } from '@/components/doc-feedback'
 import { ExportMenu } from '@/components/export-menu'
 import { PresenceAvatars } from '@/components/presence-avatars'
 import { LocaleSwitcher } from '@/components/locale-switcher'
+import { DocumentPermissionsDialog } from '@/components/docs/document-permissions-dialog'
 
 function getEditorShellClassName(resizing = false) {
   return cn(
@@ -112,7 +113,7 @@ export function DocEditorPageClient() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const docId = searchParams.get('doc')
-  const { doc, loading, update, transition, remove, duplicate } = useDocument(docId)
+  const { doc, loading, update, transition, remove, duplicate, refresh } = useDocument(docId)
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
   const [, setEditorMode] = React.useState<EditorViewMode>('wysiwyg')
@@ -120,6 +121,7 @@ export function DocEditorPageClient() {
   const [initializedDocId, setInitializedDocId] = React.useState<string | null>(null)
   const [saveState, setSaveState] = React.useState<SaveState>('idle')
   const [commentSidebarOpen, setCommentSidebarOpen] = React.useState(false)
+  const [isEditorFullscreen, setIsEditorFullscreen] = React.useState(false)
   const [pendingComment, setPendingComment] = React.useState<CommentSelection | null>(null)
   const [visibility, setVisibility] = React.useState<'public' | 'partner' | 'private'>(
     doc?.visibility ?? 'private',
@@ -196,7 +198,11 @@ export function DocEditorPageClient() {
 
       setSaveState('saving')
       try {
-        await update({ title: saveTitle, content: saveContent })
+        const updated = await update({ title: saveTitle, content: saveContent })
+        if (!updated) {
+          throw new Error('You no longer have permission to edit this document.')
+        }
+
         pendingSaveRef.current = null
         retryCountRef.current = 0
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
@@ -240,6 +246,36 @@ export function DocEditorPageClient() {
     }
   }, [])
 
+  React.useEffect(() => {
+    if (!isEditorFullscreen) {
+      return
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isEditorFullscreen])
+
+  React.useEffect(() => {
+    if (!isEditorFullscreen) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsEditorFullscreen(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isEditorFullscreen])
+
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle)
     scheduleAutoSave(newTitle, content)
@@ -260,9 +296,20 @@ export function DocEditorPageClient() {
   const handleTransition = async (status: DocStatus) => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current)
-      await update({ title, content })
+      const flushed = await update({ title, content })
+      if (!flushed) {
+        toast.error('Failed to save document before changing status')
+        return
+      }
     }
-    await transition(status)
+    const updated = await transition(status)
+    if (!updated) {
+      toast.error('Failed to update status', {
+        description: 'You may not have permission to change this document.',
+      })
+      return
+    }
+
     const config = STATUS_CONFIG[status]
     toast.success(`Moved to ${config.label}`, {
       description: `"${title || 'Untitled'}" is now ${config.label.toLowerCase()}.`,
@@ -270,7 +317,14 @@ export function DocEditorPageClient() {
   }
 
   const handleDelete = async () => {
-    await remove()
+    const removed = await remove()
+    if (!removed) {
+      toast.error('Failed to delete document', {
+        description: 'You may not have permission to delete this document.',
+      })
+      return
+    }
+
     router.push('/docs')
     toast.success('Document deleted')
   }
@@ -282,7 +336,12 @@ export function DocEditorPageClient() {
       toast.success('Document duplicated', {
         description: `Created "${newDoc.title}".`,
       })
+      return
     }
+
+    toast.error('Failed to duplicate document', {
+      description: 'You may not have permission to duplicate this document.',
+    })
   }
 
   const handleVisibilityChange = async (newVisibility: 'public' | 'partner' | 'private') => {
@@ -399,67 +458,96 @@ export function DocEditorPageClient() {
     return <MissingDocumentState />
   }
 
-  const isReadOnly = doc.status !== 'draft'
+  const isPermissionReadOnly = !doc.canEdit
+  const isStatusReadOnly = doc.status !== 'draft'
+  const isReadOnly = isStatusReadOnly || isPermissionReadOnly
   const readOnlyAiActions = doc.status === 'review' ? REVIEW_READ_ONLY_AI_ACTIONS : undefined
-  const editorShellStyle = getEditorShellStyle(documentWidth)
+  const editorShellStyle = isEditorFullscreen
+    ? undefined
+    : getEditorShellStyle(documentWidth)
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
-        <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
-          <div className="flex items-center gap-3">
-            <Input
-              value={title}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              onKeyDown={handleTitleKeyDown}
-              readOnly={isReadOnly}
-              aria-label="Document title"
-              placeholder="Untitled document…"
-              className="flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
-            />
-            {isReadOnly ? (
-              <VisibilityBadge visibility={visibility} className="shrink-0" />
-            ) : (
-              <VisibilitySelector
-                value={visibility}
-                onChange={handleVisibilityChange}
-                className="shrink-0"
+    <div
+      className={cn(
+        'flex h-full min-h-0 flex-col',
+        isEditorFullscreen &&
+          'fixed inset-0 z-[70] h-[100dvh] overflow-hidden bg-background',
+      )}
+    >
+      {!isEditorFullscreen ? (
+        <div className="border-b border-border/60 bg-card/50 px-4 py-3 sm:px-6">
+          <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
+            <div className="flex items-center gap-3">
+              <Input
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                onKeyDown={handleTitleKeyDown}
+                readOnly={isReadOnly}
+                aria-label="Document title"
+                placeholder="Untitled document…"
+                className="flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
               />
-            )}
-            <ExportMenu documentId={doc.id} documentTitle={title} />
-            <LocaleSwitcher
-              currentLocale={doc.locale ?? 'en'}
-              onLocaleChange={() => {}}
-            />
-            <PresenceAvatars documentId={doc.id} currentUserId={doc.createdBy ?? ''} />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              aria-label="Toggle comment sidebar"
-              onClick={() => setCommentSidebarOpen((v) => !v)}
-            >
-              <MessageSquare className="size-4" />
-            </Button>
+              {isReadOnly || !doc.canManagePermissions ? (
+                <VisibilityBadge visibility={visibility} className="shrink-0" />
+              ) : (
+                <VisibilitySelector
+                  value={visibility}
+                  onChange={handleVisibilityChange}
+                  className="shrink-0"
+                />
+              )}
+              <DocumentPermissionsDialog
+                document={doc}
+                className="shrink-0"
+                onPermissionsChanged={refresh}
+              />
+              <ExportMenu documentId={doc.id} documentTitle={title} />
+              <LocaleSwitcher
+                currentLocale={doc.locale ?? 'en'}
+                onLocaleChange={() => {}}
+              />
+              <PresenceAvatars documentId={doc.id} currentUserId={doc.createdBy ?? ''} />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                aria-label="Toggle comment sidebar"
+                onClick={() => setCommentSidebarOpen((v) => !v)}
+              >
+                <MessageSquare className="size-4" />
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
-      {isReadOnly && (
+      {!isEditorFullscreen && isReadOnly ? (
         <div className="border-b border-amber-500/20 bg-amber-50/50 px-4 py-1.5 dark:bg-amber-950/20 sm:px-6">
           <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
             <p className="text-xs text-amber-700 dark:text-amber-400">
-              This document is {doc.status}. Revert to draft to make changes.
+              {isStatusReadOnly
+                ? `This document is ${doc.status}. Revert to draft to make changes.`
+                : 'You currently have view-only access to this document. Ask a document manager for edit permission.'}
             </p>
           </div>
         </div>
-      )}
+      ) : null}
 
       <div ref={editorOverlayRef} className="relative flex flex-1 min-h-0">
-        <div className="flex flex-1 overflow-y-auto xl:overflow-hidden">
+        <div
+          className={cn(
+            'flex flex-1',
+            isEditorFullscreen ? 'overflow-hidden' : 'overflow-y-auto xl:overflow-hidden',
+          )}
+        >
           <div className="flex-1">
             <div
-              className={cn(getEditorShellClassName(documentResizeActive), 'py-4 xl:h-full')}
+              className={cn(
+                isEditorFullscreen
+                  ? 'h-full w-full px-0 py-0 sm:px-0'
+                  : getEditorShellClassName(documentResizeActive),
+                !isEditorFullscreen && 'py-4 xl:h-full',
+              )}
               style={editorShellStyle}
             >
               <EditorErrorBoundary>
@@ -469,13 +557,21 @@ export function DocEditorPageClient() {
                   onChange={handleContentChange}
                   readOnly={isReadOnly}
                   readOnlyAiActions={readOnlyAiActions}
-                  className="min-h-[60vh] xl:h-full"
+                  className={cn(
+                    'min-h-[60vh]',
+                    isEditorFullscreen ? 'h-full' : 'xl:h-full',
+                  )}
                   onModeChange={setEditorMode}
                   editorFocusRef={editorFocusRef}
                   statsOverlayContainerRef={editorOverlayRef}
-                  documentWidth={documentWidth}
-                  onDocumentWidthChange={setDocumentWidth}
+                  commentsEnabled={!isEditorFullscreen}
+                  documentWidth={isEditorFullscreen ? undefined : documentWidth}
+                  onDocumentWidthChange={
+                    isEditorFullscreen ? undefined : setDocumentWidth
+                  }
                   onDocumentResizeStateChange={setDocumentResizeActive}
+                  fullscreen={isEditorFullscreen}
+                  onFullscreenChange={setIsEditorFullscreen}
                   aiPreviewSide={aiPanelSide}
                   onAiPreviewSideChange={setAiPanelSide}
                   onComment={handleComment}
@@ -484,7 +580,7 @@ export function DocEditorPageClient() {
             </div>
           </div>
         </div>
-        {commentSidebarOpen && (
+        {!isEditorFullscreen && commentSidebarOpen ? (
           <DocCommentSidebar
             documentId={doc.id}
             className="w-80 shrink-0 border-l"
@@ -492,32 +588,34 @@ export function DocEditorPageClient() {
             onCommentCreated={handleCommentCreated}
             onPendingClear={() => setPendingComment(null)}
           />
-        )}
+        ) : null}
       </div>
 
-      {doc.status === 'published' && (
+      {!isEditorFullscreen && doc.status === 'published' ? (
         <DocFeedback documentId={doc.id} className="border-t border-border/60" />
-      )}
+      ) : null}
 
-      <DocStatusBar
-        doc={{ ...doc, title, content }}
-        backBusy={backBusy}
-        saveState={saveState}
-        onBack={() => {
-          void handleBack()
-        }}
-        onTransition={handleTransition}
-        onDelete={handleDelete}
-        onDuplicate={handleDuplicate}
-        onRestoreVersion={
-          isReadOnly
-            ? undefined
-            : (versionContent) => {
-                setContent(versionContent)
-                scheduleAutoSave(title, versionContent)
-              }
-        }
-      />
+      {!isEditorFullscreen ? (
+        <DocStatusBar
+          doc={{ ...doc, title, content }}
+          backBusy={backBusy}
+          saveState={saveState}
+          onBack={() => {
+            void handleBack()
+          }}
+          onTransition={handleTransition}
+          onDelete={handleDelete}
+          onDuplicate={handleDuplicate}
+          onRestoreVersion={
+            isReadOnly
+              ? undefined
+              : (versionContent) => {
+                  setContent(versionContent)
+                  scheduleAutoSave(title, versionContent)
+                }
+          }
+        />
+      ) : null}
     </div>
   )
 }

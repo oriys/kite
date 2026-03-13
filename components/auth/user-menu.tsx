@@ -1,7 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
-import { LogOut } from 'lucide-react'
+import { LogOut, SlidersHorizontal } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { buttonVariants } from '@/components/ui/button'
 import {
@@ -47,11 +48,18 @@ export function UserMenu() {
         <DropdownMenuLabel className="font-normal">
           <p className="text-sm font-medium leading-none">{name}</p>
           {email && (
-            <p className="mt-1 text-xs text-muted-foreground truncate">
+            <p className="mt-1 truncate text-xs text-muted-foreground">
               {email}
             </p>
           )}
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/docs/settings/personal">
+            <SlidersHorizontal className="mr-2 size-3.5" />
+            Personal settings
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/auth/signin' })}>
           <LogOut className="mr-2 size-3.5" />

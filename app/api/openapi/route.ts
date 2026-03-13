@@ -5,6 +5,28 @@ import {
   createOpenapiSource,
   listOpenapiSources,
 } from '@/lib/queries/openapi'
+import { fetchTextFromUrl, parsePublicHttpUrl } from '@/lib/outbound-http'
+
+function serializeOpenapiSourceSummary(source: {
+  id: string
+  name: string
+  sourceType: 'upload' | 'url'
+  parsedVersion: string | null
+  openapiVersion?: string | null
+  createdAt: Date
+  lastSyncedAt?: Date | null
+}) {
+  return {
+    id: source.id,
+    name: source.name,
+    sourceType: source.sourceType,
+    currentVersion: source.parsedVersion,
+    parsedVersion: source.parsedVersion,
+    openapiVersion: source.openapiVersion ?? null,
+    createdAt: source.createdAt,
+    lastSyncedAt: source.lastSyncedAt ?? null,
+  }
+}
 
 /**
  * POST /api/openapi — Create a new OpenAPI source (upload or URL).
@@ -28,19 +50,15 @@ export async function POST(req: NextRequest) {
   }
 
   let content: string
+  let normalizedSourceUrl: string | null = null
 
   if (sourceUrl && typeof sourceUrl === 'string') {
-    // Fetch content from URL
     try {
-      const res = await fetch(sourceUrl, { signal: AbortSignal.timeout(15_000) })
-      if (!res.ok) {
-        return badRequest(`Failed to fetch URL: ${res.status} ${res.statusText}`)
-      }
-      content = await res.text()
-    } catch (err) {
-      return badRequest(
-        `Failed to fetch URL: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      )
+      const targetUrl = parsePublicHttpUrl(sourceUrl)
+      normalizedSourceUrl = targetUrl.toString()
+      content = await fetchTextFromUrl(targetUrl, { timeoutMs: 15_000 })
+    } catch (error) {
+      return badRequest(error instanceof Error ? error.message : 'Failed to fetch URL')
     }
   } else if (rawContent && typeof rawContent === 'string') {
     content = rawContent
@@ -63,8 +81,8 @@ export async function POST(req: NextRequest) {
   const source = await createOpenapiSource({
     workspaceId: ctx.workspaceId,
     name: name.trim(),
-    sourceType: sourceUrl ? 'url' : 'upload',
-    sourceUrl: sourceUrl || null,
+    sourceType: normalizedSourceUrl ? 'url' : 'upload',
+    sourceUrl: normalizedSourceUrl,
     rawContent: content,
     parsedVersion: spec.version,
     openapiVersion: spec.openapiVersion,
@@ -73,7 +91,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(
     {
-      ...source,
+      ...serializeOpenapiSourceSummary(source),
       endpointCount: spec.endpoints.length,
       title: spec.title,
     },
@@ -90,5 +108,5 @@ export async function GET() {
   const { ctx } = authResult
 
   const sources = await listOpenapiSources(ctx.workspaceId)
-  return NextResponse.json(sources)
+  return NextResponse.json(sources.map((source) => serializeOpenapiSourceSummary(source)))
 }

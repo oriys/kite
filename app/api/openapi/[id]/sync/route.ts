@@ -3,9 +3,32 @@ import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
 import { parseOpenAPISpec, computeChecksum } from '@/lib/openapi/parser'
 import { diffEndpoints } from '@/lib/openapi/differ'
 import {
-  getOpenapiSource,
+  getOpenapiSourceWithContent,
   syncOpenapiSource,
 } from '@/lib/queries/openapi'
+import { fetchTextFromUrl, parsePublicHttpUrl } from '@/lib/outbound-http'
+import { logServerError } from '@/lib/server-errors'
+
+function serializeOpenapiSourceSummary(source: {
+  id: string
+  name: string
+  sourceType: 'upload' | 'url'
+  parsedVersion: string | null
+  openapiVersion?: string | null
+  createdAt: Date
+  lastSyncedAt?: Date | null
+}) {
+  return {
+    id: source.id,
+    name: source.name,
+    sourceType: source.sourceType,
+    currentVersion: source.parsedVersion,
+    parsedVersion: source.parsedVersion,
+    openapiVersion: source.openapiVersion ?? null,
+    createdAt: source.createdAt,
+    lastSyncedAt: source.lastSyncedAt ?? null,
+  }
+}
 
 /**
  * POST /api/openapi/[id]/sync — Re-sync an OpenAPI source from its URL.
@@ -20,7 +43,7 @@ export async function POST(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getOpenapiSource(id)
+  const source = await getOpenapiSourceWithContent(id)
 
   if (!source || source.workspaceId !== ctx.workspaceId) {
     return notFound()
@@ -34,17 +57,10 @@ export async function POST(
     newContent = body.rawContent
   } else if (source.sourceType === 'url' && source.sourceUrl) {
     try {
-      const res = await fetch(source.sourceUrl, {
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (!res.ok) {
-        return badRequest(`Failed to fetch URL: ${res.status} ${res.statusText}`)
-      }
-      newContent = await res.text()
-    } catch (err) {
-      return badRequest(
-        `Failed to fetch URL: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      )
+      const targetUrl = parsePublicHttpUrl(source.sourceUrl)
+      newContent = await fetchTextFromUrl(targetUrl, { timeoutMs: 15_000 })
+    } catch (error) {
+      return badRequest(error instanceof Error ? error.message : 'Failed to fetch URL')
     }
   } else {
     return badRequest(
@@ -81,14 +97,29 @@ export async function POST(
   }
 
   // Perform the sync (snapshot + update + re-extract endpoints)
-  const { source: updated } = await syncOpenapiSource(id, newContent, newChecksum)
+  let updated: Awaited<ReturnType<typeof syncOpenapiSource>>['source']
+
+  try {
+    const syncResult = await syncOpenapiSource(id, newContent, newChecksum)
+    updated = syncResult.source
+  } catch (error) {
+    logServerError('Failed to sync OpenAPI source.', error, {
+      sourceId: id,
+      workspaceId: ctx.workspaceId,
+    })
+
+    return NextResponse.json(
+      { error: 'Failed to sync OpenAPI source' },
+      { status: 500 },
+    )
+  }
 
   // Compute diff
   const diff = diffEndpoints(oldSpec.endpoints, newSpec.endpoints)
 
   return NextResponse.json({
     changed: true,
-    source: updated,
+    source: serializeOpenapiSourceSummary(updated),
     diff,
     stats: {
       added: diff.added.length,

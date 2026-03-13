@@ -3,6 +3,12 @@ import {
   MAX_AI_MODEL_ID_LENGTH,
   type AiTransformAction,
 } from '@/lib/ai'
+import {
+  AI_DIAGRAM_ANALYSIS_CLOSE_MARKER,
+  AI_DIAGRAM_ANALYSIS_OPEN_MARKER,
+  AI_DIAGRAM_CHART_CLOSE_MARKER,
+  AI_DIAGRAM_CHART_OPEN_MARKER,
+} from '@/lib/ai-diagram'
 
 export const AI_PROMPTS_STORAGE_KEY = 'editorial-ai-prompt-settings'
 export const AI_PROMPTS_EVENT = 'editorial-ai-prompt-settings:change'
@@ -22,6 +28,8 @@ export const DEFAULT_AI_SYSTEM_PROMPT =
 export const DEFAULT_AI_ACTION_PROMPTS: Record<AiTransformAction, string> = {
   polish:
     'Improve clarity, fluency, and tone while preserving the original meaning, structure, and terminology.',
+  autofix:
+    'Fix spelling, grammar, punctuation, markdown formatting, and obvious formatting inconsistencies only. Do not change meaning, tone, terminology, factual content, or document structure beyond what is required to correct errors.',
   shorten:
     'Make the text materially shorter by removing redundancy while preserving the key meaning, structure, and important details.',
   expand:
@@ -29,6 +37,21 @@ export const DEFAULT_AI_ACTION_PROMPTS: Record<AiTransformAction, string> = {
   translate: `Translate the text into ${AI_PROMPT_LANGUAGE_TOKEN} while preserving markdown, code, URLs, numbers, and product names.`,
   explain:
     'Explain the text in plain language. If the text is technical, clarify what it means, what it does, and why it matters.',
+  diagram: [
+    'Return exactly two sections in this exact order using the exact markers below.',
+    `${AI_DIAGRAM_ANALYSIS_OPEN_MARKER}`,
+    'Write concise markdown analysis, background, explanation, and derivation outside the chart. Keep it brief and useful.',
+    `${AI_DIAGRAM_ANALYSIS_CLOSE_MARKER}`,
+    `${AI_DIAGRAM_CHART_OPEN_MARKER}`,
+    'Return standalone HTML for an embedded iframe preview.',
+    'The chart itself may contain only labels, nodes, connectors, and necessary numbers.',
+    'Do not place long explanations, derivations, legends, titles, subtitles, or poster-like copy inside the chart.',
+    'Make the HTML self-contained with inline CSS and inline SVG only. No scripts, external assets, or remote fonts.',
+    'The HTML must stream safely in natural top-to-bottom order: emit the shell and CSS first, then stable body markup, then SVG/body details.',
+    'Use a seamless editorial style with flat surfaces and quiet neutrals. Explicitly forbid gradients, shadows, blur, glow, glass effects, decorative chrome, colorful backgrounds, animations, and strong brand styling.',
+    'Support both light and dark color schemes with simple flat colors only.',
+    `${AI_DIAGRAM_CHART_CLOSE_MARKER}`,
+  ].join('\n'),
   review:
     'Review the document like a senior technical editor. Return a concise markdown report with these sections: Strengths, Gaps or Risks, and Recommended Fixes. Ground every point in the source text.',
   score:

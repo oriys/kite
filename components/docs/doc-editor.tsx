@@ -24,6 +24,7 @@ import {
   MAX_AI_CUSTOM_PROMPT_LENGTH,
   MAX_AI_TRANSFORM_TEXT_LENGTH,
   isAiAppendResultAction,
+  isAiPreviewOnlyAction,
   type AiTransformAction,
 } from '@/lib/ai'
 import {
@@ -93,6 +94,10 @@ export type { DocEditorHandle } from '@/lib/editor/editor-helpers'
 
 const lowlight = createLowlight(common)
 
+function containsMarkdownTable(value: string) {
+  return /(^|\n)\|.+\|\s*\n\|(?:\s*:?-{3,}:?\s*\|)+/m.test(value.trim())
+}
+
 // ── Main Editor Component ──────────────────────────────────────────────────
 
 export function DocEditor({
@@ -109,13 +114,25 @@ export function DocEditor({
   documentWidth,
   onDocumentWidthChange,
   onDocumentResizeStateChange,
+  fullscreen = false,
+  onFullscreenChange,
   aiPreviewSide = 'right',
   onAiPreviewSideChange,
   onComment,
 }: DocEditorProps) {
   // ── AI model state ───────────────────────────────────────────────────────
-  const { items: aiModels, loading: aiModelsLoading, defaultModelId } = useAiModels()
-  const { enabledModels, activeModel, activeModelId, setActiveModelId } = useAiPreferences(aiModels, defaultModelId)
+  const {
+    items: aiModels,
+    loading: aiModelsLoading,
+    defaultModelId,
+    enabledModelIds: initialEnabledModelIds,
+  } = useAiModels()
+  const {
+    enabledModels,
+    activeModel,
+    activeModelId,
+    setActiveModelId,
+  } = useAiPreferences(aiModels, defaultModelId, initialEnabledModelIds)
   const { prompts: aiPrompts } = useAiPrompts()
   const enabledModelIds = React.useMemo(() => enabledModels.map((m) => m.id), [enabledModels])
 
@@ -196,6 +213,7 @@ export function DocEditor({
   const switchingRef = React.useRef(false)
   const htmlToMdTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const aiRequestIdRef = React.useRef(0)
+  const aiAbortControllerRef = React.useRef<AbortController | null>(null)
   const customPromptSelectionRef = React.useRef<{ from: number; to: number } | null>(null)
   const slashMenuRef = React.useRef<{ show: () => void; hide: () => void }>(null)
   const activeHeatmapPosRef = React.useRef<number | null>(null)
@@ -208,7 +226,12 @@ export function DocEditor({
     [readOnlyAiActions],
   )
   const availableSelectionAiActions = React.useMemo(
-    () => (readOnly ? readOnlyAiActions.filter((action) => action === 'explain') : []),
+    () =>
+      readOnly
+        ? readOnlyAiActions.filter(
+            (action) => action === 'explain' || action === 'diagram',
+          )
+        : [],
     [readOnly, readOnlyAiActions],
   )
   const availableDocumentAiActions = React.useMemo(
@@ -270,7 +293,11 @@ export function DocEditor({
       attributes: {
         class: cn(
           'prose-editorial max-w-none outline-none',
-          mode === 'split' ? 'min-h-full p-6 md:p-7' : 'min-h-[600px] p-6',
+          mode === 'split'
+            ? 'h-full min-h-full p-6 md:p-7'
+            : fullscreen
+              ? 'min-h-full p-6'
+              : 'min-h-[600px] p-6',
           readOnly && 'cursor-default opacity-70',
         ),
         role: 'textbox',
@@ -442,6 +469,12 @@ export function DocEditor({
 
   React.useEffect(() => { onModeChange?.(mode) }, [mode, onModeChange])
   React.useEffect(() => { onAiPreviewVisibilityChange?.(Boolean(ai.preview)) }, [ai.preview, onAiPreviewVisibilityChange])
+  React.useEffect(
+    () => () => {
+      aiAbortControllerRef.current?.abort()
+    },
+    [],
+  )
   React.useEffect(() => { onDocumentResizeStateChange?.(resize.documentResizeActive) }, [resize.documentResizeActive, onDocumentResizeStateChange])
 
   const handleModeChange = React.useCallback((newMode: EditorViewMode) => {
@@ -499,6 +532,9 @@ export function DocEditor({
   const runAiPreviewRequest = React.useCallback(
     async (request: AiPreviewRequest) => {
       const requestId = ++aiRequestIdRef.current
+      aiAbortControllerRef.current?.abort()
+      const abortController = new AbortController()
+      aiAbortControllerRef.current = abortController
       dispatchAi({ type: 'SET_PENDING', action: request.action, scope: request.scope })
       dispatchAi({ type: 'SET_PREVIEW', preview: { ...request, resultText: '' } })
 
@@ -512,6 +548,7 @@ export function DocEditor({
         const response = await fetch('/api/ai/transform', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: abortController.signal,
           body: JSON.stringify({
             action: request.action,
             text: request.originalText.slice(0, MAX_AI_TRANSFORM_TEXT_LENGTH),
@@ -530,6 +567,42 @@ export function DocEditor({
           throw new Error(payload?.error ?? `Transform failed (${response.status})`)
         }
 
+        if (request.action === 'diagram') {
+          if (!response.body) {
+            throw new Error('The AI provider did not return a diagram stream.')
+          }
+
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let streamedText = ''
+
+          announce('AI diagram is streaming')
+
+          while (true) {
+            const { done, value } = await reader.read()
+
+            if (done) {
+              streamedText += decoder.decode()
+              break
+            }
+
+            streamedText += decoder.decode(value, { stream: true })
+
+            if (requestId !== aiRequestIdRef.current) {
+              await reader.cancel()
+              return
+            }
+
+            dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: streamedText })
+          }
+
+          if (requestId !== aiRequestIdRef.current) return
+
+          dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: streamedText })
+          announce('AI diagram ready for review')
+          return
+        }
+
         const data = (await response.json()) as { result: string }
 
         if (requestId !== aiRequestIdRef.current) return
@@ -537,6 +610,10 @@ export function DocEditor({
         dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: data.result })
         announce('AI result ready for review')
       } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+
         if (requestId !== aiRequestIdRef.current) return
         toast.error('AI transform failed', {
           description: error instanceof Error ? error.message : 'An unexpected error occurred.',
@@ -544,6 +621,9 @@ export function DocEditor({
         dispatchAi({ type: 'SET_PREVIEW', preview: null })
         announce('AI transform failed')
       } finally {
+        if (aiAbortControllerRef.current === abortController) {
+          aiAbortControllerRef.current = null
+        }
         if (requestId === aiRequestIdRef.current) {
           dispatchAi({ type: 'SET_PENDING', action: null, scope: null })
         }
@@ -616,6 +696,8 @@ export function DocEditor({
 
   const handleAiPreviewOpenChange = React.useCallback((open: boolean) => {
     if (!open) {
+      aiAbortControllerRef.current?.abort()
+      aiAbortControllerRef.current = null
       aiRequestIdRef.current += 1
       dispatchAi({ type: 'SET_PREVIEW', preview: null })
       dispatchAi({ type: 'SET_PENDING', action: null, scope: null })
@@ -638,7 +720,12 @@ export function DocEditor({
   }, [ai.preview, runAiPreviewRequest])
 
   const handleAcceptAiPreview = React.useCallback(() => {
-    if (!ai.preview || !ai.preview.resultText || readOnly) return
+    if (
+      !ai.preview ||
+      !ai.preview.resultText ||
+      readOnly ||
+      isAiPreviewOnlyAction(ai.preview.action)
+    ) return
 
     handleAiPreviewOpenChange(false)
 
@@ -666,12 +753,23 @@ export function DocEditor({
         const resultHtml = mdToHtml('\n\n' + ai.preview!.resultText)
         editor.chain().focus().insertContentAt(insertPos, resultHtml).run()
       } else {
-        editor
-          .chain()
-          .focus()
-          .deleteRange({ from: sel.from, to: sel.to })
-          .insertContentAt(sel.from, ai.preview!.resultText)
-          .run()
+        const shouldInsertAsMarkdown = containsMarkdownTable(ai.preview!.resultText)
+
+        if (shouldInsertAsMarkdown) {
+          const resultHtml = mdToHtml(ai.preview!.resultText)
+          editor
+            .chain()
+            .focus()
+            .insertContentAt({ from: sel.from, to: sel.to }, resultHtml)
+            .run()
+        } else {
+          editor
+            .chain()
+            .focus()
+            .deleteRange({ from: sel.from, to: sel.to })
+            .insertContentAt(sel.from, ai.preview!.resultText)
+            .run()
+        }
       }
 
       const html = editor.getHTML()
@@ -979,7 +1077,10 @@ export function DocEditor({
   return (
     <div
       className={cn(
-        'relative flex flex-col overflow-hidden rounded-md border border-border/75 bg-card/95',
+        'relative flex min-h-0 flex-col overflow-hidden bg-card/95',
+        fullscreen
+          ? 'h-full flex-1 rounded-none border-0'
+          : 'rounded-md border border-border/75',
         className,
       )}
     >
@@ -1010,6 +1111,8 @@ export function DocEditor({
           onInsertCodeBlock={handleInsertCodeBlock}
           activeAiLabel={activeModel?.label ?? activeModelId}
           aiDisabled={Boolean(ai.pendingAction) || !activeModelId}
+          fullscreen={fullscreen}
+          onFullscreenChange={onFullscreenChange}
           availableDocumentAiActions={readOnly ? availableDocumentAiActions : undefined}
           aiDocumentPendingAction={aiDocumentPendingAction}
           onAiDocumentAction={handleAiDocumentActionWrapper}
@@ -1073,7 +1176,7 @@ export function DocEditor({
                     exit={reducedMotion ? undefined : { opacity: 0, x: -18, scale: 0.995 }}
                     transition={PANE_TRANSITION}
                     className={cn(
-                      'min-h-0 overflow-auto transition-[box-shadow] duration-200',
+                      'h-full min-h-0 overflow-auto transition-[box-shadow] duration-200',
                       mode === 'split' && (wysiwygOnLeft ? 'md:order-1' : 'md:order-2'),
                       mode !== 'split' && 'flex-1',
                       mode === 'split' && 'border-b border-border/60 md:border-b-0',
@@ -1095,7 +1198,10 @@ export function DocEditor({
                         : undefined
                     }
                   >
-                    <div ref={editorWrapperRef} className="relative min-h-full">
+                    <div
+                      ref={editorWrapperRef}
+                      className="relative h-full min-h-full"
+                    >
                       <EditorContent editor={editor} />
 
                       {hasRichEditor(mode) && editor && canShowSelectionAi && (
@@ -1142,7 +1248,7 @@ export function DocEditor({
                     exit={reducedMotion ? undefined : { opacity: 0, x: 18, scale: 0.995 }}
                     transition={PANE_TRANSITION}
                     className={cn(
-                      'min-h-0 transition-[box-shadow] duration-200',
+                      'h-full min-h-0 overflow-auto transition-[box-shadow] duration-200',
                       mode === 'split' && (wysiwygOnLeft ? 'md:order-2' : 'md:order-1'),
                       mode !== 'split' && 'flex-1',
                       mode === 'split' && 'bg-muted/[0.14]',
@@ -1170,7 +1276,13 @@ export function DocEditor({
                         'font-mono text-[13px] leading-7 text-foreground',
                         'placeholder:text-muted-foreground/60',
                         'outline-none',
-                        mode === 'split' ? 'h-full min-h-[600px] p-5 md:p-6' : 'h-full min-h-[600px] p-4',
+                        mode === 'split'
+                          ? fullscreen
+                            ? 'h-full min-h-full p-5 md:p-6'
+                            : 'h-full min-h-[600px] p-5 md:p-6'
+                          : fullscreen
+                            ? 'h-full min-h-full p-4'
+                            : 'h-full min-h-[600px] p-4',
                         readOnly && 'cursor-default opacity-70',
                       )}
                       placeholder="Start writing in Markdown…"
@@ -1248,7 +1360,9 @@ export function DocEditor({
                 targetLanguage={ai.preview.targetLanguage}
                 customPrompt={ai.preview.customPrompt}
                 pending={ai.pendingAction === ai.preview.action}
-                previewOnly={readOnly}
+                previewOnly={
+                  readOnly || isAiPreviewOnlyAction(ai.preview.action)
+                }
                 onRetry={handleRetryAiPreview}
                 onAccept={handleAcceptAiPreview}
                 side={aiPreviewSide}

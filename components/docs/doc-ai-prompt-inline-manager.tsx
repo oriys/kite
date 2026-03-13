@@ -47,6 +47,9 @@ const PROMPT_META: Record<
   polish: {
     title: 'Polish',
   },
+  autofix: {
+    title: 'Auto Fix',
+  },
   shorten: {
     title: 'Shorten',
   },
@@ -58,6 +61,9 @@ const PROMPT_META: Record<
   },
   explain: {
     title: 'Explain',
+  },
+  diagram: {
+    title: 'Diagram',
   },
   review: {
     title: 'Review',
@@ -276,7 +282,7 @@ export function DocAiPromptInlineManager({
                 <Bot className="mt-0.5 size-3.5 shrink-0" />
                 <div>
                   {selectedTarget === 'system'
-                    ? 'This prompt runs before every action in this browser.'
+                    ? 'This prompt runs before every action in this workspace.'
                     : selectedModelOverride
                       ? `A dedicated model route is active for this action: ${selectedModelLabel}.`
                       : `This action currently tests against ${selectedModelLabel}.`}

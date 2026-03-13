@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { withWorkspaceAuth, notFound, badRequest } from '@/lib/api-utils'
+import {
+  withWorkspaceAuth,
+  notFound,
+  badRequest,
+  forbidden,
+} from '@/lib/api-utils'
 import { getDocument, transitionDocument } from '@/lib/queries/documents'
+import {
+  attachDocumentAccess,
+  buildDocumentAccessMap,
+} from '@/lib/queries/document-permissions'
 import type { DocStatus } from '@/lib/documents'
 import { isValidStatus, ALLOWED_TRANSITIONS } from '@/lib/constants'
 
@@ -9,7 +18,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const result = await withWorkspaceAuth('member')
+  const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)
@@ -20,6 +29,11 @@ export async function POST(
   const { id } = await context.params
   const existing = await getDocument(id, result.ctx.workspaceId)
   if (!existing) return notFound()
+
+  const access = (
+    await buildDocumentAccessMap([existing], result.ctx.userId, result.ctx.role)
+  ).get(existing.id)
+  if (!access?.canTransition) return forbidden()
 
   const newStatus = body.status as DocStatus
   const allowed = ALLOWED_TRANSITIONS[existing.status as DocStatus]
@@ -32,5 +46,9 @@ export async function POST(
   const doc = await transitionDocument(id, result.ctx.workspaceId, newStatus)
   if (!doc) return notFound()
 
-  return NextResponse.json(doc)
+  const updatedAccess = (
+    await buildDocumentAccessMap([doc], result.ctx.userId, result.ctx.role)
+  ).get(doc.id)
+
+  return NextResponse.json(attachDocumentAccess(doc, updatedAccess!))
 }

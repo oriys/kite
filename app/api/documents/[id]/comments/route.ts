@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
+import {
+  withWorkspaceAuth,
+  badRequest,
+  forbidden,
+  notFound,
+} from '@/lib/api-utils'
 import {
   listDocumentComments,
   createComment,
 } from '@/lib/queries/inline-comments'
+import { getDocument } from '@/lib/queries/documents'
+import { buildDocumentAccessMap } from '@/lib/queries/document-permissions'
 
 const MAX_BODY_LENGTH = 5000
 const VALID_ANCHOR_TYPES = ['text_range', 'block_id'] as const
@@ -17,6 +24,14 @@ export async function GET(
   if ('error' in result) return result.error
 
   const { id } = await context.params
+  const document = await getDocument(id, result.ctx.workspaceId)
+  if (!document) return notFound()
+
+  const access = (
+    await buildDocumentAccessMap([document], result.ctx.userId, result.ctx.role)
+  ).get(document.id)
+  if (!access?.canView) return forbidden()
+
   const comments = await listDocumentComments(id)
 
   return NextResponse.json(comments)
@@ -30,6 +45,14 @@ export async function POST(
   if ('error' in result) return result.error
 
   const { id } = await context.params
+  const document = await getDocument(id, result.ctx.workspaceId)
+  if (!document) return notFound()
+
+  const access = (
+    await buildDocumentAccessMap([document], result.ctx.userId, result.ctx.role)
+  ).get(document.id)
+  if (!access?.canView) return forbidden()
+
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
 

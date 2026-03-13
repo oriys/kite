@@ -1,10 +1,20 @@
-import { desc, eq, and, isNull } from 'drizzle-orm'
+import { desc, eq, and, isNull, notInArray } from 'drizzle-orm'
 import { db } from '../db'
 import {
   apiEnvironments,
   apiAuthConfigs,
   apiRequestHistory,
 } from '../schema'
+
+const REQUEST_HISTORY_BODY_MAX_LENGTH = 20_000
+const REQUEST_HISTORY_ROWS_PER_USER = 200
+
+function truncateHistoryText(value?: string | null) {
+  if (!value) return null
+  return value.length > REQUEST_HISTORY_BODY_MAX_LENGTH
+    ? value.slice(0, REQUEST_HISTORY_BODY_MAX_LENGTH)
+    : value
+}
 
 // ─── Environments ───────────────────────────────────────────────
 
@@ -22,13 +32,24 @@ export async function createEnvironment(
 }
 
 export async function listEnvironments(workspaceId: string) {
-  return db.query.apiEnvironments.findMany({
-    where: and(
-      eq(apiEnvironments.workspaceId, workspaceId),
-      isNull(apiEnvironments.deletedAt),
-    ),
-    orderBy: [desc(apiEnvironments.createdAt)],
-  })
+  return db
+    .select({
+      id: apiEnvironments.id,
+      workspaceId: apiEnvironments.workspaceId,
+      name: apiEnvironments.name,
+      baseUrl: apiEnvironments.baseUrl,
+      isDefault: apiEnvironments.isDefault,
+      createdAt: apiEnvironments.createdAt,
+      updatedAt: apiEnvironments.updatedAt,
+    })
+    .from(apiEnvironments)
+    .where(
+      and(
+        eq(apiEnvironments.workspaceId, workspaceId),
+        isNull(apiEnvironments.deletedAt),
+      ),
+    )
+    .orderBy(desc(apiEnvironments.createdAt))
 }
 
 export async function getEnvironment(id: string) {
@@ -77,13 +98,23 @@ export async function createAuthConfig(
 }
 
 export async function listAuthConfigs(workspaceId: string) {
-  return db.query.apiAuthConfigs.findMany({
-    where: and(
-      eq(apiAuthConfigs.workspaceId, workspaceId),
-      isNull(apiAuthConfigs.deletedAt),
-    ),
-    orderBy: [desc(apiAuthConfigs.createdAt)],
-  })
+  return db
+    .select({
+      id: apiAuthConfigs.id,
+      workspaceId: apiAuthConfigs.workspaceId,
+      name: apiAuthConfigs.name,
+      authType: apiAuthConfigs.authType,
+      createdAt: apiAuthConfigs.createdAt,
+      updatedAt: apiAuthConfigs.updatedAt,
+    })
+    .from(apiAuthConfigs)
+    .where(
+      and(
+        eq(apiAuthConfigs.workspaceId, workspaceId),
+        isNull(apiAuthConfigs.deletedAt),
+      ),
+    )
+    .orderBy(desc(apiAuthConfigs.createdAt))
 }
 
 export async function updateAuthConfig(
@@ -134,14 +165,41 @@ export async function saveRequestHistory(
       method: data.method,
       url: data.url,
       headers: data.headers ?? {},
-      body: data.body ?? null,
+      body: truncateHistoryText(data.body),
       responseStatus: data.responseStatus ?? null,
       responseHeaders: data.responseHeaders ?? {},
-      responseBody: data.responseBody ?? null,
+      responseBody: truncateHistoryText(data.responseBody),
       durationMs: data.durationMs ?? null,
       environmentId: data.environmentId ?? null,
     })
     .returning()
+
+  if (userId) {
+    const keepIds = db
+      .select({ id: apiRequestHistory.id })
+      .from(apiRequestHistory)
+      .where(
+        and(
+          eq(apiRequestHistory.workspaceId, workspaceId),
+          eq(apiRequestHistory.userId, userId),
+          isNull(apiRequestHistory.deletedAt),
+        ),
+      )
+      .orderBy(desc(apiRequestHistory.createdAt))
+      .limit(REQUEST_HISTORY_ROWS_PER_USER)
+
+    await db
+      .delete(apiRequestHistory)
+      .where(
+        and(
+          eq(apiRequestHistory.workspaceId, workspaceId),
+          eq(apiRequestHistory.userId, userId),
+          isNull(apiRequestHistory.deletedAt),
+          notInArray(apiRequestHistory.id, keepIds),
+        ),
+      )
+  }
+
   return record
 }
 
@@ -156,12 +214,21 @@ export async function listRequestHistory(
   ]
   if (userId) conditions.push(eq(apiRequestHistory.userId, userId))
 
-  return db.query.apiRequestHistory.findMany({
-    where: and(...conditions),
-    orderBy: [desc(apiRequestHistory.createdAt)],
-    limit,
-    offset,
-  })
+  return db
+    .select({
+      id: apiRequestHistory.id,
+      method: apiRequestHistory.method,
+      url: apiRequestHistory.url,
+      responseStatus: apiRequestHistory.responseStatus,
+      durationMs: apiRequestHistory.durationMs,
+      environmentId: apiRequestHistory.environmentId,
+      createdAt: apiRequestHistory.createdAt,
+    })
+    .from(apiRequestHistory)
+    .where(and(...conditions))
+    .orderBy(desc(apiRequestHistory.createdAt))
+    .limit(limit)
+    .offset(offset)
 }
 
 export async function clearRequestHistory(workspaceId: string) {

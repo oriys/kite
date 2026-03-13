@@ -61,6 +61,11 @@
       "sourceType": "github",
       "computedHash": "69cecc4f28fb2f140652669bd45cc492744ad5c3c45083f5e0be5b0a5ef8acd0"
     },
+    "node": {
+      "source": "mcollina/skills",
+      "sourceType": "github",
+      "computedHash": "df77c0c146bba2959201b2b935573a5ea6e0fc1bdbdce1599dbd9d182e09ec65"
+    },
     "normalize": {
       "source": "pbakaus/impeccable",
       "sourceType": "github",
