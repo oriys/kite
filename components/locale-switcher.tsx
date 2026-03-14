@@ -72,7 +72,7 @@ export function LocaleSwitcher({
               <button
                 key={locale.code}
                 type="button"
-                disabled={isPending}
+                disabled={!!pendingLocale}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors',
                   isCurrent
@@ -111,7 +111,7 @@ export function LocaleSwitcher({
                   <button
                     key={locale.code}
                     type="button"
-                    disabled={isPending}
+                    disabled={!!pendingLocale}
                     className={cn(
                       'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground',
                       isPending && 'opacity-50',

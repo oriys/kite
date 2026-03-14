@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { REVIEW_READ_ONLY_AI_ACTIONS } from '@/lib/ai'
 import {
   isDocumentTitleMissing,
+  type Doc,
   type DocStatus,
   STATUS_CONFIG,
 } from '@/lib/documents'
@@ -109,10 +110,18 @@ function MissingDocumentState() {
   )
 }
 
+interface EditorSnapshot {
+  title: string
+  content: string
+  locale: string
+  translationId: string | null
+}
+
 export function DocEditorPageClient() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const docId = searchParams.get('doc')
+  const translationParam = searchParams.get('translation')
   const { doc, loading, update, transition, remove, duplicate, refresh } = useDocument(docId)
   const [availableLocales, setAvailableLocales] = React.useState<
     { code: string; translationId?: string }[]
@@ -120,6 +129,10 @@ export function DocEditorPageClient() {
   const [pendingLocale, setPendingLocale] = React.useState<string | null>(null)
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
+  const [activeLocale, setActiveLocale] = React.useState('en')
+  const [activeTranslationId, setActiveTranslationId] = React.useState<string | null>(
+    null,
+  )
   const [, setEditorMode] = React.useState<EditorViewMode>('wysiwyg')
   const [documentResizeActive, setDocumentResizeActive] = React.useState(false)
   const [initializedDocId, setInitializedDocId] = React.useState<string | null>(null)
@@ -135,31 +148,131 @@ export function DocEditorPageClient() {
   const savedFeedbackRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const retryTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const retryCountRef = React.useRef(0)
-  const pendingSaveRef = React.useRef<{ title: string; content: string } | null>(null)
+  const pendingSaveRef = React.useRef<EditorSnapshot | null>(null)
+  const savedSnapshotRef = React.useRef<EditorSnapshot | null>(null)
   const [, setIsOnline] = React.useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   )
   const editorFocusRef = React.useRef<DocEditorHandle | null>(null)
   const editorOverlayRef = React.useRef<HTMLDivElement | null>(null)
+  const localeSwitchingRef = React.useRef(false)
+  const prevTranslationParamRef = React.useRef<string | null | undefined>(undefined)
   const { documentWidth, setDocumentWidth } = useDocEditorWidth()
   const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
+  const sourceLocale = doc?.locale ?? 'en'
+  const snapshotCacheRef = React.useRef<Map<string, EditorSnapshot>>(new Map())
+
+  const getSnapshotCacheKey = React.useCallback(
+    (translationId: string | null) =>
+      translationId ? `translation:${translationId}` : `source:${docId ?? 'current'}`,
+    [docId],
+  )
+
+  const cacheSnapshot = React.useCallback(
+    (snapshot: EditorSnapshot) => {
+      snapshotCacheRef.current.set(
+        getSnapshotCacheKey(snapshot.translationId),
+        snapshot,
+      )
+    },
+    [getSnapshotCacheKey],
+  )
+
+  const getCachedSnapshot = React.useCallback(
+    (translationId: string | null) =>
+      snapshotCacheRef.current.get(getSnapshotCacheKey(translationId)) ?? null,
+    [getSnapshotCacheKey],
+  )
+
+  const replaceEditorQuery = React.useCallback(
+    (translationId: string | null) => {
+      if (!docId) return
+
+      const nextParams = new URLSearchParams(searchParams.toString())
+      nextParams.set('doc', docId)
+
+      if (translationId) {
+        nextParams.set('translation', translationId)
+      } else {
+        nextParams.delete('translation')
+      }
+
+      router.replace(`/docs/editor?${nextParams.toString()}`, { scroll: false })
+    },
+    [docId, router, searchParams],
+  )
+
+  const buildSnapshot = React.useCallback(
+    (overrides: Partial<EditorSnapshot> = {}): EditorSnapshot => ({
+      title: overrides.title ?? title,
+      content: overrides.content ?? content,
+      locale: overrides.locale ?? activeLocale,
+      translationId:
+        overrides.translationId === undefined
+          ? activeTranslationId
+          : overrides.translationId,
+    }),
+    [activeLocale, activeTranslationId, content, title],
+  )
+
+  const applySnapshot = React.useCallback(
+    (snapshot: EditorSnapshot) => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+      cacheSnapshot(snapshot)
+      setTitle(snapshot.title)
+      setContent(snapshot.content)
+      setActiveLocale(snapshot.locale)
+      setActiveTranslationId(snapshot.translationId)
+      savedSnapshotRef.current = snapshot
+      pendingSaveRef.current = null
+      setSaveState('idle')
+    },
+    [cacheSnapshot],
+  )
+
+  const isSnapshotDirty = React.useCallback((snapshot: EditorSnapshot) => {
+    const savedSnapshot = savedSnapshotRef.current
+    return (
+      !savedSnapshot
+      || savedSnapshot.locale !== snapshot.locale
+      || savedSnapshot.translationId !== snapshot.translationId
+      || savedSnapshot.title !== snapshot.title
+      || savedSnapshot.content !== snapshot.content
+    )
+  }, [])
+
+  React.useEffect(() => {
+    snapshotCacheRef.current.clear()
+  }, [docId])
 
   React.useEffect(() => {
     if (doc && initializedDocId !== doc.id) {
-      setTitle(doc.title)
-      setContent(doc.content)
+      applySnapshot({
+        title: doc.title,
+        content: doc.content,
+        locale: doc.locale ?? 'en',
+        translationId: null,
+      })
       setVisibility(doc.visibility)
       setInitializedDocId(doc.id)
     }
-  }, [doc, initializedDocId])
+  }, [applySnapshot, doc, initializedDocId])
 
   React.useEffect(() => {
     if (!docId) {
       setInitializedDocId(null)
       setTitle('')
       setContent('')
+      setActiveLocale('en')
+      setActiveTranslationId(null)
       setAvailableLocales([])
       setPendingLocale(null)
+      snapshotCacheRef.current.clear()
+      pendingSaveRef.current = null
+      savedSnapshotRef.current = null
       return
     }
     if (docId !== initializedDocId) {
@@ -194,11 +307,18 @@ export function DocEditorPageClient() {
 
         if (cancelled) return
 
-        setAvailableLocales(
-          data.translations.map((translation) => ({
+        const locales = [
+          { code: data.currentLocale },
+          ...data.translations.map((translation) => ({
             code: translation.locale,
             translationId: translation.id,
           })),
+        ]
+
+        setAvailableLocales(
+          Array.from(
+            new Map(locales.map((locale) => [locale.code, locale])).values(),
+          ),
         )
       } catch {
         if (!cancelled) {
@@ -214,16 +334,159 @@ export function DocEditorPageClient() {
     }
   }, [doc?.id])
 
+  React.useEffect(() => {
+    // Track whether translationParam actually changed — when handleLocaleChange
+    // updates activeTranslationId via applySnapshot, router.replace hasn't
+    // committed yet. Without this guard the effect would re-fire with the stale
+    // URL param and reload the OLD translation, overwriting the new one.
+    const prevParam = prevTranslationParamRef.current
+    prevTranslationParamRef.current = translationParam
+    if (prevParam === translationParam) return
+
+    const currentDoc = doc
+
+    if (!currentDoc || !translationParam) return
+    if (translationParam === activeTranslationId) return
+
+    const sourceSnapshot = getCachedSnapshot(null)
+    const baseTitle = sourceSnapshot?.title ?? currentDoc.title
+    const baseContent = sourceSnapshot?.content ?? currentDoc.content
+
+    let cancelled = false
+
+    async function loadTranslation() {
+      try {
+        const cachedSnapshot = getCachedSnapshot(translationParam)
+        if (cachedSnapshot) {
+          applySnapshot(cachedSnapshot)
+          return
+        }
+
+        const response = await fetch(`/api/translations/${translationParam}`)
+        if (!response.ok) {
+          throw new Error('Failed to restore translation')
+        }
+
+        const data = (await response.json()) as {
+          locale?: string | null
+          latestVersion?: { title?: string; content?: string } | null
+        }
+
+        if (cancelled) return
+
+        applySnapshot({
+          title: data.latestVersion?.title ?? baseTitle,
+          content: data.latestVersion?.content ?? baseContent,
+          locale: data.locale?.trim() || activeLocale,
+          translationId: translationParam,
+        })
+      } catch {
+        if (!cancelled) {
+          replaceEditorQuery(null)
+        }
+      }
+    }
+
+    void loadTranslation()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    activeLocale,
+    activeTranslationId,
+    applySnapshot,
+    doc,
+    getCachedSnapshot,
+    replaceEditorQuery,
+    translationParam,
+  ])
+
+  // ── Auto-save with retry ──────────────────────────────────────────────────
+
+  const performSave = React.useCallback(
+    async (snapshot: EditorSnapshot): Promise<Doc | true | false> => {
+      if (!navigator.onLine) {
+        pendingSaveRef.current = snapshot
+        setSaveState('offline')
+        return false
+      }
+
+      setSaveState('saving')
+      try {
+        let updatedDocument: Doc | undefined
+
+        if (snapshot.translationId) {
+          const response = await fetch(`/api/translations/${snapshot.translationId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: snapshot.title,
+              content: snapshot.content,
+            }),
+          })
+
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => null)) as
+              | { error?: string }
+              | null
+
+            throw new Error(payload?.error ?? 'Failed to save translation.')
+          }
+        } else {
+          updatedDocument = await update({
+            title: snapshot.title,
+            content: snapshot.content,
+          })
+          if (!updatedDocument) {
+            throw new Error('You no longer have permission to edit this document.')
+          }
+        }
+
+        const persistedSnapshot = updatedDocument
+          ? {
+              title: updatedDocument.title,
+              content: updatedDocument.content,
+              locale: updatedDocument.locale ?? snapshot.locale,
+              translationId: null,
+            }
+          : snapshot
+
+        pendingSaveRef.current = null
+        cacheSnapshot(persistedSnapshot)
+        savedSnapshotRef.current = persistedSnapshot
+        retryCountRef.current = 0
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+        setSaveState('saved')
+        savedFeedbackRef.current = setTimeout(() => setSaveState('idle'), 2000)
+        return updatedDocument ?? true
+      } catch {
+        pendingSaveRef.current = snapshot
+        retryCountRef.current += 1
+        setSaveState('error')
+
+        // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+        const delay = Math.min(2000 * Math.pow(2, retryCountRef.current - 1), 30_000)
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = setTimeout(() => {
+          if (pendingSaveRef.current) {
+            void performSave(pendingSaveRef.current)
+          }
+        }, delay)
+        return false
+      }
+    },
+    [cacheSnapshot, update],
+  )
+
   // ── Online/offline detection ────────────────────────────────────────────
 
   React.useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true)
-      // Retry pending save when coming back online
       if (pendingSaveRef.current) {
-        const { title: t, content: c } = pendingSaveRef.current
         retryCountRef.current = 0
-        performSave(t, c)
+        void performSave(pendingSaveRef.current)
       }
     }
     const handleOffline = () => {
@@ -236,59 +499,50 @@ export function DocEditorPageClient() {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [performSave])
 
-  // ── Auto-save with retry ──────────────────────────────────────────────────
-
-  const performSave = React.useCallback(
-    async (saveTitle: string, saveContent: string) => {
-      if (!navigator.onLine) {
-        pendingSaveRef.current = { title: saveTitle, content: saveContent }
-        setSaveState('offline')
-        return
+  const flushPendingSave = React.useCallback(
+    async (overrides?: Partial<EditorSnapshot>) => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
       }
 
-      setSaveState('saving')
-      try {
-        const updated = await update({ title: saveTitle, content: saveContent })
-        if (!updated) {
-          throw new Error('You no longer have permission to edit this document.')
-        }
-
-        pendingSaveRef.current = null
-        retryCountRef.current = 0
-        if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
-        setSaveState('saved')
-        savedFeedbackRef.current = setTimeout(() => setSaveState('idle'), 2000)
-      } catch {
-        pendingSaveRef.current = { title: saveTitle, content: saveContent }
-        retryCountRef.current += 1
-        setSaveState('error')
-
-        // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
-        const delay = Math.min(2000 * Math.pow(2, retryCountRef.current - 1), 30_000)
-        retryTimerRef.current = setTimeout(() => {
-          if (pendingSaveRef.current) {
-            void performSave(pendingSaveRef.current.title, pendingSaveRef.current.content)
+      const snapshot = pendingSaveRef.current
+        ? {
+            ...pendingSaveRef.current,
+            ...overrides,
           }
-        }, delay)
+        : buildSnapshot(overrides)
+
+      pendingSaveRef.current = snapshot
+
+      if (!isSnapshotDirty(snapshot)) {
+        pendingSaveRef.current = null
+        return true as const
       }
+
+      return performSave(snapshot)
     },
-    [update],
+    [buildSnapshot, isSnapshotDirty, performSave],
   )
 
   const scheduleAutoSave = React.useCallback(
     (newTitle: string, newContent: string) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       if (savedFeedbackRef.current) clearTimeout(savedFeedbackRef.current)
-      pendingSaveRef.current = { title: newTitle, content: newContent }
+      pendingSaveRef.current = buildSnapshot({
+        title: newTitle,
+        content: newContent,
+      })
       setSaveState('saving')
       saveTimerRef.current = setTimeout(() => {
-        void performSave(newTitle, newContent)
+        if (pendingSaveRef.current) {
+          void performSave(pendingSaveRef.current)
+        }
       }, 800)
     },
-    [performSave],
+    [buildSnapshot, performSave],
   )
 
   React.useEffect(() => {
@@ -339,6 +593,20 @@ export function DocEditorPageClient() {
     scheduleAutoSave(title, newContent)
   }
 
+  const syncLatestEditorContent = React.useCallback(() => {
+    const latestContent = editorFocusRef.current?.flushPendingContent?.()
+    if (typeof latestContent !== 'string') {
+      return content
+    }
+
+    if (latestContent !== content) {
+      setContent(latestContent)
+      pendingSaveRef.current = buildSnapshot({ content: latestContent })
+    }
+
+    return latestContent
+  }, [buildSnapshot, content])
+
   const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
@@ -347,13 +615,13 @@ export function DocEditorPageClient() {
   }
 
   const handleTransition = async (status: DocStatus) => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current)
-      const flushed = await update({ title, content })
-      if (!flushed) {
-        toast.error('Failed to save document before changing status')
-        return
-      }
+    const latestContent = syncLatestEditorContent()
+    const flushed = await flushPendingSave(
+      latestContent === content ? undefined : { content: latestContent },
+    )
+    if (!flushed) {
+      toast.error('Failed to save document before changing status')
+      return
     }
     const updated = await transition(status)
     if (!updated) {
@@ -458,33 +726,32 @@ export function DocEditorPageClient() {
     if (!docId || backBusy) return
 
     setBackBusy(true)
+    let shouldNavigate = false
 
     try {
+      const latestContent = syncLatestEditorContent()
       let latestDoc = doc
-      const titleChanged = Boolean(doc && doc.title !== title)
-      const contentChanged = Boolean(doc && doc.content !== content)
+      const isEditingSourceDocument = activeTranslationId === null
+      const titleChanged = Boolean(doc && isEditingSourceDocument && doc.title !== title)
+      const contentChanged = Boolean(
+        doc && isEditingSourceDocument && doc.content !== latestContent,
+      )
 
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current)
-        saveTimerRef.current = null
-        const flushed = await update({ title, content })
-        if (!flushed) {
-          throw new Error('Latest changes could not be saved before generating the summary.')
-        }
+      const flushed = await flushPendingSave(
+        latestContent === content ? undefined : { content: latestContent },
+      )
+      if (!flushed) {
+        throw new Error('Latest changes could not be saved before leaving the editor.')
+      }
+      if (flushed !== true) {
         latestDoc = flushed
-        setSaveState('saved')
-      } else if (doc && (titleChanged || contentChanged)) {
-        const flushed = await update({ title, content })
-        if (!flushed) {
-          throw new Error('Latest changes could not be saved before generating the summary.')
-        }
-        latestDoc = flushed
-        setSaveState('saved')
       }
 
       const shouldRefreshSummary =
+        isEditingSourceDocument &&
         Boolean(latestDoc?.content.trim()) &&
         (
+          titleChanged ||
           contentChanged ||
           !latestDoc?.summary ||
           isDocumentTitleMissing(latestDoc?.title)
@@ -493,15 +760,180 @@ export function DocEditorPageClient() {
       if (shouldRefreshSummary) {
         triggerDocumentSummaryRefresh(docId)
       }
+      shouldNavigate = true
     } catch (error) {
-      toast.error('Summary update failed', {
+      toast.error('Could not leave the editor', {
         description:
           error instanceof Error ? error.message : 'The list will fall back to the raw excerpt.',
       })
     } finally {
-      router.push('/docs')
+      setBackBusy(false)
+      if (shouldNavigate) {
+        router.push('/docs')
+      }
     }
-  }, [backBusy, content, doc, docId, title, triggerDocumentSummaryRefresh, update, router])
+  }, [
+    activeTranslationId,
+    backBusy,
+    content,
+    doc,
+    docId,
+    flushPendingSave,
+    title,
+    syncLatestEditorContent,
+    triggerDocumentSummaryRefresh,
+    router,
+  ])
+
+  const handleLocaleChange = React.useCallback(
+    async (locale: string, translationId: string | undefined, targetLabel: string) => {
+      if (!doc) return
+      if (locale === activeLocale) return
+      if (localeSwitchingRef.current) return
+
+      localeSwitchingRef.current = true
+      setPendingLocale(locale)
+      try {
+        const latestContent = syncLatestEditorContent()
+        const flushed = await flushPendingSave(
+          latestContent === content ? undefined : { content: latestContent },
+        )
+        if (!flushed) {
+          throw new Error('Save the current draft before switching languages.')
+        }
+
+        if (locale === sourceLocale) {
+          applySnapshot(
+            getCachedSnapshot(null) ?? {
+              title: doc.title,
+              content: doc.content,
+              locale: sourceLocale,
+              translationId: null,
+            },
+          )
+          replaceEditorQuery(null)
+          return
+        }
+
+        if (translationId) {
+          const cachedTranslation = getCachedSnapshot(translationId)
+          if (cachedTranslation) {
+            applySnapshot(cachedTranslation)
+            replaceEditorQuery(translationId)
+            toast.info(`Loaded ${targetLabel} translation`)
+            return
+          }
+
+          const res = await fetch(`/api/translations/${translationId}`)
+          if (!res.ok) throw new Error('Failed to load translation')
+          const data = (await res.json()) as {
+            latestVersion?: { title?: string; content?: string } | null
+          }
+
+          const sourceFallback = getCachedSnapshot(null)
+
+          applySnapshot({
+            title: data.latestVersion?.title ?? sourceFallback?.title ?? doc.title,
+            content: data.latestVersion?.content ?? sourceFallback?.content ?? doc.content,
+            locale,
+            translationId,
+          })
+          replaceEditorQuery(translationId)
+          toast.info(`Loaded ${targetLabel} translation`)
+          return
+        }
+
+        const translateText = async (text: string) => {
+          if (!text.trim()) return text
+          const res = await fetch('/api/ai/transform', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'translate',
+              text,
+              targetLanguage: targetLabel,
+            }),
+          })
+          if (!res.ok) return null
+          const data = (await res.json().catch(() => null)) as
+            | { result?: string }
+            | null
+          return data?.result ?? null
+        }
+
+        const [translatedTitle, translatedContent] = await Promise.all([
+          translateText(title),
+          translateText(latestContent),
+        ])
+
+        const response = await fetch(`/api/documents/${doc.id}/translations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetLocale: locale,
+            title: translatedTitle ?? title,
+            content: translatedContent ?? latestContent,
+          }),
+        })
+
+        const data = (await response.json().catch(() => null)) as
+          | { translationId?: string; error?: string }
+          | null
+
+        if (!response.ok || !data?.translationId) {
+          throw new Error(
+            data && 'error' in data && typeof data.error === 'string'
+              ? data.error
+              : 'Could not create the translation.',
+          )
+        }
+
+        setAvailableLocales((prev) => {
+          const next = prev.filter((item) => item.code !== locale)
+          return [...next, { code: locale, translationId: data.translationId }]
+        })
+
+      applySnapshot({
+        title: translatedTitle ?? title,
+        content: translatedContent ?? latestContent,
+        locale,
+        translationId: data.translationId,
+      })
+        replaceEditorQuery(data.translationId)
+
+        if (translatedContent !== null) {
+          toast.success(`${targetLabel} translation created`)
+        } else {
+          toast.info('Translation created', {
+            description:
+              'AI translation was unavailable — the original content was saved.',
+          })
+        }
+      } catch (error) {
+        toast.error('Translation failed', {
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Could not create the translation.',
+        })
+      } finally {
+        localeSwitchingRef.current = false
+        setPendingLocale(null)
+      }
+    },
+    [
+      activeLocale,
+      applySnapshot,
+      content,
+      doc,
+      flushPendingSave,
+      getCachedSnapshot,
+      replaceEditorQuery,
+      sourceLocale,
+      syncLatestEditorContent,
+      title,
+    ],
+  )
 
   if (loading) {
     return <EditorSkeleton />
@@ -556,104 +988,10 @@ export function DocEditorPageClient() {
               />
               <ExportMenu documentId={doc.id} documentTitle={title} />
               <LocaleSwitcher
-                currentLocale={doc.locale ?? 'en'}
+                currentLocale={activeLocale}
                 availableLocales={availableLocales}
                 pendingLocale={pendingLocale}
-                onLocaleChange={async (locale, translationId, targetLabel) => {
-                  if (locale === (doc.locale ?? 'en')) {
-                    return
-                  }
-
-                  setPendingLocale(locale)
-                  try {
-                    if (translationId) {
-                      // Fetch existing translation content and load into editor
-                      const res = await fetch(`/api/translations/${translationId}`)
-                      if (!res.ok) throw new Error('Failed to load translation')
-                      const data = (await res.json()) as {
-                        latestVersion?: { title?: string; content?: string } | null
-                      }
-                      if (data.latestVersion) {
-                        setTitle(data.latestVersion.title ?? title)
-                        setContent(data.latestVersion.content ?? content)
-                        toast.info(`Loaded ${targetLabel} translation`)
-                      }
-                      return
-                    }
-
-                    // Create new translation — translate via AI first
-                    const translateText = async (text: string) => {
-                      if (!text.trim()) return text
-                      const res = await fetch('/api/ai/transform', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          action: 'translate',
-                          text,
-                          targetLanguage: targetLabel,
-                        }),
-                      })
-                      if (!res.ok) return null
-                      const data = await res.json().catch(() => null) as
-                        | { result?: string }
-                        | null
-                      return data?.result ?? null
-                    }
-
-                    const [translatedTitle, translatedContent] = await Promise.all([
-                      translateText(title),
-                      translateText(content),
-                    ])
-
-                    const response = await fetch(`/api/documents/${doc.id}/translations`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        targetLocale: locale,
-                        title: translatedTitle ?? title,
-                        content: translatedContent ?? content,
-                      }),
-                    })
-
-                    const data = await response.json().catch(() => null) as
-                      | { translationId?: string; versionId?: string; error?: string }
-                      | null
-
-                    if (!response.ok || !data?.translationId) {
-                      throw new Error(
-                        data && 'error' in data && typeof data.error === 'string'
-                          ? data.error
-                          : 'Could not create the translation.',
-                      )
-                    }
-
-                    // Reload translations list and show translated content
-                    setAvailableLocales((prev) => [
-                      ...prev,
-                      { code: locale, translationId: data.translationId },
-                    ])
-
-                    if (translatedContent) {
-                      setTitle(translatedTitle ?? title)
-                      setContent(translatedContent)
-                      toast.success(`${targetLabel} translation created`)
-                    } else {
-                      toast.info('Translation created', {
-                        description:
-                          'AI translation was unavailable — the original content was saved.',
-                      })
-                    }
-                  } catch (error) {
-                    toast.error('Translation failed', {
-                      description:
-                        error instanceof Error
-                          ? error.message
-                          : 'Could not create the translation.',
-                    })
-                  } finally {
-                    setPendingLocale(null)
-                  }
-                }}
+                onLocaleChange={handleLocaleChange}
               />
               <PresenceAvatars documentId={doc.id} currentUserId={doc.createdBy ?? ''} />
               <Button
@@ -701,7 +1039,7 @@ export function DocEditorPageClient() {
             >
               <EditorErrorBoundary>
                 <DocEditor
-                  key={doc.id}
+                  key={activeTranslationId ? `${doc.id}:${activeTranslationId}` : `${doc.id}:source`}
                   content={content}
                   onChange={handleContentChange}
                   readOnly={isReadOnly}
@@ -756,7 +1094,7 @@ export function DocEditorPageClient() {
           onDelete={handleDelete}
           onDuplicate={handleDuplicate}
           onRestoreVersion={
-            isReadOnly
+            isReadOnly || activeTranslationId !== null
               ? undefined
               : (versionContent) => {
                   setContent(versionContent)
