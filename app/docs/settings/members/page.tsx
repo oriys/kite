@@ -86,18 +86,43 @@ const ROLE_META: Record<MemberRole, { label: string; icon: React.ElementType; co
 
 function useWorkspaceId() {
   const [workspaceId, setWorkspaceId] = React.useState<string | null>(null)
+  const [loading, setLoading] = React.useState(true)
   React.useEffect(() => {
+    let cancelled = false
+
     fetch('/api/workspaces')
-      .then((r) => r.json())
-      .then((ws: { id: string }[]) => {
-        if (ws[0]) setWorkspaceId(ws[0].id)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load workspaces')
+        }
+
+        return response.json() as Promise<{ id: string }[]>
       })
+      .then((ws) => {
+        if (!cancelled) {
+          setWorkspaceId(ws[0]?.id ?? null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkspaceId(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
-  return workspaceId
+  return { workspaceId, loading }
 }
 
 export default function MembersPage() {
-  const workspaceId = useWorkspaceId()
+  const { workspaceId, loading: workspaceLoading } = useWorkspaceId()
   const [members, setMembers] = React.useState<Member[]>([])
   const [invites, setInvites] = React.useState<Invite[]>([])
   const [membersLoading, setMembersLoading] = React.useState(true)
@@ -203,10 +228,21 @@ export default function MembersPage() {
     }
   }
 
-  if (membersLoading || invitesLoading) {
+  if (workspaceLoading || membersLoading || invitesLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Spinner className="h-5 w-5" />
+      </div>
+    )
+  }
+
+  if (!workspaceId) {
+    return (
+      <div className="py-20 text-center">
+        <h1 className="text-xl font-semibold tracking-tight">Members</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Workspace data is unavailable right now.
+        </p>
       </div>
     )
   }

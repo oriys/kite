@@ -3,6 +3,8 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import type { DocPermissionLevel } from '../documents'
 import { db } from '../db'
 import {
+  approvalRequests,
+  approvalReviewers,
   documentPermissions,
   documents,
   users,
@@ -13,11 +15,17 @@ import { emitAuditEvent } from './audit-logs'
 type MemberRole = 'owner' | 'admin' | 'member' | 'guest'
 type MemberStatus = 'active' | 'disabled'
 type VisibilityLevel = 'public' | 'partner' | 'private'
+type DocumentStatus = 'draft' | 'review' | 'published' | 'archived'
 
 interface AccessDocumentShape {
   id: string
+  status?: DocumentStatus
   visibility: VisibilityLevel
   createdBy: string | null
+}
+
+interface PendingReviewAccess {
+  reviewerIds: Set<string>
 }
 
 export interface DocumentAccess {
@@ -130,8 +138,11 @@ export async function buildDocumentAccessMap<T extends AccessDocumentShape>(
   if (docs.length === 0) return new Map()
 
   const documentIds = docs.map((doc) => doc.id)
+  const reviewDocumentIds = docs
+    .filter((doc) => doc.status === 'review')
+    .map((doc) => doc.id)
 
-  const [permissionRows, permissionCountRows] = await Promise.all([
+  const [permissionRows, permissionCountRows, pendingApprovalRows] = await Promise.all([
     db
       .select({
         documentId: documentPermissions.documentId,
@@ -152,6 +163,24 @@ export async function buildDocumentAccessMap<T extends AccessDocumentShape>(
       .from(documentPermissions)
       .where(inArray(documentPermissions.documentId, documentIds))
       .groupBy(documentPermissions.documentId),
+    reviewDocumentIds.length > 0
+      ? db
+          .select({
+            documentId: approvalRequests.documentId,
+            reviewerId: approvalReviewers.reviewerId,
+          })
+          .from(approvalRequests)
+          .innerJoin(
+            approvalReviewers,
+            eq(approvalReviewers.requestId, approvalRequests.id),
+          )
+          .where(
+            and(
+              inArray(approvalRequests.documentId, reviewDocumentIds),
+              eq(approvalRequests.status, 'pending'),
+            ),
+          )
+      : Promise.resolve([]),
   ])
 
   const explicitByDocumentId = new Map(
@@ -160,17 +189,46 @@ export async function buildDocumentAccessMap<T extends AccessDocumentShape>(
   const documentsWithCustomPermissions = new Set(
     permissionCountRows.map((row) => row.documentId),
   )
+  const pendingReviewAccessByDocumentId = new Map<string, PendingReviewAccess>()
+
+  for (const row of pendingApprovalRows) {
+    const existing = pendingReviewAccessByDocumentId.get(row.documentId)
+    if (existing) {
+      existing.reviewerIds.add(row.reviewerId)
+      continue
+    }
+
+    pendingReviewAccessByDocumentId.set(row.documentId, {
+      reviewerIds: new Set([row.reviewerId]),
+    })
+  }
 
   return new Map(
     docs.map((doc) => [
       doc.id,
-      resolveDocumentAccess(
-        doc,
-        userId,
-        role,
-        explicitByDocumentId.get(doc.id) ?? null,
-        documentsWithCustomPermissions.has(doc.id),
-      ),
+      (() => {
+        const access = resolveDocumentAccess(
+          doc,
+          userId,
+          role,
+          explicitByDocumentId.get(doc.id) ?? null,
+          documentsWithCustomPermissions.has(doc.id),
+        )
+        const pendingReview = pendingReviewAccessByDocumentId.get(doc.id)
+
+        if (!pendingReview || pendingReview.reviewerIds.has(userId)) {
+          return access
+        }
+
+        return {
+          ...access,
+          canEdit: false,
+          canManagePermissions: false,
+          canDelete: false,
+          canDuplicate: false,
+          canTransition: false,
+        }
+      })(),
     ]),
   )
 }

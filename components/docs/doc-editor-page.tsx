@@ -43,7 +43,6 @@ import {
 } from '@/components/ui/resizable'
 import { VisibilitySelector } from '@/components/visibility-selector'
 import { VisibilityBadge } from '@/components/visibility-badge'
-import { DocFeedback } from '@/components/doc-feedback'
 import { ApprovalBanner } from '@/components/approval-banner'
 import { ExportMenu } from '@/components/export-menu'
 import { PresenceAvatars } from '@/components/presence-avatars'
@@ -1010,6 +1009,20 @@ export function DocEditorPageClient() {
   const isPermissionReadOnly = !doc.canEdit
   const isStatusReadOnly = doc.status !== 'draft'
   const isReadOnly = isStatusReadOnly || isPermissionReadOnly
+  const readOnlyBannerTone = isStatusReadOnly
+    ? doc.status === 'published'
+      ? {
+          wrapper: 'border-tone-info-border bg-tone-info-bg',
+          text: 'text-tone-info-text',
+        }
+      : {
+          wrapper: 'border-tone-caution-border bg-tone-caution-bg',
+          text: 'text-tone-caution-text',
+        }
+    : {
+        wrapper: 'border-tone-info-border bg-tone-info-bg',
+        text: 'text-tone-info-text',
+      }
   const readOnlyAiActions = doc.status === 'review' ? REVIEW_READ_ONLY_AI_ACTIONS : undefined
   const editorShellStyle = isEditorFullscreen
     ? undefined
@@ -1150,9 +1163,9 @@ export function DocEditorPageClient() {
       ) : null}
 
       {!isEditorFullscreen && isReadOnly ? (
-        <div className="border-b border-tone-caution-border bg-tone-caution-bg px-4 py-1.5 sm:px-6">
+        <div className={cn('border-b px-4 py-1.5 sm:px-6', readOnlyBannerTone.wrapper)}>
           <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
-            <p className="text-xs text-tone-caution-text">
+            <p className={cn('text-xs', readOnlyBannerTone.text)}>
               {isStatusReadOnly
                 ? `This document is ${doc.status}. Revert to draft to make changes.`
                 : 'You currently have view-only access to this document. Ask a document manager for edit permission.'}
@@ -1194,10 +1207,6 @@ export function DocEditorPageClient() {
           editorWorkspace
         )}
       </div>
-
-      {!isEditorFullscreen && doc.status === 'published' ? (
-        <DocFeedback documentId={doc.id} className="border-t border-border/60" />
-      ) : null}
 
       {!isEditorFullscreen ? (
         <DocStatusBar

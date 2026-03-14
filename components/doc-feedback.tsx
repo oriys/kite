@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { ThumbsUp, ThumbsDown, Check } from 'lucide-react'
+import { ThumbsUp, ThumbsDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -70,16 +70,7 @@ export function DocFeedback({ documentId, className }: DocFeedbackProps) {
     [documentId],
   )
 
-  if (phase === 'done') {
-    return (
-      <div className={cn('border-t py-6 text-center', className)}>
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Check className="size-4 text-success" />
-          Thank you for your feedback!
-        </div>
-      </div>
-    )
-  }
+  if (phase === 'done') return null
 
   if (phase === 'comment') {
     return (

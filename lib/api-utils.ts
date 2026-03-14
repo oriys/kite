@@ -28,7 +28,9 @@ export async function getWorkspaceContext(userId: string) {
   return getDefaultWorkspace(userId)
 }
 
-async function resolveSessionUser(sessionUser: Awaited<ReturnType<typeof getAuthenticatedUser>>) {
+export async function resolveAuthenticatedUser(
+  sessionUser: Awaited<ReturnType<typeof getAuthenticatedUser>>,
+) {
   if (!sessionUser?.id) {
     return null
   }
@@ -83,7 +85,7 @@ export async function withWorkspaceAuth(
   const sessionUser = await getAuthenticatedUser()
   if (!sessionUser?.id) return { error: unauthorized() }
 
-  const user = await resolveSessionUser(sessionUser)
+  const user = await resolveAuthenticatedUser(sessionUser)
   if (!user?.id) return { error: forbidden() }
 
   let workspace = await getDefaultWorkspace(user.id)

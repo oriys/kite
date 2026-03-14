@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import {
   getAuthenticatedUser,
+  resolveAuthenticatedUser,
   unauthorized,
   badRequest,
 } from '@/lib/api-utils'
 import {
+  ensureDefaultWorkspace,
   getUserWorkspaces,
   createWorkspace,
 } from '@/lib/queries/workspaces'
@@ -15,15 +17,26 @@ const MAX_NAME_LENGTH = 100
 const MAX_SLUG_LENGTH = 60
 
 export async function GET() {
-  const user = await getAuthenticatedUser()
+  const sessionUser = await getAuthenticatedUser()
+  if (!sessionUser?.id) return unauthorized()
+
+  const user = await resolveAuthenticatedUser(sessionUser)
   if (!user?.id) return unauthorized()
 
-  const workspaces = await getUserWorkspaces(user.id)
+  let workspaces = await getUserWorkspaces(user.id)
+  if (workspaces.length === 0) {
+    await ensureDefaultWorkspace(user.id, user.name ?? 'My Workspace')
+    workspaces = await getUserWorkspaces(user.id)
+  }
+
   return NextResponse.json(workspaces)
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getAuthenticatedUser()
+  const sessionUser = await getAuthenticatedUser()
+  if (!sessionUser?.id) return unauthorized()
+
+  const user = await resolveAuthenticatedUser(sessionUser)
   if (!user?.id) return unauthorized()
 
   const body = await request.json().catch(() => null)

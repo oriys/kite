@@ -1,10 +1,13 @@
 import NextAuth from 'next-auth'
 import GitHub from 'next-auth/providers/github'
 import Google from 'next-auth/providers/google'
+import Credentials from 'next-auth/providers/credentials'
+import { eq } from 'drizzle-orm'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import { db } from './db'
 import { users, accounts, sessions, verificationTokens } from './schema'
 import { ensureDefaultWorkspace } from './queries/workspaces'
+import { DEV_MOCK_AUTH_ENABLED, DEV_MOCK_USERS } from './dev-mock-auth'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: DrizzleAdapter(db, {
@@ -13,7 +16,52 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
-  providers: [GitHub, Google],
+  providers: [
+    GitHub,
+    Google,
+    ...(DEV_MOCK_AUTH_ENABLED
+      ? [
+          Credentials({
+            id: 'dev-mock',
+            name: 'Local mock user',
+            credentials: {
+              mockUserId: { label: 'Mock user ID', type: 'text' },
+            },
+            async authorize(credentials) {
+              const mockUserId =
+                typeof credentials?.mockUserId === 'string'
+                  ? credentials.mockUserId
+                  : ''
+
+              if (!mockUserId) {
+                return null
+              }
+
+              const allowedUser = DEV_MOCK_USERS.find(
+                (user) => user.id === mockUserId,
+              )
+              if (!allowedUser) {
+                return null
+              }
+
+              const existingUser = await db.query.users.findFirst({
+                where: eq(users.id, mockUserId),
+              })
+              if (!existingUser) {
+                return null
+              }
+
+              return {
+                id: existingUser.id,
+                name: existingUser.name,
+                email: existingUser.email,
+                image: existingUser.image,
+              }
+            },
+          }),
+        ]
+      : []),
+  ],
   pages: {
     signIn: '/auth/signin',
   },

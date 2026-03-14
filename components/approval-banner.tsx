@@ -2,10 +2,13 @@
 
 import * as React from 'react'
 import {
+  ChevronDown,
+  ChevronUp,
   Clock,
   CheckCircle2,
   XCircle,
   AlertCircle,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -14,7 +17,6 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -91,6 +93,10 @@ const statusConfig = {
   },
 } as const
 
+function getDismissedApprovalKey(approvalId: string, status: string) {
+  return `approval-banner-dismissed:${approvalId}:${status}`
+}
+
 export function ApprovalBanner({
   documentId,
   currentUserId,
@@ -101,6 +107,8 @@ export function ApprovalBanner({
   const [comment, setComment] = React.useState('')
   const [loading, setLoading] = React.useState(true)
   const [submitting, setSubmitting] = React.useState(false)
+  const [detailsOpen, setDetailsOpen] = React.useState(false)
+  const [dismissed, setDismissed] = React.useState(false)
 
   React.useEffect(() => {
     let active = true
@@ -122,10 +130,21 @@ export function ApprovalBanner({
         const data = (await response.json().catch(() => [])) as ApprovalRequest[]
         if (!active) return
 
-        setApproval(data[0] ?? null)
+        const nextApproval = data[0] ?? null
+        setApproval(nextApproval)
+        if (nextApproval && typeof window !== 'undefined') {
+          setDismissed(
+            window.localStorage.getItem(
+              getDismissedApprovalKey(nextApproval.id, nextApproval.status),
+            ) === '1',
+          )
+        } else {
+          setDismissed(false)
+        }
       } catch {
         if (!active) return
         setApproval(null)
+        setDismissed(false)
       } finally {
         if (active) setLoading(false)
       }
@@ -138,7 +157,7 @@ export function ApprovalBanner({
     }
   }, [documentId])
 
-  if (loading || !approval) return null
+  if (loading || !approval || dismissed) return null
 
   const isReviewer = approval.reviewers.some(
     (r) => r.reviewerId === currentUserId && !r.decision,
@@ -148,6 +167,7 @@ export function ApprovalBanner({
   const approvedCount = approval.reviewers.filter(
     (r) => r.decision === 'approved',
   ).length
+  const pendingReviewers = approval.reviewers.filter((r) => !r.decision).length
 
   const handleDecision = async (
     decision: 'approved' | 'rejected' | 'changes_requested',
@@ -167,6 +187,7 @@ export function ApprovalBanner({
             ? { ...prev, status: newStatus }
             : null,
         )
+        setDismissed(false)
         onStatusChange?.(newStatus)
       }
     } finally {
@@ -174,94 +195,146 @@ export function ApprovalBanner({
     }
   }
 
+  const handleDismiss = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(
+        getDismissedApprovalKey(approval.id, approval.status),
+        '1',
+      )
+    }
+    setDismissed(true)
+  }
+
   return (
     <Card className={cn('border', config.bg, className)}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <StatusIcon className={cn('size-4', config.color)} />
-            <CardTitle className="text-sm">{config.label}</CardTitle>
-            <Badge variant="outline" className="text-xs">
-              {approvedCount}/{approval.requiredApprovals} approvals
-            </Badge>
+      <CardHeader className="py-3">
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <StatusIcon className={cn('size-4 shrink-0', config.color)} />
+              <CardTitle className="shrink-0 text-sm">{config.label}</CardTitle>
+              <Badge variant="outline" className="shrink-0 text-xs">
+                {approvedCount}/{approval.requiredApprovals} approvals
+              </Badge>
+              <Badge variant="outline" className="shrink-0 text-xs">
+                {pendingReviewers} pending
+              </Badge>
+              {approval.deadline ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  Due {new Date(approval.deadline).toLocaleDateString()}
+                </span>
+              ) : null}
+              <span className="truncate text-xs text-muted-foreground">
+                {approval.title}
+                {approval.description ? ` — ${approval.description}` : ''}
+              </span>
+            </div>
           </div>
-          {approval.deadline && (
-            <span className="text-xs text-muted-foreground">
-              Due {new Date(approval.deadline).toLocaleDateString()}
-            </span>
-          )}
-        </div>
-        <CardDescription className="text-xs">
-          {approval.title}
-          {approval.description && ` — ${approval.description}`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {approval.reviewers.map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center gap-1.5 rounded-md border px-2 py-1"
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-xs"
+              onClick={() => setDetailsOpen((current) => !current)}
             >
-              <Avatar className="size-5">
-                <AvatarImage src={r.reviewer.image ?? undefined} />
-                <AvatarFallback className="text-[10px]">
-                  {(r.reviewer.name ?? '?')[0]}
-                </AvatarFallback>
-              </Avatar>
-              <span className="text-xs">{r.reviewer.name ?? 'Unknown'}</span>
-              {r.decision === 'approved' && (
-                <CheckCircle2 className="size-3 text-success" />
+              {detailsOpen ? (
+                <ChevronUp className="size-3.5" />
+              ) : (
+                <ChevronDown className="size-3.5" />
               )}
-              {r.decision === 'rejected' && (
-                <XCircle className="size-3 text-destructive" />
-              )}
-              {r.decision === 'changes_requested' && (
-                <AlertCircle className="size-3 text-warning" />
-              )}
-            </div>
-          ))}
+              {detailsOpen ? 'Hide' : 'Details'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0"
+              aria-label="Dismiss approval banner"
+              onClick={handleDismiss}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
         </div>
-
-        {isReviewer && approval.status === 'pending' && (
-          <div className="space-y-2 border-t pt-3">
-            <Textarea
-              placeholder="Add a comment (optional)…"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              className="min-h-[60px] text-sm"
-            />
-            <div className="flex gap-2">
-              <Button
-                size="xs"
-                className="bg-success text-success-foreground hover:bg-success/90"
-                disabled={submitting}
-                onClick={() => handleDecision('approved')}
+      </CardHeader>
+      {detailsOpen ? (
+        <CardContent className="space-y-3 pt-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {approval.reviewers.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-1.5 rounded-md border border-border/70 bg-background/60 px-2 py-1"
               >
-                <CheckCircle2 className="size-3" />
-                Approve
-              </Button>
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={submitting}
-                onClick={() => handleDecision('changes_requested')}
-              >
-                Request Changes
-              </Button>
-              <Button
-                size="xs"
-                variant="destructive"
-                disabled={submitting}
-                onClick={() => handleDecision('rejected')}
-              >
-                <XCircle className="size-3" />
-                Reject
-              </Button>
+                <Avatar className="size-5">
+                  <AvatarImage src={r.reviewer.image ?? undefined} />
+                  <AvatarFallback className="text-[10px]">
+                    {(r.reviewer.name ?? '?')[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="max-w-[8rem] truncate text-xs">
+                  {r.reviewer.name ?? 'Unknown'}
+                </span>
+                {r.decision === 'approved' ? (
+                  <CheckCircle2 className="size-3 text-success" />
+                ) : r.decision === 'rejected' ? (
+                  <XCircle className="size-3 text-destructive" />
+                ) : r.decision === 'changes_requested' ? (
+                  <AlertCircle className="size-3 text-warning" />
+                ) : (
+                  <Clock className="size-3 text-muted-foreground" />
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-border/70 pt-3">
+            <div className="grid gap-1 text-xs text-muted-foreground">
+              <p>
+                Requested by {approval.requester.name ?? 'Unknown'} ·{' '}
+                {new Date(approval.createdAt).toLocaleDateString()}
+              </p>
+              {approval.description ? <p>{approval.description}</p> : null}
             </div>
           </div>
-        )}
-      </CardContent>
+
+          {isReviewer && approval.status === 'pending' ? (
+            <div className="space-y-2 border-t border-border/70 pt-3">
+              <Textarea
+                placeholder="Add a comment (optional)…"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                className="min-h-[56px] text-sm"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="xs"
+                  className="bg-success text-success-foreground hover:bg-success/90"
+                  disabled={submitting}
+                  onClick={() => handleDecision('approved')}
+                >
+                  <CheckCircle2 className="size-3" />
+                  Approve
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={submitting}
+                  onClick={() => handleDecision('changes_requested')}
+                >
+                  Request Changes
+                </Button>
+                <Button
+                  size="xs"
+                  variant="destructive"
+                  disabled={submitting}
+                  onClick={() => handleDecision('rejected')}
+                >
+                  <XCircle className="size-3" />
+                  Reject
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      ) : null}
     </Card>
   )
 }

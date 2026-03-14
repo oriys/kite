@@ -1,5 +1,6 @@
 import { auth, signIn } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import { DEV_MOCK_AUTH_ENABLED, DEV_MOCK_USERS } from '@/lib/dev-mock-auth'
 import {
   Card,
   CardContent,
@@ -44,6 +45,50 @@ export default async function SignInPage(props: {
                 : 'Something went wrong. Please try again.'}
             </p>
           )}
+          {DEV_MOCK_AUTH_ENABLED ? (
+            <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
+              <div className="mb-2">
+                <p className="text-sm font-medium text-foreground">
+                  Local development accounts
+                </p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Use these mock users to test members, teams, and approval flows.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                {DEV_MOCK_USERS.map((user) => (
+                  <form
+                    key={user.id}
+                    action={async () => {
+                      'use server'
+                      await signIn('dev-mock', {
+                        mockUserId: user.id,
+                        redirectTo: safeCallback,
+                      })
+                    }}
+                  >
+                    <Button
+                      variant="outline"
+                      className="flex h-auto w-full items-center justify-between px-3 py-2 text-left"
+                      type="submit"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {user.name}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {user.email}
+                        </span>
+                      </span>
+                      <span className="ml-3 shrink-0 rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        {user.role}
+                      </span>
+                    </Button>
+                  </form>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <form
             action={async () => {
               'use server'

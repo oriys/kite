@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import {
   Shield,
   Clock,
@@ -8,6 +9,8 @@ import {
   XCircle,
   AlertCircle,
   Filter,
+  ArrowRight,
+  RefreshCw,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -19,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -67,6 +71,7 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [filter, setFilter] = React.useState<string>('all')
+  const [reloadNonce, setReloadNonce] = React.useState(0)
 
   React.useEffect(() => {
     let active = true
@@ -110,7 +115,7 @@ export default function ApprovalsPage() {
     return () => {
       active = false
     }
-  }, [filter])
+  }, [filter, reloadNonce])
 
   return (
     <FeatureGuard featureId="approvals">
@@ -124,18 +129,29 @@ export default function ApprovalsPage() {
               Review and manage document approval requests
             </p>
           </div>
-          <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-36">
-              <Filter className="mr-2 h-3.5 w-3.5" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="rejected">Rejected</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReloadNonce((current) => current + 1)}
+              disabled={loading}
+            >
+              <RefreshCw data-icon="inline-start" className={loading ? 'animate-spin' : undefined} />
+              Refresh
+            </Button>
+            <Select value={filter} onValueChange={setFilter}>
+              <SelectTrigger className="w-36">
+                <Filter className="mr-2 h-3.5 w-3.5" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {loading ? (
@@ -156,9 +172,22 @@ export default function ApprovalsPage() {
           <Card>
             <CardContent className="py-16 text-center">
               <Shield className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">
-                No approval requests
+              <p className="text-sm font-medium text-foreground">
+                No approval requests yet
               </p>
+              <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
+                This workspace does not have any approval requests in the current queue.
+                Once a document enters the approval workflow, reviewers and decisions will
+                appear here.
+              </p>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/docs">
+                    Open documents
+                    <ArrowRight data-icon="inline-end" />
+                  </Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ) : (

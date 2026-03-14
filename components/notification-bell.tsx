@@ -55,7 +55,7 @@ export function NotificationBell() {
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-96 p-0"
+        className="w-[min(32rem,calc(100vw-1.5rem))] p-0"
         align="end"
         sideOffset={8}
       >
@@ -111,11 +111,11 @@ export function NotificationBell() {
                       <Icon className="size-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm leading-snug font-medium">
+                      <p className="line-clamp-2 text-sm leading-5 font-medium text-foreground">
                         {n.title}
                       </p>
                       {n.body && (
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
                           {n.body}
                         </p>
                       )}
