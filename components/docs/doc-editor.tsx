@@ -53,6 +53,7 @@ import {
   DEFAULT_HEATMAP_SNIPPET,
   PANE_TRANSITION,
   hasRichEditor,
+  hasRenderableMarkdown,
   hasSourceEditor,
   mdToHtml,
   appendAiResultToDocument,
@@ -93,10 +94,6 @@ export type { DocEditorHandle } from '@/lib/editor/editor-helpers'
 // ── Lowlight setup ─────────────────────────────────────────────────────────
 
 const lowlight = createLowlight(common)
-
-function containsMarkdownTable(value: string) {
-  return /(^|\n)\|.+\|\s*\n\|(?:\s*:?-{3,}:?\s*\|)+/m.test(value.trim())
-}
 
 // ── Main Editor Component ──────────────────────────────────────────────────
 
@@ -759,7 +756,7 @@ export function DocEditor({
         const resultHtml = mdToHtml('\n\n' + ai.preview!.resultText)
         editor.chain().focus().insertContentAt(insertPos, resultHtml).run()
       } else {
-        const shouldInsertAsMarkdown = containsMarkdownTable(ai.preview!.resultText)
+        const shouldInsertAsMarkdown = hasRenderableMarkdown(ai.preview!.resultText)
 
         if (shouldInsertAsMarkdown) {
           const resultHtml = mdToHtml(ai.preview!.resultText)

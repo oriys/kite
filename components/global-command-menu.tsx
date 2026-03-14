@@ -9,6 +9,7 @@ import {
   Type,
   Table,
   Eye,
+  Sparkles,
 } from 'lucide-react'
 
 import {
@@ -52,6 +53,11 @@ export function GlobalCommandMenu({ open, onOpenChange, onAction }: GlobalComman
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
         <CommandGroup heading="General">
+          <CommandItem onSelect={() => run('ask-ai')}>
+            <Sparkles className="size-4" />
+            <span>Ask AI</span>
+            <CommandShortcut>⌘J</CommandShortcut>
+          </CommandItem>
           <CommandItem onSelect={() => run('show-shortcuts')}>
             <Calculator className="size-4" />
             <span>Keyboard Shortcuts</span>

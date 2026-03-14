@@ -1,3 +1,9 @@
+import { createOpenAI } from '@ai-sdk/openai'
+import { createAnthropic } from '@ai-sdk/anthropic'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { generateText, streamText, embedMany } from 'ai'
+import type { LanguageModel, EmbeddingModel } from 'ai'
+
 import {
   AI_PROVIDER_NAME,
   DEFAULT_AIHUBMIX_BASE_URL,
@@ -13,33 +19,6 @@ import {
 } from '@/lib/ai'
 import { listAiProviderConfigs } from '@/lib/queries/ai'
 
-type OpenAIContentPart = {
-  type?: string
-  text?: string
-}
-
-type OpenAIChatCompletionResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string | OpenAIContentPart[]
-    }
-  }>
-  error?: {
-    message?: string
-  }
-}
-
-type OpenAIChatCompletionStreamResponse = {
-  choices?: Array<{
-    delta?: {
-      content?: string | OpenAIContentPart[]
-    }
-  }>
-  error?: {
-    message?: string
-  }
-}
-
 type AnthropicModelsResponse = {
   data?: unknown[]
   error?: {
@@ -47,41 +26,8 @@ type AnthropicModelsResponse = {
   }
 }
 
-type AnthropicMessagesResponse = {
-  content?: Array<{
-    type?: string
-    text?: string
-  }>
-  error?: {
-    message?: string
-  }
-}
-
-type AnthropicMessagesStreamResponse = {
-  type?: string
-  delta?: {
-    text?: string
-  }
-  error?: {
-    message?: string
-  }
-}
-
 type GeminiModelsResponse = {
   models?: unknown[]
-  error?: {
-    message?: string
-  }
-}
-
-type GeminiGenerateContentResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string
-      }>
-    }
-  }>
   error?: {
     message?: string
   }
@@ -299,176 +245,6 @@ function normalizeGeminiModel(
   })
 }
 
-function extractOpenAiCompletionText(payload: OpenAIChatCompletionResponse | null) {
-  const content = payload?.choices?.[0]?.message?.content
-
-  if (typeof content === 'string') {
-    return content.trim()
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => (part.type === 'text' || !part.type ? part.text ?? '' : ''))
-      .join('')
-      .trim()
-  }
-
-  return ''
-}
-
-function extractOpenAiStreamText(
-  payload: OpenAIChatCompletionStreamResponse | null,
-) {
-  const content = payload?.choices?.[0]?.delta?.content
-
-  if (typeof content === 'string') {
-    return content
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => (part.type === 'text' || !part.type ? part.text ?? '' : ''))
-      .join('')
-  }
-
-  return ''
-}
-
-function extractAnthropicCompletionText(
-  payload: AnthropicMessagesResponse | null,
-) {
-  return (payload?.content ?? [])
-    .map((part) => (part.type === 'text' || !part.type ? part.text ?? '' : ''))
-    .join('')
-    .trim()
-}
-
-function extractAnthropicStreamText(
-  payload: AnthropicMessagesStreamResponse | null,
-) {
-  return payload?.delta?.text ?? ''
-}
-
-function extractGeminiCompletionText(
-  payload: GeminiGenerateContentResponse | null,
-) {
-  return (payload?.candidates?.[0]?.content?.parts ?? [])
-    .map((part) => part.text ?? '')
-    .join('')
-    .trim()
-}
-
-function extractGeminiStreamText(
-  payload: GeminiGenerateContentResponse | null,
-) {
-  return (payload?.candidates?.[0]?.content?.parts ?? [])
-    .map((part) => part.text ?? '')
-    .join('')
-}
-
-function parseSseEvent(rawEvent: string) {
-  const eventLines = rawEvent
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .filter(Boolean)
-
-  let eventName = ''
-  const dataLines: string[] = []
-
-  for (const line of eventLines) {
-    if (line.startsWith(':')) {
-      continue
-    }
-
-    if (line.startsWith('event:')) {
-      eventName = line.slice('event:'.length).trim()
-      continue
-    }
-
-    if (line.startsWith('data:')) {
-      const value = line.slice('data:'.length)
-      dataLines.push(value.startsWith(' ') ? value.slice(1) : value)
-    }
-  }
-
-  return {
-    eventName,
-    data: dataLines.join('\n'),
-  }
-}
-
-function createSseTextStream(
-  upstream: Response,
-  extractText: (payload: unknown, eventName: string) => string,
-) {
-  if (!upstream.body) {
-    throw new AiCompletionError('The AI provider did not open a readable stream.', 502)
-  }
-
-  const reader = upstream.body.getReader()
-  const decoder = new TextDecoder()
-  const encoder = new TextEncoder()
-
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let buffer = ''
-
-      const flushEvent = (rawEvent: string) => {
-        const normalized = rawEvent.trim()
-        if (!normalized) {
-          return
-        }
-
-        const { eventName, data } = parseSseEvent(rawEvent)
-        if (!data || data === '[DONE]') {
-          return
-        }
-
-        const payload = JSON.parse(data) as unknown
-        const text = extractText(payload, eventName)
-        if (text) {
-          controller.enqueue(encoder.encode(text))
-        }
-      }
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          buffer += decoder.decode(value ?? new Uint8Array(), {
-            stream: !done,
-          })
-          buffer = buffer.replace(/\r\n/g, '\n')
-
-          let boundaryIndex = buffer.indexOf('\n\n')
-          while (boundaryIndex !== -1) {
-            const rawEvent = buffer.slice(0, boundaryIndex)
-            buffer = buffer.slice(boundaryIndex + 2)
-            flushEvent(rawEvent)
-            boundaryIndex = buffer.indexOf('\n\n')
-          }
-
-          if (done) {
-            const rest = decoder.decode()
-            if (rest) {
-              buffer += rest
-            }
-            break
-          }
-        }
-
-        flushEvent(buffer)
-        controller.close()
-      } catch (error) {
-        controller.error(error)
-      } finally {
-        reader.releaseLock()
-      }
-    },
-    async cancel(reason) {
-      await reader.cancel(reason)
-    },
-  })
-}
 
 function getProviderErrorMessage(payload: unknown) {
   if (!payload || typeof payload !== 'object') {
@@ -774,309 +550,70 @@ export function resolveAiModelSelection(input: {
   return null
 }
 
-async function requestOpenAiCompletion(input: {
-  provider: ResolvedAiProviderConfig
-  systemPrompt: string
-  userPrompt: string
-  model: string
-  temperature?: number
-}) {
-  const upstream = await fetch(`${input.provider.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${input.provider.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: input.model,
-      temperature: input.temperature ?? 0.2,
-      messages: [
-        {
-          role: 'system',
-          content: input.systemPrompt,
-        },
-        {
-          role: 'user',
-          content: input.userPrompt,
-        },
-      ],
-    }),
-    cache: 'no-store',
-  })
+// ─── Vercel AI SDK integration ──────────────────────────────────
 
-  const payload = (await upstream.json().catch(() => null)) as
-    | OpenAIChatCompletionResponse
-    | null
-
-  if (!upstream.ok) {
-    throw new AiCompletionError(
-      getProviderErrorMessage(payload) ||
-        'The AI provider request failed. Check the provider URL, model, and API key.',
-      502,
-    )
-  }
-
-  const completion = extractOpenAiCompletionText(payload)
-  if (!completion) {
-    throw new AiCompletionError('The AI provider returned an empty response.', 502)
-  }
-
-  return completion
+function normalizeGeminiModelId(modelId: string) {
+  return modelId.startsWith('models/') ? modelId.slice('models/'.length) : modelId
 }
 
-async function requestOpenAiCompletionStream(input: {
-  provider: ResolvedAiProviderConfig
-  systemPrompt: string
-  userPrompt: string
-  model: string
-  temperature?: number
-}) {
-  const upstream = await fetch(`${input.provider.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${input.provider.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: input.model,
-      temperature: input.temperature ?? 0.2,
-      stream: true,
-      messages: [
-        {
-          role: 'system',
-          content: input.systemPrompt,
-        },
-        {
-          role: 'user',
-          content: input.userPrompt,
-        },
-      ],
-    }),
-    cache: 'no-store',
-  })
-
-  if (!upstream.ok) {
-    const payload = (await upstream.json().catch(() => null)) as
-      | OpenAIChatCompletionResponse
-      | null
-
-    throw new AiCompletionError(
-      getProviderErrorMessage(payload) ||
-        'The AI provider request failed. Check the provider URL, model, and API key.',
-      502,
-    )
-  }
-
-  return createSseTextStream(upstream, (payload) =>
-    extractOpenAiStreamText(payload as OpenAIChatCompletionStreamResponse | null),
-  )
-}
-
-async function requestAnthropicCompletion(input: {
-  provider: ResolvedAiProviderConfig
-  systemPrompt: string
-  userPrompt: string
-  model: string
-  temperature?: number
-}) {
-  const upstream = await fetch(`${input.provider.baseUrl}/messages`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': input.provider.apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: input.model,
-      max_tokens: 2_048,
-      temperature: input.temperature ?? 0.2,
-      system: input.systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: input.userPrompt,
-        },
-      ],
-    }),
-    cache: 'no-store',
-  })
-
-  const payload = (await upstream.json().catch(() => null)) as
-    | AnthropicMessagesResponse
-    | null
-
-  if (!upstream.ok) {
-    throw new AiCompletionError(
-      getProviderErrorMessage(payload) ||
-        'Anthropic could not complete this request.',
-      502,
-    )
-  }
-
-  const completion = extractAnthropicCompletionText(payload)
-  if (!completion) {
-    throw new AiCompletionError('Anthropic returned an empty response.', 502)
-  }
-
-  return completion
-}
-
-async function requestAnthropicCompletionStream(input: {
-  provider: ResolvedAiProviderConfig
-  systemPrompt: string
-  userPrompt: string
-  model: string
-  temperature?: number
-}) {
-  const upstream = await fetch(`${input.provider.baseUrl}/messages`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': input.provider.apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: input.model,
-      max_tokens: 2_048,
-      temperature: input.temperature ?? 0.2,
-      system: input.systemPrompt,
-      stream: true,
-      messages: [
-        {
-          role: 'user',
-          content: input.userPrompt,
-        },
-      ],
-    }),
-    cache: 'no-store',
-  })
-
-  if (!upstream.ok) {
-    const payload = (await upstream.json().catch(() => null)) as
-      | AnthropicMessagesResponse
-      | null
-
-    throw new AiCompletionError(
-      getProviderErrorMessage(payload) ||
-        'Anthropic could not complete this request.',
-      502,
-    )
-  }
-
-  return createSseTextStream(upstream, (payload, eventName) => {
-    if (eventName && eventName !== 'content_block_delta') {
-      return ''
+export function createLanguageModel(
+  provider: ResolvedAiProviderConfig,
+  modelId: string,
+): LanguageModel {
+  switch (provider.providerType) {
+    case 'openai_compatible': {
+      const instance = createOpenAI({
+        baseURL: provider.baseUrl,
+        apiKey: provider.apiKey,
+      })
+      return instance(modelId)
     }
-
-    return extractAnthropicStreamText(
-      payload as AnthropicMessagesStreamResponse | null,
-    )
-  })
+    case 'anthropic': {
+      const instance = createAnthropic({
+        baseURL: provider.baseUrl,
+        apiKey: provider.apiKey,
+      })
+      return instance(modelId)
+    }
+    case 'gemini': {
+      const instance = createGoogleGenerativeAI({
+        baseURL: provider.baseUrl,
+        apiKey: provider.apiKey,
+      })
+      return instance(normalizeGeminiModelId(modelId))
+    }
+    default:
+      throw new AiCompletionError('Unsupported AI provider type.', 400)
+  }
 }
 
-async function requestGeminiCompletion(input: {
-  provider: ResolvedAiProviderConfig
-  systemPrompt: string
-  userPrompt: string
-  model: string
-  temperature?: number
-}) {
-  const upstream = await fetch(
-    `${input.provider.baseUrl}/${input.model}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': input.provider.apiKey,
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          role: 'system',
-          parts: [{ text: input.systemPrompt }],
-        },
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: input.userPrompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: input.temperature ?? 0.2,
-          maxOutputTokens: 2_048,
-        },
-      }),
-      cache: 'no-store',
-    },
-  )
-
-  const payload = (await upstream.json().catch(() => null)) as
-    | GeminiGenerateContentResponse
-    | null
-
-  if (!upstream.ok) {
-    throw new AiCompletionError(
-      getProviderErrorMessage(payload) || 'Gemini could not complete this request.',
-      502,
-    )
+export function createEmbeddingModel(
+  provider: ResolvedAiProviderConfig,
+  modelId: string,
+): EmbeddingModel {
+  switch (provider.providerType) {
+    case 'openai_compatible': {
+      const instance = createOpenAI({
+        baseURL: provider.baseUrl,
+        apiKey: provider.apiKey,
+      })
+      return instance.embedding(modelId)
+    }
+    case 'gemini': {
+      const instance = createGoogleGenerativeAI({
+        baseURL: provider.baseUrl,
+        apiKey: provider.apiKey,
+      })
+      return instance.textEmbeddingModel(normalizeGeminiModelId(modelId))
+    }
+    case 'anthropic':
+      throw new AiCompletionError(
+        'Anthropic does not support embedding models. Use an OpenAI-compatible or Gemini provider for embeddings.',
+        400,
+      )
+    default:
+      throw new AiCompletionError('Unsupported AI provider type for embeddings.', 400)
   }
-
-  const completion = extractGeminiCompletionText(payload)
-  if (!completion) {
-    throw new AiCompletionError('Gemini returned an empty response.', 502)
-  }
-
-  return completion
-}
-
-async function requestGeminiCompletionStream(input: {
-  provider: ResolvedAiProviderConfig
-  systemPrompt: string
-  userPrompt: string
-  model: string
-  temperature?: number
-}) {
-  const upstream = await fetch(
-    `${input.provider.baseUrl}/${input.model}:streamGenerateContent?alt=sse`,
-    {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': input.provider.apiKey,
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          role: 'system',
-          parts: [{ text: input.systemPrompt }],
-        },
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: input.userPrompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: input.temperature ?? 0.2,
-          maxOutputTokens: 2_048,
-        },
-      }),
-      cache: 'no-store',
-    },
-  )
-
-  if (!upstream.ok) {
-    const payload = (await upstream.json().catch(() => null)) as
-      | GeminiGenerateContentResponse
-      | null
-
-    throw new AiCompletionError(
-      getProviderErrorMessage(payload) || 'Gemini could not complete this request.',
-      502,
-    )
-  }
-
-  return createSseTextStream(upstream, (payload) =>
-    extractGeminiStreamText(payload as GeminiGenerateContentResponse | null),
-  )
 }
 
 export async function requestAiTextCompletion(input: {
@@ -1090,25 +627,27 @@ export async function requestAiTextCompletion(input: {
     throw new AiCompletionError('This AI provider is missing an API key.', 503)
   }
 
-  let result = ''
+  try {
+    const model = createLanguageModel(input.provider, input.model)
+    const { text } = await generateText({
+      model,
+      system: input.systemPrompt,
+      prompt: input.userPrompt,
+      temperature: input.temperature ?? 0.2,
+    })
 
-  switch (input.provider.providerType) {
-    case 'openai_compatible':
-      result = await requestOpenAiCompletion(input)
-      break
-    case 'anthropic':
-      result = await requestAnthropicCompletion(input)
-      break
-    case 'gemini':
-      result = await requestGeminiCompletion(input)
-      break
-    default:
-      throw new AiCompletionError('Unsupported AI provider type.', 400)
-  }
+    if (!text.trim()) {
+      throw new AiCompletionError('The AI provider returned an empty response.', 502)
+    }
 
-  return {
-    result,
-    model: createAiModelRef(input.provider.id, input.model),
+    return {
+      result: text.trim(),
+      model: createAiModelRef(input.provider.id, input.model),
+    }
+  } catch (error) {
+    if (error instanceof AiCompletionError) throw error
+    const message = error instanceof Error ? error.message : 'The AI provider request failed.'
+    throw new AiCompletionError(message, 502)
   }
 }
 
@@ -1123,24 +662,111 @@ export async function requestAiTextCompletionStream(input: {
     throw new AiCompletionError('This AI provider is missing an API key.', 503)
   }
 
-  let stream: ReadableStream<Uint8Array>
+  try {
+    const model = createLanguageModel(input.provider, input.model)
+    const result = streamText({
+      model,
+      system: input.systemPrompt,
+      prompt: input.userPrompt,
+      temperature: input.temperature ?? 0.2,
+    })
 
-  switch (input.provider.providerType) {
-    case 'openai_compatible':
-      stream = await requestOpenAiCompletionStream(input)
-      break
-    case 'anthropic':
-      stream = await requestAnthropicCompletionStream(input)
-      break
-    case 'gemini':
-      stream = await requestGeminiCompletionStream(input)
-      break
-    default:
-      throw new AiCompletionError('Unsupported AI provider type.', 400)
+    const encoder = new TextEncoder()
+    const textStream = result.textStream
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          for await (const chunk of textStream) {
+            controller.enqueue(encoder.encode(chunk))
+          }
+          controller.close()
+        } catch (error) {
+          controller.error(error)
+        }
+      },
+    })
+
+    return {
+      stream,
+      model: createAiModelRef(input.provider.id, input.model),
+    }
+  } catch (error) {
+    if (error instanceof AiCompletionError) throw error
+    const message = error instanceof Error ? error.message : 'The AI provider request failed.'
+    throw new AiCompletionError(message, 502)
+  }
+}
+
+export async function requestAiEmbedding(input: {
+  provider: ResolvedAiProviderConfig
+  texts: string[]
+  model: string
+}) {
+  if (!input.provider.apiKey.trim()) {
+    throw new AiCompletionError('This AI provider is missing an API key.', 503)
   }
 
-  return {
-    stream,
-    model: createAiModelRef(input.provider.id, input.model),
+  if (input.texts.length === 0) {
+    return { embeddings: [] }
+  }
+
+  try {
+    const model = createEmbeddingModel(input.provider, input.model)
+    const { embeddings } = await embedMany({
+      model,
+      values: input.texts,
+    })
+
+    return { embeddings }
+  } catch (error) {
+    if (error instanceof AiCompletionError) throw error
+    const message = error instanceof Error ? error.message : 'The embedding request failed.'
+    throw new AiCompletionError(message, 502)
+  }
+}
+
+export async function requestAiChatCompletionStream(input: {
+  provider: ResolvedAiProviderConfig
+  systemPrompt: string
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  model: string
+  temperature?: number
+}) {
+  if (!input.provider.apiKey.trim()) {
+    throw new AiCompletionError('This AI provider is missing an API key.', 503)
+  }
+
+  try {
+    const model = createLanguageModel(input.provider, input.model)
+    const result = streamText({
+      model,
+      system: input.systemPrompt,
+      messages: input.messages,
+      temperature: input.temperature ?? 0.3,
+    })
+
+    const encoder = new TextEncoder()
+    const textStream = result.textStream
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          for await (const chunk of textStream) {
+            controller.enqueue(encoder.encode(chunk))
+          }
+          controller.close()
+        } catch (error) {
+          controller.error(error)
+        }
+      },
+    })
+
+    return {
+      stream,
+      model: createAiModelRef(input.provider.id, input.model),
+    }
+  } catch (error) {
+    if (error instanceof AiCompletionError) throw error
+    const message = error instanceof Error ? error.message : 'The AI provider request failed.'
+    throw new AiCompletionError(message, 502)
   }
 }

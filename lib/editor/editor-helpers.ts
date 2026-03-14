@@ -133,6 +133,25 @@ export function mdToHtml(md: string): string {
   return renderMarkdown(md)
 }
 
+export function hasRenderableMarkdown(value: string): boolean {
+  const text = value.trim()
+  if (!text) return false
+
+  return (
+    /(^|\n)\|.+\|\s*\n\|(?:\s*:?-{3,}:?\s*\|)+/m.test(text) ||
+    /^#{1,6}\s.+/m.test(text) ||
+    /^\s*(?:[-*+]\s|\d+\.\s).+/m.test(text) ||
+    /^\s*>\s.+/m.test(text) ||
+    /^\s{0,3}(?:[-*_]\s*){3,}$/m.test(text) ||
+    /```[\s\S]*?```/.test(text) ||
+    /`[^`\n]+`/.test(text) ||
+    /(?:\*\*|__)[^\n]+(?:\*\*|__)/.test(text) ||
+    /(?<!\*)\*[^*\n]+\*(?!\*)/.test(text) ||
+    /(?<!_)_[^_\n]+_(?!_)/.test(text) ||
+    /!?\[[^\]]+\]\([^)]+\)/.test(text)
+  )
+}
+
 export function getScrollableProgress(el: Pick<HTMLElement, 'scrollTop' | 'scrollHeight' | 'clientHeight'>) {
   const max = Math.max(el.scrollHeight - el.clientHeight, 0)
   return max <= 0 ? 0 : el.scrollTop / max

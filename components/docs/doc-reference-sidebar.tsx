@@ -100,7 +100,7 @@ export function DocReferenceSidebar({
     <>
       <div
         className={cn(
-          'flex min-h-0 min-w-0 flex-1 flex-col bg-background',
+          'flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background',
           className,
         )}
       >
@@ -157,7 +157,7 @@ export function DocReferenceSidebar({
             <Skeleton className="h-4 w-4/6" />
           </div>
         ) : referenceDoc ? (
-          <>
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="border-b border-border/50 px-4 py-3">
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
@@ -186,12 +186,12 @@ export function DocReferenceSidebar({
                 </span>
               </div>
             </div>
-            <ScrollArea className="flex-1">
+            <ScrollArea className="min-h-0 flex-1">
               <div className="p-4 sm:p-5">
                 <MarkdownPreview content={referenceDoc.content} />
               </div>
             </ScrollArea>
-          </>
+          </div>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
             <div className="rounded-full border border-border/60 bg-muted/30 p-3">

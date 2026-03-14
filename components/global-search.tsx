@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
-import { FileText, Search, Loader2 } from 'lucide-react'
+import { FileText, Search, Loader2, Sparkles } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { sanitizeSearchHeadline } from '@/lib/sanitize'
@@ -15,6 +15,8 @@ interface SearchResult {
   status: string
   updatedAt: string
   rank: number
+  matchType?: 'keyword' | 'semantic' | 'hybrid'
+  chunkPreview?: string
 }
 
 interface GlobalSearchProps {
@@ -194,12 +196,25 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                           {result.title}
                         </span>
                         <StatusBadge status={result.status} />
+                        {result.matchType && result.matchType !== 'keyword' && (
+                          <span
+                            className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-accent"
+                            title={result.matchType === 'semantic' ? 'Semantic match' : 'Keyword + semantic match'}
+                          >
+                            <Sparkles className="size-2.5" />
+                            {result.matchType === 'hybrid' ? 'hybrid' : 'semantic'}
+                          </span>
+                        )}
                       </div>
 
                       {result.headline && (
                         <p
                           className="line-clamp-2 text-xs leading-relaxed text-muted-foreground [&_mark]:rounded-sm [&_mark]:bg-[oklch(0.946_0.015_244)] [&_mark]:px-0.5 [&_mark]:text-[oklch(0.314_0.017_244)] dark:[&_mark]:bg-[oklch(0.35_0.04_244)] dark:[&_mark]:text-[oklch(0.82_0.04_244)]"
-                          dangerouslySetInnerHTML={{ __html: sanitizeSearchHeadline(result.headline) }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeSearchHeadline(
+                            result.matchType === 'semantic' && result.chunkPreview
+                              ? result.chunkPreview
+                              : result.headline
+                          ) }}
                         />
                       )}
 
@@ -224,19 +239,19 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 
           {/* Footer hint */}
           <div className="flex items-center justify-between border-t px-3 py-2 text-[11px] text-muted-foreground/70">
+            <span className="inline-flex items-center gap-1">
+              <Sparkles className="size-2.5" />
+              AI-powered search
+            </span>
             <span>
               <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">
                 ↑↓
               </kbd>{' '}
-              navigate
-            </span>
-            <span>
+              navigate{' · '}
               <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">
                 ↵
               </kbd>{' '}
-              open
-            </span>
-            <span>
+              open{' · '}
               <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">
                 esc
               </kbd>{' '}

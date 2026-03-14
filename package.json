@@ -16,6 +16,9 @@
     "db:studio": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.58",
+    "@ai-sdk/google": "^3.0.43",
+    "@ai-sdk/openai": "^3.0.41",
     "@auth/drizzle-adapter": "^1.11.1",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.12",
@@ -62,6 +65,7 @@
     "@tiptap/starter-kit": "^3.20.1",
     "@types/turndown": "^5.0.6",
     "@vercel/analytics": "1.6.1",
+    "ai": "^6.0.116",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

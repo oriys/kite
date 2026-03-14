@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { searchDocuments } from '@/lib/search/searcher'
+import { hybridSearch } from '@/lib/search/semantic-searcher'
 import { logSearch } from '@/lib/queries/search-logs'
 import { logServerError } from '@/lib/server-errors'
+
+type SearchMode = 'keyword' | 'semantic' | 'hybrid'
+const SEARCH_MODES: SearchMode[] = ['keyword', 'semantic', 'hybrid']
 
 export async function GET(req: NextRequest) {
   const authResult = await withWorkspaceAuth('guest')
@@ -15,7 +19,18 @@ export async function GET(req: NextRequest) {
   }
 
   const trimmed = q.trim()
-  const results = await searchDocuments(ctx.workspaceId, trimmed, 20)
+  const modeParam = req.nextUrl.searchParams.get('mode') ?? 'hybrid'
+  const mode: SearchMode = SEARCH_MODES.includes(modeParam as SearchMode)
+    ? (modeParam as SearchMode)
+    : 'hybrid'
+
+  const results =
+    mode === 'keyword'
+      ? (await searchDocuments(ctx.workspaceId, trimmed, 20)).map((r) => ({
+          ...r,
+          matchType: 'keyword' as const,
+        }))
+      : await hybridSearch(ctx.workspaceId, trimmed, mode, 20)
 
   // Fire-and-forget: log without blocking the response
   logSearch({
@@ -32,5 +47,5 @@ export async function GET(req: NextRequest) {
     })
   })
 
-  return NextResponse.json({ results, query: trimmed })
+  return NextResponse.json({ results, query: trimmed, mode })
 }

@@ -7,11 +7,12 @@ import { EndpointReference } from '@/components/openapi/endpoint-reference'
 import { SpecDiffViewer } from '@/components/openapi/spec-diff-viewer'
 import { ChangelogPreview } from '@/components/openapi/changelog-preview'
 import { TypeExportDialog } from '@/components/openapi/type-export-dialog'
+import { SpecDocGenerator } from '@/components/openapi/spec-doc-generator'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, RefreshCw, Trash2, FileJson, Download, GitCompare, Clock } from 'lucide-react'
+import { Plus, RefreshCw, Trash2, FileJson, Download, GitCompare, Clock, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -318,6 +319,10 @@ export default function OpenApiPage() {
                   <Download className="size-3.5" />
                   Types
                 </TabsTrigger>
+                <TabsTrigger value="generate" className="gap-1.5 text-xs">
+                  <Sparkles className="size-3.5" />
+                  Generate
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="endpoints">
@@ -347,6 +352,13 @@ export default function OpenApiPage() {
                     />
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="generate">
+                <SpecDocGenerator
+                  sourceId={selected.id}
+                  endpoints={endpoints}
+                />
               </TabsContent>
             </Tabs>
           )}

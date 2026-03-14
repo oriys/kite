@@ -1189,11 +1189,11 @@ export function DocEditorPageClient() {
       <div className="relative flex flex-1 min-h-0">
         {showReferencePanel ? (
           <ResizablePanelGroup direction="horizontal" className="flex-1">
-            <ResizablePanel defaultSize={60} minSize={35}>
+            <ResizablePanel defaultSize={60} minSize={35} className="min-h-0">
               {editorWorkspace}
             </ResizablePanel>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={40} minSize={24}>
+            <ResizablePanel defaultSize={40} minSize={24} className="min-h-0">
               <DocReferenceSidebar
                 activeDocumentId={doc.id}
                 referenceDocumentId={referenceDocId}
