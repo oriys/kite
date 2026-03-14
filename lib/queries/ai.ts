@@ -165,6 +165,7 @@ export async function upsertAiWorkspaceModelSettings(
   input: {
     defaultModelId: string | null
     enabledModelIds: string[]
+    rerankerModelId?: string | null
   },
 ) {
   const now = new Date()
@@ -176,6 +177,7 @@ export async function upsertAiWorkspaceModelSettings(
       defaultModelId: input.defaultModelId,
       enabledModelIds: input.enabledModelIds,
       promptSettings: {},
+      rerankerModelId: input.rerankerModelId ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -184,6 +186,7 @@ export async function upsertAiWorkspaceModelSettings(
       set: {
         defaultModelId: input.defaultModelId,
         enabledModelIds: input.enabledModelIds,
+        rerankerModelId: input.rerankerModelId ?? null,
         updatedAt: now,
       },
     })

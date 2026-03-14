@@ -15,7 +15,11 @@ import {
   attachDocumentAccess,
   buildDocumentAccessMap,
 } from '@/lib/queries/document-permissions'
-import { MAX_TITLE_LENGTH, MAX_CONTENT_SIZE } from '@/lib/constants'
+import {
+  MAX_TITLE_LENGTH,
+  MAX_CONTENT_SIZE,
+  MAX_DOCUMENT_CATEGORY_LENGTH,
+} from '@/lib/constants'
 import { visibilityEnum } from '@/lib/schema'
 
 export async function GET(
@@ -50,10 +54,12 @@ export async function PATCH(
 
   const patch: {
     title?: string
+    category?: string
     content?: string
     visibility?: (typeof visibilityEnum.enumValues)[number]
   } = {}
   if (typeof body.title === 'string') patch.title = body.title
+  if (typeof body.category === 'string') patch.category = body.category.trim()
   if (typeof body.content === 'string') patch.content = body.content
   if (body.visibility !== undefined) {
     if (
@@ -68,6 +74,9 @@ export async function PATCH(
 
   if (Object.keys(patch).length === 0) return badRequest('No valid fields')
   if (patch.title !== undefined && patch.title.length > MAX_TITLE_LENGTH) return badRequest('Title too long')
+  if (patch.category !== undefined && patch.category.length > MAX_DOCUMENT_CATEGORY_LENGTH) {
+    return badRequest('Category too long')
+  }
   if (patch.content !== undefined && patch.content.length > MAX_CONTENT_SIZE) return badRequest('Content too large')
 
   const existing = await getDocument(id, result.ctx.workspaceId)
@@ -78,7 +87,8 @@ export async function PATCH(
   ).get(existing.id)
   if (!access?.canView) return forbidden()
 
-  const includesContentChange = patch.title !== undefined || patch.content !== undefined
+  const includesContentChange =
+    patch.title !== undefined || patch.category !== undefined || patch.content !== undefined
   if (includesContentChange && !access.canEdit) return forbidden()
   if (patch.visibility !== undefined && !access.canManagePermissions) {
     return forbidden()

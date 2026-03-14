@@ -205,6 +205,10 @@ export const documentPermissionLevelEnum = pgEnum('document_permission_level', [
   'manage',
 ])
 
+export const documentRelationTypeEnum = pgEnum('document_relation_type', [
+  'reference',
+])
+
 export const documents = pgTable(
   'documents',
   {
@@ -215,6 +219,7 @@ export const documents = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     title: text('title').notNull().default('Untitled'),
+    category: text('category').notNull().default(''),
     content: text('content').notNull().default(''),
     summary: text('summary').notNull().default(''),
     status: docStatusEnum('status').notNull().default('draft'),
@@ -234,6 +239,7 @@ export const documents = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('documents_status_idx').on(t.status),
     index('documents_created_by_idx').on(t.createdBy),
+    index('documents_category_idx').on(t.category),
     index('documents_api_version_id_idx').on(t.apiVersionId),
     index('documents_locale_idx').on(t.locale),
   ],
@@ -307,6 +313,41 @@ export const documentVersions = pgTable(
   (t) => [
     index('document_versions_document_id_idx').on(t.documentId),
     index('document_versions_document_saved_at_idx').on(t.documentId, t.savedAt),
+  ],
+)
+
+export const documentRelations = pgTable(
+  'document_relations',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    sourceDocumentId: text('source_document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    targetDocumentId: text('target_document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    relationType: documentRelationTypeEnum('relation_type').notNull(),
+    relationLabel: text('relation_label').notNull().default(''),
+    matchScore: integer('match_score').notNull().default(0),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.sourceDocumentId, t.targetDocumentId, t.relationType],
+    }),
+    index('document_relations_workspace_source_idx').on(
+      t.workspaceId,
+      t.sourceDocumentId,
+      t.relationType,
+    ),
+    index('document_relations_workspace_target_idx').on(
+      t.workspaceId,
+      t.targetDocumentId,
+      t.relationType,
+    ),
   ],
 )
 
@@ -402,6 +443,12 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
     references: [users.id],
   }),
   versions: many(documentVersions),
+  outgoingRelations: many(documentRelations, {
+    relationName: 'documentRelationSource',
+  }),
+  incomingRelations: many(documentRelations, {
+    relationName: 'documentRelationTarget',
+  }),
 }))
 
 export const docSnippetsRelations = relations(docSnippets, ({ one }) => ({
@@ -417,6 +464,26 @@ export const documentVersionsRelations = relations(
     document: one(documents, {
       fields: [documentVersions.documentId],
       references: [documents.id],
+    }),
+  }),
+)
+
+export const documentRelationsRelations = relations(
+  documentRelations,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [documentRelations.workspaceId],
+      references: [workspaces.id],
+    }),
+    sourceDocument: one(documents, {
+      fields: [documentRelations.sourceDocumentId],
+      references: [documents.id],
+      relationName: 'documentRelationSource',
+    }),
+    targetDocument: one(documents, {
+      fields: [documentRelations.targetDocumentId],
+      references: [documents.id],
+      relationName: 'documentRelationTarget',
     }),
   }),
 )
@@ -945,6 +1012,7 @@ export const aiWorkspaceSettings = pgTable(
       .notNull()
       .default({}),
     embeddingModelId: text('embedding_model_id'),
+    rerankerModelId: text('reranker_model_id'),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
   },
@@ -1047,7 +1115,16 @@ export const aiChatMessages = pgTable(
     role: aiChatRoleEnum('role').notNull(),
     content: text('content').notNull(),
     sources: jsonb('sources')
-      .$type<Array<{ documentId: string; chunkId: string; title: string; preview: string }>>()
+      .$type<
+        Array<{
+          documentId: string
+          chunkId: string
+          title: string
+          preview: string
+          relationType?: 'primary' | 'reference'
+          relationDescription?: string
+        }>
+      >()
       .default([]),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
   },

@@ -45,6 +45,7 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { UserMenu } from '@/components/auth/user-menu'
 import { GlobalSearch } from '@/components/global-search'
 import { NotificationBell } from '@/components/notification-bell'
+import { AiChatTrigger } from '@/components/ai-chat-panel'
 
 const NAV_ITEMS = [
   { href: '/docs', label: 'Documents', icon: FileText },
@@ -387,6 +388,7 @@ export function DocsTopNav() {
           >
             <Search className="size-4" />
           </Button>
+          <AiChatTrigger />
           <NotificationBell />
           <ThemeToggle />
           <UserMenu />

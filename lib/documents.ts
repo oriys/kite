@@ -1,4 +1,11 @@
 export type DocStatus = 'draft' | 'review' | 'published' | 'archived'
+export type DocumentSort =
+  | 'updated_desc'
+  | 'updated_asc'
+  | 'created_desc'
+  | 'created_asc'
+  | 'title_asc'
+  | 'title_desc'
 export type DocPermissionLevel = 'view' | 'edit' | 'manage'
 export type DocAnnotationStatus = 'open' | 'resolved'
 export type DocEvaluationScore = 1 | 2 | 3 | 4 | 5
@@ -59,6 +66,7 @@ export interface DocEvaluation {
 export interface Doc {
   id: string
   title: string
+  category: string
   content: string
   summary: string
   preview?: string
@@ -80,6 +88,28 @@ export interface Doc {
   canTransition: boolean
   versionCount?: number
   versions: DocVersion[]
+}
+
+export interface DocumentListCounts {
+  all: number
+  draft: number
+  review: number
+  published: number
+  archived: number
+}
+
+export interface DocumentListPagination {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
+export interface DocumentListResponse {
+  items: Doc[]
+  counts: DocumentListCounts
+  categories: string[]
+  pagination: DocumentListPagination
 }
 
 export function isDocumentTitleMissing(title: string | null | undefined) {
@@ -107,4 +137,35 @@ export const STATUS_CONFIG: Record<DocStatus, { label: string; tone: string; nex
   review: { label: 'In Review', tone: 'live', next: 'published', nextLabel: 'Publish' },
   published: { label: 'Published', tone: 'ready', next: 'archived', nextLabel: 'Archive' },
   archived: { label: 'Archived', tone: 'draft', next: null, nextLabel: null },
+}
+
+export const DOCUMENT_SORT_OPTIONS: Array<{ value: DocumentSort; label: string }> = [
+  { value: 'updated_desc', label: 'Recently updated' },
+  { value: 'updated_asc', label: 'Oldest updated' },
+  { value: 'created_desc', label: 'Recently created' },
+  { value: 'created_asc', label: 'Oldest created' },
+  { value: 'title_asc', label: 'Title A-Z' },
+  { value: 'title_desc', label: 'Title Z-A' },
+]
+
+export function isDocStatus(value: unknown): value is DocStatus {
+  return value === 'draft' || value === 'review' || value === 'published' || value === 'archived'
+}
+
+export function isDocumentSort(value: unknown): value is DocumentSort {
+  return DOCUMENT_SORT_OPTIONS.some((option) => option.value === value)
+}
+
+export function getStatusConfig(status: unknown) {
+  return STATUS_CONFIG[isDocStatus(status) ? status : 'draft']
+}
+
+export function createEmptyDocumentCounts(): DocumentListCounts {
+  return {
+    all: 0,
+    draft: 0,
+    review: 0,
+    published: 0,
+    archived: 0,
+  }
 }

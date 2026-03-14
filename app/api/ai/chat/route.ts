@@ -76,7 +76,10 @@ export async function POST(request: NextRequest) {
         'content-type': 'text/plain; charset=utf-8',
         'cache-control': 'no-store',
         'x-ai-chat-session': activeSessionId,
-        'x-ai-chat-sources': JSON.stringify(sources),
+        'x-ai-chat-sources': Buffer.from(
+          JSON.stringify(sources),
+          'utf8',
+        ).toString('base64'),
       },
     })
   } catch (error) {

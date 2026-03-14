@@ -17,7 +17,7 @@ import {
   queuePendingDocumentSummary,
 } from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
-import { BookOpenText, MessageSquare } from 'lucide-react'
+import { BookOpenText, MessageSquare, Tag } from 'lucide-react'
 import { getDocEditorHref } from '@/lib/documents'
 import type { CommentSelection } from '@/lib/editor/editor-helpers'
 import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
@@ -138,6 +138,7 @@ export function DocEditorPageClient() {
   const [pendingLocale, setPendingLocale] = React.useState<string | null>(null)
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
+  const [category, setCategory] = React.useState('')
   const [activeLocale, setActiveLocale] = React.useState('en')
   const [activeTranslationId, setActiveTranslationId] = React.useState<string | null>(
     null,
@@ -325,6 +326,7 @@ export function DocEditorPageClient() {
         locale: doc.locale ?? 'en',
         translationId: null,
       })
+      setCategory(doc.category ?? '')
       setVisibility(doc.visibility)
       setInitializedDocId(doc.id)
     }
@@ -335,6 +337,7 @@ export function DocEditorPageClient() {
       setInitializedDocId(null)
       setTitle('')
       setContent('')
+      setCategory('')
       setActiveLocale('en')
       setActiveTranslationId(null)
       setAvailableLocales([])
@@ -682,6 +685,48 @@ export function DocEditorPageClient() {
     setContent(newContent)
     scheduleAutoSave(title, newContent)
   }
+
+  const handleCategorySave = React.useCallback(
+    async (nextCategory: string) => {
+      if (!docId) return
+
+      const normalizedCategory = nextCategory.trim()
+      if (normalizedCategory === (doc?.category ?? '').trim()) {
+        setCategory(normalizedCategory)
+        return
+      }
+
+      setCategory(normalizedCategory)
+
+      try {
+        const res = await fetch(`/api/documents/${docId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: normalizedCategory }),
+        })
+        if (!res.ok) throw new Error('Failed to update category')
+        await refresh()
+        toast.success(
+          normalizedCategory ? `Category set to ${normalizedCategory}` : 'Category cleared',
+        )
+      } catch {
+        setCategory(doc?.category ?? '')
+        toast.error('Failed to update category')
+      }
+    },
+    [doc?.category, docId, refresh],
+  )
+
+  const handleCategoryKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        void handleCategorySave(category)
+        editorFocusRef.current?.focus()
+      }
+    },
+    [category, handleCategorySave],
+  )
 
   const syncLatestEditorContent = React.useCallback(() => {
     const latestContent = editorFocusRef.current?.flushPendingContent?.()
@@ -1115,6 +1160,27 @@ export function DocEditorPageClient() {
                 placeholder="Untitled document…"
                 className="flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
               />
+              {isReadOnly ? (
+                category ? (
+                  <div className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
+                    <Tag className="size-3.5" />
+                    <span className="max-w-[140px] truncate">{category}</span>
+                  </div>
+                ) : null
+              ) : (
+                <div className="flex h-8 w-[150px] shrink-0 items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5">
+                  <Tag className="size-3.5 text-muted-foreground" />
+                  <Input
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    onBlur={() => void handleCategorySave(category)}
+                    onKeyDown={handleCategoryKeyDown}
+                    aria-label="Document category"
+                    placeholder="Category"
+                    className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                  />
+                </div>
+              )}
               {isReadOnly || !doc.canManagePermissions ? (
                 <VisibilityBadge visibility={visibility} className="shrink-0" />
               ) : (

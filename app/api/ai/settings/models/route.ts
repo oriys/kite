@@ -19,6 +19,7 @@ export async function PUT(request: NextRequest) {
   if (!body) return badRequest('Invalid JSON')
 
   const defaultModelId = normalizeModelId(body.defaultModelId)
+  const rerankerModelId = normalizeModelId(body.rerankerModelId)
   const rawEnabledModelIds: unknown[] = Array.isArray(body.enabledModelIds)
     ? body.enabledModelIds
     : []
@@ -43,10 +44,12 @@ export async function PUT(request: NextRequest) {
   await upsertAiWorkspaceModelSettings(result.ctx.workspaceId, {
     defaultModelId: defaultModelId || null,
     enabledModelIds,
+    rerankerModelId: rerankerModelId || null,
   })
 
   return NextResponse.json({
     defaultModelId,
     enabledModelIds,
+    rerankerModelId,
   })
 }

@@ -1,16 +1,47 @@
 'use client'
 
 import * as React from 'react'
-import { type Doc, type DocStatus } from '@/lib/documents'
+import {
+  createEmptyDocumentCounts,
+  isDocStatus,
+  type Doc,
+  type DocStatus,
+  type DocumentListCounts,
+  type DocumentListPagination,
+  type DocumentListResponse,
+  type DocumentSort,
+} from '@/lib/documents'
+
+interface UseDocumentsOptions {
+  page?: number
+  pageSize?: number
+  sort?: DocumentSort
+  category?: string
+}
 
 export function useDocuments(
   statusFilter?: DocStatus,
   apiVersionId?: string | null,
   searchQuery?: string,
+  options: UseDocumentsOptions = {},
 ) {
   const [items, setItems] = React.useState<Doc[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [counts, setCounts] = React.useState<DocumentListCounts>(
+    createEmptyDocumentCounts(),
+  )
+  const [categories, setCategories] = React.useState<string[]>([])
+  const [pagination, setPagination] = React.useState<DocumentListPagination>({
+    page: options.page ?? 1,
+    pageSize: options.pageSize ?? 100,
+    total: 0,
+    totalPages: 1,
+  })
   const requestIdRef = React.useRef(0)
+  const page = options.page ?? 1
+  const pageSize = options.pageSize ?? 100
+  const sort = options.sort ?? 'updated_desc'
+  const category = options.category?.trim() ?? ''
 
   const refresh = React.useCallback(async (options: { silent?: boolean } = {}) => {
     const requestId = ++requestIdRef.current
@@ -24,14 +55,21 @@ export function useDocuments(
       if (statusFilter) params.set('status', statusFilter)
       if (apiVersionId) params.set('api_version_id', apiVersionId)
       if (searchQuery?.trim()) params.set('q', searchQuery.trim())
+      if (category) params.set('category', category)
+      params.set('page', String(page))
+      params.set('page_size', String(pageSize))
+      params.set('sort', sort)
       const qs = params.toString()
       const res = await fetch(`/api/documents${qs ? `?${qs}` : ''}`)
       if (res.ok) {
-        const data = normalizeDocList(await res.json())
+        const payload = normalizeDocCollection(await res.json(), page, pageSize)
         if (requestId === requestIdRef.current) {
-          setItems(data)
+          setItems(payload.items)
+          setCounts(payload.counts)
+          setCategories(payload.categories)
+          setPagination(payload.pagination)
         }
-        return data
+        return payload.items
       }
 
       return []
@@ -40,7 +78,7 @@ export function useDocuments(
         setLoading(false)
       }
     }
-  }, [statusFilter, apiVersionId, searchQuery])
+  }, [apiVersionId, category, page, pageSize, searchQuery, sort, statusFilter])
 
   React.useEffect(() => {
     void refresh()
@@ -53,9 +91,7 @@ export function useDocuments(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, content: content ?? '' }),
       })
-      const doc = normalizeDoc(await res.json())
-      setItems((prev) => [doc, ...prev])
-      return doc
+      return normalizeDoc(await res.json())
     },
     [],
   )
@@ -64,13 +100,13 @@ export function useDocuments(
     async (id: string) => {
       const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' })
       if (!res.ok) return false
-      setItems((prev) => prev.filter((d) => d.id !== id))
+      await refresh({ silent: true })
       return true
     },
-    [],
+    [refresh],
   )
 
-  return { items, loading, refresh, create, remove }
+  return { items, counts, categories, pagination, loading, refresh, create, remove }
 }
 
 export function useDocument(id?: string | null) {
@@ -98,7 +134,7 @@ export function useDocument(id?: string | null) {
   }, [refresh])
 
   const update = React.useCallback(
-    async (patch: Partial<Pick<Doc, 'title' | 'content'>>) => {
+    async (patch: Partial<Pick<Doc, 'title' | 'category' | 'content'>>) => {
       if (!id) return undefined
       const res = await fetch(`/api/documents/${id}`, {
         method: 'PATCH',
@@ -155,9 +191,12 @@ export function useDocument(id?: string | null) {
 
 // Normalize API response dates to ISO strings for consistency
 function normalizeDoc(raw: Record<string, unknown>): Doc {
+    const status = isDocStatus(raw.status) ? raw.status : 'draft'
+
     return {
       id: raw.id as string,
       title: raw.title as string,
+      category: String(raw.category ?? ''),
       content: String(raw.content ?? ''),
       summary: String(raw.summary ?? ''),
       preview:
@@ -168,7 +207,7 @@ function normalizeDoc(raw: Record<string, unknown>): Doc {
         raw.wordCount === undefined || raw.wordCount === null
           ? undefined
           : Number(raw.wordCount),
-      status: raw.status as DocStatus,
+      status,
       visibility: (raw.visibility as Doc['visibility']) ?? 'public',
       locale: (raw.locale as string) ?? null,
     apiVersionId: (raw.apiVersionId as string) ?? null,
@@ -200,4 +239,63 @@ function normalizeDoc(raw: Record<string, unknown>): Doc {
 
 function normalizeDocList(raw: unknown[]): Doc[] {
   return raw.map((d) => normalizeDoc(d as Record<string, unknown>))
+}
+
+function normalizeDocCollection(
+  raw: unknown,
+  fallbackPage: number,
+  fallbackPageSize: number,
+): DocumentListResponse {
+  if (Array.isArray(raw)) {
+    const items = normalizeDocList(raw)
+    const counts = items.reduce<DocumentListCounts>((acc, doc) => {
+      acc.all += 1
+      acc[doc.status] += 1
+      return acc
+    }, createEmptyDocumentCounts())
+
+    return {
+      items,
+      counts,
+      categories: [],
+      pagination: {
+        page: fallbackPage,
+        pageSize: fallbackPageSize,
+        total: items.length,
+        totalPages: Math.max(1, Math.ceil(items.length / fallbackPageSize)),
+      },
+    }
+  }
+
+  const record = raw as Record<string, unknown>
+  const items = Array.isArray(record.items)
+    ? normalizeDocList(record.items as unknown[])
+    : []
+  const rawCounts = (record.counts ?? {}) as Record<string, unknown>
+  const counts: DocumentListCounts = {
+    all: Number(rawCounts.all ?? items.length),
+    draft: Number(rawCounts.draft ?? 0),
+    review: Number(rawCounts.review ?? 0),
+    published: Number(rawCounts.published ?? 0),
+    archived: Number(rawCounts.archived ?? 0),
+  }
+  const rawPagination = (record.pagination ?? {}) as Record<string, unknown>
+  const categories = Array.isArray(record.categories)
+    ? record.categories
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    : []
+
+  return {
+    items,
+    counts,
+    categories,
+    pagination: {
+      page: Number(rawPagination.page ?? fallbackPage),
+      pageSize: Number(rawPagination.pageSize ?? fallbackPageSize),
+      total: Number(rawPagination.total ?? items.length),
+      totalPages: Number(rawPagination.totalPages ?? 1),
+    },
+  }
 }

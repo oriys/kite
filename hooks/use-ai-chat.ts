@@ -11,6 +11,8 @@ export interface ChatMessage {
     chunkId: string
     title: string
     preview: string
+    relationType?: 'primary' | 'reference'
+    relationDescription?: string
   }>
   createdAt?: string
 }
@@ -87,7 +89,10 @@ export function useAiChat(options: UseAiChatOptions = {}) {
         const sourcesHeader = res.headers.get('x-ai-chat-sources')
         if (sourcesHeader) {
           try {
-            sources = JSON.parse(sourcesHeader)
+            const bytes = Uint8Array.from(atob(sourcesHeader), (char) =>
+              char.charCodeAt(0),
+            )
+            sources = JSON.parse(new TextDecoder().decode(bytes))
           } catch {
             // ignore
           }

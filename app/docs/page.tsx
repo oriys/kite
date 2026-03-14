@@ -2,13 +2,15 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Search } from 'lucide-react'
+import { ArrowUpDown, ListFilter, Plus, Search } from 'lucide-react'
 
 import {
+  DOCUMENT_SORT_OPTIONS,
   isDocumentTitleMissing,
   type DocStatus,
   STATUS_CONFIG,
   getDocEditorHref,
+  type DocumentSort,
 } from '@/lib/documents'
 import {
   clearPendingDocumentSummary,
@@ -32,10 +34,19 @@ import { cn } from '@/lib/utils'
 import { VersionSwitcher } from '@/components/version-switcher'
 import { TemplatePicker } from '@/components/template-picker'
 import { usePersonalSettings } from '@/components/personal-settings-provider'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const statuses: (DocStatus | 'all')[] = ['all', 'draft', 'review', 'published', 'archived']
 const SUMMARY_REFRESH_INTERVAL_MS = 1500
 const SUMMARY_REFRESH_MAX_ATTEMPTS = 6
+const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
+const ALL_CATEGORIES_VALUE = '__all_categories__'
 
 export default function DocsPage() {
   const router = useRouter()
@@ -46,11 +57,21 @@ export default function DocsPage() {
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const [sort, setSort] = React.useState<DocumentSort>('updated_desc')
+  const [pageSize, setPageSize] = React.useState<number>(20)
+  const [currentPage, setCurrentPage] = React.useState(1)
+  const [categoryFilter, setCategoryFilter] = React.useState('')
   const pendingSummaryRefreshRef = React.useRef(false)
-  const { items, loading, create, remove, refresh } = useDocuments(
-    undefined,
+  const { items, counts, categories, pagination, loading, create, remove, refresh } = useDocuments(
+    filter === 'all' ? undefined : filter,
     currentVersionId,
     debouncedSearchQuery,
+    {
+      category: categoryFilter,
+      page: currentPage,
+      pageSize,
+      sort,
+    },
   )
 
   React.useEffect(() => {
@@ -63,20 +84,15 @@ export default function DocsPage() {
     }
   }, [searchQuery])
 
-  const filteredItems = React.useMemo(
-    () => {
-      return filter === 'all' ? items : items.filter((doc) => doc.status === filter)
-    },
-    [filter, items],
-  )
+  React.useEffect(() => {
+    setCurrentPage(1)
+  }, [categoryFilter, currentVersionId, debouncedSearchQuery, filter, pageSize, sort])
 
-  const counts = React.useMemo(() => {
-    const c: Record<string, number> = { all: items.length }
-    for (const s of Object.keys(STATUS_CONFIG)) {
-      c[s] = items.filter((d) => d.status === s).length
+  React.useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages)
     }
-    return c
-  }, [items])
+  }, [currentPage, pagination.totalPages])
 
   React.useEffect(() => {
     if (debouncedSearchQuery) return
@@ -140,9 +156,9 @@ export default function DocsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
       {/* Header */}
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Documents</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -186,7 +202,7 @@ export default function DocsPage() {
       </div>
 
       {/* Status filter tabs */}
-      <div className="mb-6 flex flex-wrap items-center gap-3 border-b border-border/60 pb-3">
+      <div className="mb-5 space-y-3 border-b border-border/60 pb-3">
         <div className="flex flex-wrap items-center gap-1.5">
           {statuses.map((s) => (
             <button
@@ -207,29 +223,109 @@ export default function DocsPage() {
             </button>
           ))}
         </div>
-        <VersionSwitcher
-          currentVersionId={currentVersionId ?? undefined}
-          onVersionChange={setCurrentVersionId}
-          className="h-8 text-xs"
-        />
-        <div className="relative ml-auto w-full sm:w-56">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search documents…"
-            className="h-8 pl-8 text-xs"
+        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
+          <VersionSwitcher
+            currentVersionId={currentVersionId ?? undefined}
+            onVersionChange={setCurrentVersionId}
+            className="h-8 text-xs"
           />
+          <div className="relative w-full lg:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search documents…"
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          <div className="grid gap-2.5 sm:grid-cols-3 lg:ml-auto lg:flex lg:items-center">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
+                <ListFilter className="size-3.5" />
+                Category
+              </span>
+              <Select
+                value={categoryFilter || ALL_CATEGORIES_VALUE}
+                onValueChange={(value) =>
+                  setCategoryFilter(
+                    value === ALL_CATEGORIES_VALUE ? '' : value,
+                  )
+                }
+              >
+                <SelectTrigger size="sm" className="h-8 min-w-[150px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectItem value={ALL_CATEGORIES_VALUE}>All categories</SelectItem>
+                  {categories.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
+                <ArrowUpDown className="size-3.5" />
+                Sort
+              </span>
+              <Select
+                value={sort}
+                onValueChange={(value) => setSort(value as DocumentSort)}
+              >
+                <SelectTrigger size="sm" className="h-8 min-w-[170px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {DOCUMENT_SORT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
+                <ListFilter className="size-3.5" />
+                Page size
+              </span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => setPageSize(Number(value))}
+              >
+                <SelectTrigger size="sm" className="h-8 min-w-[112px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size} per page
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Document grid */}
+      {/* Document list */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="size-5 motion-safe:animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
         </div>
       ) : (
-        <DocList documents={filteredItems} onDelete={remove} />
+        <DocList
+          documents={items}
+          totalDocuments={pagination.total}
+          currentPage={pagination.page}
+          pageSize={pagination.pageSize}
+          totalPages={pagination.totalPages}
+          onPageChange={setCurrentPage}
+          onDelete={remove}
+        />
       )}
     </div>
   )

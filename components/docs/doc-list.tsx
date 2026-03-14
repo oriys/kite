@@ -1,21 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { FileText, Clock, GitCompareArrows, Trash2 } from 'lucide-react'
+import { Clock, FileText, GitCompareArrows, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { type Doc, STATUS_CONFIG, getDocEditorHref } from '@/lib/documents'
-import { Badge } from '@/components/ui/badge'
+import { type Doc, getDocEditorHref, getStatusConfig } from '@/lib/documents'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
-import { VisibilityBadge } from '@/components/visibility-badge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +21,11 @@ import {
 
 interface DocListProps {
   documents: Doc[]
+  totalDocuments: number
+  currentPage: number
+  pageSize: number
+  totalPages: number
+  onPageChange: (page: number) => void
   onDelete: (id: string) => void
   className?: string
 }
@@ -48,18 +44,33 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-function excerpt(content: string, maxLen = 120): string {
-  const plain = content
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/[*_~`]/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\n+/g, ' ')
-    .trim()
-  return plain.length > maxLen ? plain.slice(0, maxLen) + '…' : plain
+function buildVisiblePages(currentPage: number, totalPages: number) {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1)
+  }
+
+  if (currentPage <= 3) {
+    return [1, 2, 3, 4, totalPages]
+  }
+
+  if (currentPage >= totalPages - 2) {
+    return [1, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+  }
+
+  return [1, currentPage - 1, currentPage, currentPage + 1, totalPages]
 }
 
-export function DocList({ documents, onDelete, className }: DocListProps) {
-  if (documents.length === 0) {
+export function DocList({
+  documents,
+  totalDocuments,
+  currentPage,
+  pageSize,
+  totalPages,
+  onPageChange,
+  onDelete,
+  className,
+}: DocListProps) {
+  if (totalDocuments === 0) {
     return (
       <div className={cn('flex flex-col items-center justify-center py-20 text-center', className)}>
         <div className="rounded-full bg-muted/60 p-4 mb-4">
@@ -73,107 +84,146 @@ export function DocList({ documents, onDelete, className }: DocListProps) {
     )
   }
 
-  return (
-    <div className={cn('grid gap-3 sm:grid-cols-2 xl:grid-cols-3', className)}>
-      {documents.map((doc) => {
-        const config = STATUS_CONFIG[doc.status]
-        const wc = typeof doc.wordCount === 'number' ? doc.wordCount : null
-        const preview = doc.summary || excerpt(doc.preview || doc.content)
+  const pageStart = (currentPage - 1) * pageSize + 1
+  const pageEnd = Math.min(totalDocuments, pageStart + documents.length - 1)
+  const visiblePages = buildVisiblePages(currentPage, totalPages)
 
-        return (
-          <div key={doc.id} className="group">
-            <Card className="relative h-full transition-shadow hover:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_24px_60px_-32px_rgba(15,23,42,0.25)]">
-              <Link
-                href={getDocEditorHref(doc.id)}
-                className="block h-full rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+  return (
+    <div className={cn('space-y-4', className)}>
+      <div className="overflow-hidden rounded-xl border border-border/70 bg-card/80 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.24)]">
+        <div className="hidden items-center gap-3 border-b border-border/60 bg-muted/30 px-4 py-2.5 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground uppercase lg:grid lg:grid-cols-[minmax(0,1.9fr)_160px_120px_84px]">
+          <span>Document</span>
+          <span>Status</span>
+          <span>Updated</span>
+          <span className="text-right">Actions</span>
+        </div>
+
+        <div className="divide-y divide-border/60">
+          {documents.map((doc) => {
+            const config = getStatusConfig(doc.status)
+
+            return (
+              <div
+                key={doc.id}
+                className="group grid gap-3 px-3 py-3 transition-colors hover:bg-muted/25 lg:grid-cols-[minmax(0,1.9fr)_160px_120px_84px] lg:items-center lg:px-4"
               >
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-sm font-medium leading-5 line-clamp-2 transition-colors group-hover:text-accent-foreground">
-                      {doc.title || 'Untitled'}
-                    </CardTitle>
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                      {doc.hasCustomPermissions ? (
-                        <Badge variant="outline" className="h-5 px-2 text-[10px]">
-                          Restricted
-                        </Badge>
-                      ) : null}
-                      {doc.visibility && doc.visibility !== 'public' && (
-                        <VisibilityBadge visibility={doc.visibility} compact />
-                      )}
-                      <StatusBadge
-                        label={config.label}
-                        tone={config.tone as StatusTone}
-                        compact
-                      />
-                    </div>
-                  </div>
-                  <CardDescription className="line-clamp-2 text-xs leading-5">
-                    {preview || 'Empty document'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent
-                  className={cn('pt-0', doc.canDelete ? 'pr-20' : 'pr-12')}
+                <Link
+                  href={getDocEditorHref(doc.id)}
+                  className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Clock className="size-3" />
-                      {formatDate(doc.updatedAt)}
-                    </span>
-                    {wc !== null ? <span>{wc.toLocaleString()} words</span> : null}
-                  </div>
-                </CardContent>
-              </Link>
-              <div className="absolute bottom-4 right-4 z-10 flex items-center gap-1">
-                {doc.canDelete ? (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                        aria-label={`Delete ${doc.title}`}
-                      >
-                        <Trash2 className="size-3.5 text-muted-foreground" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete document</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Permanently delete &ldquo;{doc.title}&rdquo;? This cannot be undone.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={() => onDelete(doc.id)}
+                  <p className="truncate text-sm font-medium leading-5 text-foreground transition-colors group-hover:text-accent-foreground">
+                    {doc.title || 'Untitled'}
+                  </p>
+                </Link>
+
+                <div className="flex items-center lg:justify-start">
+                  <StatusBadge
+                    label={config.label}
+                    tone={config.tone as StatusTone}
+                    compact
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Clock className="size-3" />
+                  {formatDate(doc.updatedAt)}
+                </div>
+
+                <div className="flex items-center justify-end gap-1">
+                  <Button asChild variant="ghost" size="icon-sm">
+                    <Link
+                      href={`/docs/compare?doc=${encodeURIComponent(doc.id)}&mode=version`}
+                      aria-label={`Compare ${doc.title}`}
+                    >
+                      <GitCompareArrows className="size-3.5 text-muted-foreground" />
+                    </Link>
+                  </Button>
+                  {doc.canDelete ? (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Delete ${doc.title}`}
                         >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                          <Trash2 className="size-3.5 text-muted-foreground" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete document</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Permanently delete &ldquo;{doc.title}&rdquo;? This cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => onDelete(doc.id)}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  ) : null}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-muted/15 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-[11px] text-muted-foreground">
+          Showing <span className="font-medium text-foreground">{pageStart}</span>-
+          <span className="font-medium text-foreground">{pageEnd}</span> of{' '}
+          <span className="font-medium text-foreground">{totalDocuments}</span> documents
+        </p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2"
+            disabled={currentPage <= 1}
+            onClick={() => onPageChange(currentPage - 1)}
+          >
+            <ChevronLeft className="size-3" />
+            Prev
+          </Button>
+          {visiblePages.map((page, index) => {
+            const previousPage = visiblePages[index - 1]
+            const showGap = previousPage !== undefined && page - previousPage > 1
+
+            return (
+              <div key={page} className="flex items-center gap-1.5">
+                {showGap ? (
+                  <span className="px-1 text-xs text-muted-foreground">…</span>
                 ) : null}
                 <Button
-                  asChild
-                  variant="ghost"
+                  variant={page === currentPage ? 'outline' : 'ghost'}
                   size="icon-sm"
-                  className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                  className="h-7 w-7"
+                  onClick={() => onPageChange(page)}
                 >
-                  <Link
-                    href={`/docs/compare?doc=${encodeURIComponent(doc.id)}&mode=version`}
-                    aria-label={`Compare ${doc.title}`}
-                  >
-                    <GitCompareArrows className="size-3.5 text-muted-foreground" />
-                  </Link>
+                  {page}
                 </Button>
               </div>
-            </Card>
-          </div>
-        )
-      })}
+            )
+          })}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2"
+            disabled={currentPage >= totalPages}
+            onClick={() => onPageChange(currentPage + 1)}
+          >
+            Next
+            <ChevronRight className="size-3" />
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

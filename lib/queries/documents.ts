@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   desc,
   eq,
   ilike,
@@ -10,14 +11,17 @@ import {
   type SQL,
 } from 'drizzle-orm'
 import { db } from '../db'
+import { rebuildWorkspaceDocumentRelations } from '../document-relations'
 import {
   documents,
   documentVersions,
   type docStatusEnum,
   type visibilityEnum,
 } from '../schema'
+import { logServerError } from '../server-errors'
 import { verifyWorkspaceMembership } from './workspaces'
 import { wordCount } from '../utils'
+import type { DocumentSort } from '../documents'
 
 type DocStatusValue = (typeof docStatusEnum.enumValues)[number]
 type VisibilityValue = (typeof visibilityEnum.enumValues)[number]
@@ -38,21 +42,30 @@ interface ImportDocumentInput {
   versions?: ImportDocumentVersionInput[]
 }
 
+async function refreshWorkspaceRelationsAfterMutation(
+  workspaceId: string,
+  mutation: string,
+) {
+  try {
+    await rebuildWorkspaceDocumentRelations(workspaceId)
+  } catch (error) {
+    logServerError('Failed to rebuild document relations after document mutation.', error, {
+      workspaceId,
+      mutation,
+    })
+  }
+}
+
 export async function listDocuments(
   workspaceId: string,
-  statusFilter?: DocStatusValue,
-  limit = 100,
-  offset = 0,
   apiVersionId?: string,
   searchQuery?: string,
+  sort: DocumentSort = 'updated_desc',
 ) {
   const conditions: SQL<unknown>[] = [
     eq(documents.workspaceId, workspaceId),
     isNull(documents.deletedAt),
   ]
-  if (statusFilter) {
-    conditions.push(eq(documents.status, statusFilter))
-  }
   if (apiVersionId) {
     conditions.push(eq(documents.apiVersionId, apiVersionId))
   }
@@ -67,10 +80,29 @@ export async function listDocuments(
     )
   }
 
+  const orderBy = (() => {
+    switch (sort) {
+      case 'updated_asc':
+        return [asc(documents.updatedAt), asc(documents.title)]
+      case 'created_desc':
+        return [desc(documents.createdAt), asc(documents.title)]
+      case 'created_asc':
+        return [asc(documents.createdAt), asc(documents.title)]
+      case 'title_asc':
+        return [asc(documents.title), desc(documents.updatedAt)]
+      case 'title_desc':
+        return [desc(documents.title), desc(documents.updatedAt)]
+      case 'updated_desc':
+      default:
+        return [desc(documents.updatedAt), asc(documents.title)]
+    }
+  })()
+
   return db
     .select({
       id: documents.id,
       title: documents.title,
+      category: documents.category,
       content: sql<string>`''`,
       summary: documents.summary,
       preview:
@@ -86,9 +118,7 @@ export async function listDocuments(
     })
     .from(documents)
     .where(and(...conditions))
-    .orderBy(desc(documents.updatedAt))
-    .limit(limit)
-    .offset(offset)
+    .orderBy(...orderBy)
 }
 
 export async function getDocument(id: string, workspaceId: string) {
@@ -125,11 +155,14 @@ export async function createDocument(
   content: string,
   createdBy: string,
   summary = '',
+  category = '',
 ) {
   const [doc] = await db
     .insert(documents)
-    .values({ workspaceId, title, content, summary, createdBy })
+    .values({ workspaceId, title, category, content, summary, createdBy })
     .returning()
+
+  await refreshWorkspaceRelationsAfterMutation(workspaceId, 'createDocument')
 
   return { ...doc, versions: [] }
 }
@@ -141,7 +174,7 @@ export async function importDocuments(
 ) {
   if (sourceDocs.length === 0) return []
 
-  return db.transaction(async (tx) => {
+  const inserted = await db.transaction(async (tx) => {
     const docValues = sourceDocs.map((sourceDoc) => {
       const createdAt = sourceDoc.createdAt ? new Date(sourceDoc.createdAt) : new Date()
       const updatedAt = sourceDoc.updatedAt ? new Date(sourceDoc.updatedAt) : createdAt
@@ -190,12 +223,21 @@ export async function importDocuments(
 
     return inserted.map((doc) => ({ ...doc, versions: [] }))
   })
+
+  await refreshWorkspaceRelationsAfterMutation(workspaceId, 'importDocuments')
+
+  return inserted
 }
 
 export async function updateDocument(
   id: string,
   workspaceId: string,
-  patch: { title?: string; content?: string; visibility?: VisibilityValue },
+  patch: {
+    title?: string
+    category?: string
+    content?: string
+    visibility?: VisibilityValue
+  },
 ) {
   // Light read: only fetch the content needed for version diffing
   const [existing] = await db
@@ -256,7 +298,16 @@ export async function updateDocument(
     )
     .returning()
 
-  return updated ? await getDocument(id, workspaceId) : null
+  if (!updated) return null
+
+  if (
+    patch.content !== undefined ||
+    patch.title !== undefined
+  ) {
+    await refreshWorkspaceRelationsAfterMutation(workspaceId, 'updateDocument')
+  }
+
+  return await getDocument(id, workspaceId)
 }
 
 export async function transitionDocument(
@@ -292,6 +343,10 @@ export async function deleteDocument(id: string, workspaceId: string) {
     )
     .returning()
 
+  if (result.length > 0) {
+    await refreshWorkspaceRelationsAfterMutation(workspaceId, 'deleteDocument')
+  }
+
   return result.length > 0
 }
 
@@ -309,6 +364,7 @@ export async function duplicateDocument(
     source.content,
     userId,
     source.summary,
+    source.category,
   )
 }
 
@@ -359,7 +415,13 @@ export async function updateDocumentSummaryIfUnchanged(
     )
     .returning()
 
-  return updated ? await getDocument(id, workspaceId) : null
+  if (!updated) return null
+
+  if (input.title) {
+    await refreshWorkspaceRelationsAfterMutation(workspaceId, 'updateDocumentSummaryIfUnchanged')
+  }
+
+  return await getDocument(id, workspaceId)
 }
 
 export { verifyWorkspaceMembership }

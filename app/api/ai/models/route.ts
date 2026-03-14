@@ -47,6 +47,7 @@ export async function GET() {
     configured: catalog.configured,
     defaultModelId: preferences.activeModelId ?? '',
     enabledModelIds: preferences.enabledModelIds,
+    rerankerModelId: workspaceSettings?.rerankerModelId?.trim() ?? '',
     fetchedAt,
     error: catalog.error,
     providers: catalog.providers,

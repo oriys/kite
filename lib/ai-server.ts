@@ -33,6 +33,14 @@ type GeminiModelsResponse = {
   }
 }
 
+type OpenAiCompatibleRerankResponse = {
+  results?: unknown[]
+  data?: unknown[]
+  error?: {
+    message?: string
+  }
+}
+
 export interface ResolvedAiProviderConfig {
   id: string
   name: string
@@ -721,6 +729,92 @@ export async function requestAiEmbedding(input: {
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
     const message = error instanceof Error ? error.message : 'The embedding request failed.'
+    throw new AiCompletionError(message, 502)
+  }
+}
+
+export async function requestAiRerank(input: {
+  provider: ResolvedAiProviderConfig
+  model: string
+  query: string
+  documents: string[]
+  topN?: number
+}) {
+  if (!input.provider.apiKey.trim()) {
+    throw new AiCompletionError('This AI provider is missing an API key.', 503)
+  }
+
+  if (input.documents.length === 0) {
+    return { results: [] as Array<{ index: number; relevanceScore: number }> }
+  }
+
+  if (input.provider.providerType !== 'openai_compatible') {
+    throw new AiCompletionError(
+      'Reranking is only supported for OpenAI-compatible providers.',
+      501,
+    )
+  }
+
+  const endpoint = `${input.provider.baseUrl.replace(/\/$/, '')}/rerank`
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${input.provider.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: input.model,
+        query: input.query,
+        documents: input.documents,
+        top_n: Math.max(1, Math.min(input.topN ?? input.documents.length, input.documents.length)),
+        return_documents: false,
+      }),
+    })
+
+    const payload = (await response.json().catch(() => null)) as OpenAiCompatibleRerankResponse | null
+    if (!response.ok) {
+      const message =
+        payload?.error?.message ||
+        `The reranker request failed with status ${response.status}.`
+      throw new AiCompletionError(message, response.status)
+    }
+
+    const rows = Array.isArray(payload?.results)
+      ? payload.results
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : []
+
+    const results = rows
+      .map((row) => {
+        if (!row || typeof row !== 'object') return null
+        const record = row as Record<string, unknown>
+        const index = getNumber(record.index)
+        const relevanceScore =
+          getNumber(record.relevance_score) ??
+          getNumber(record.score) ??
+          getNumber(record.relevanceScore)
+
+        if (index === null || relevanceScore === null) return null
+        if (index < 0 || index >= input.documents.length) return null
+
+        return {
+          index,
+          relevanceScore,
+        }
+      })
+      .filter((result): result is { index: number; relevanceScore: number } => result !== null)
+      .sort(
+        (left, right) =>
+          right.relevanceScore - left.relevanceScore || left.index - right.index,
+      )
+
+    return { results }
+  } catch (error) {
+    if (error instanceof AiCompletionError) throw error
+    const message = error instanceof Error ? error.message : 'The reranker request failed.'
     throw new AiCompletionError(message, 502)
   }
 }

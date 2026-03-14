@@ -1,11 +1,13 @@
 'use client'
 
 import * as React from 'react'
-import { Bot, Send, Square, Plus, FileText, Sparkles, Loader2 } from 'lucide-react'
+import { Bot, Send, Square, Plus, FileText, Sparkles, Loader2, X } from 'lucide-react'
 
+import { MarkdownPreview } from '@/components/docs/markdown-preview'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -18,6 +20,87 @@ interface AiChatPanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   documentId?: string
+}
+
+const MARKDOWN_HINT_RE =
+  /(^#{1,6}\s)|(^>\s)|(^[-*+]\s)|(^\d+\.\s)|(```)|(\[[^\]]+\]\([^)]+\))|(^\|.+\|$)/m
+
+function looksLikeJsonDocument(value: string) {
+  if (!/^[\[{]/.test(value) || !/[\]}]$/.test(value)) {
+    return false
+  }
+
+  try {
+    JSON.parse(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function detectCodeLanguage(value: string) {
+  const trimmed = value.trim()
+  const nonEmptyLines = trimmed.split('\n').filter((line) => line.trim().length > 0)
+
+  if (nonEmptyLines.length < 2) {
+    return null
+  }
+
+  if (/^(curl|pnpm|npm|yarn|git|npx|node|python3?|go|docker)\b/m.test(trimmed)) {
+    return 'bash'
+  }
+
+  if (/^(SELECT|WITH|INSERT\s+INTO|UPDATE|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE)\b/im.test(trimmed)) {
+    return 'sql'
+  }
+
+  if (/<[A-Za-z][^>]*>/.test(trimmed) && /<\/[A-Za-z]/.test(trimmed)) {
+    return 'html'
+  }
+
+  if (
+    /^\s*(?:const|let|var|function|export|import|async\s+function|interface|type)\b/m.test(trimmed) ||
+    /=>/.test(trimmed)
+  ) {
+    return 'ts'
+  }
+
+  if (
+    /^\s*(?:def|class|import|from)\b/m.test(trimmed) &&
+    /:\s*(?:#.*)?$/m.test(trimmed)
+  ) {
+    return 'py'
+  }
+
+  return null
+}
+
+function normalizeAssistantContent(content: string) {
+  const trimmed = content.trim()
+
+  if (!trimmed || trimmed.includes('```')) {
+    return content
+  }
+
+  if (looksLikeJsonDocument(trimmed)) {
+    try {
+      return `\`\`\`json\n${JSON.stringify(JSON.parse(trimmed), null, 2)}\n\`\`\``
+    } catch {
+      return content
+    }
+  }
+
+  if (MARKDOWN_HINT_RE.test(trimmed)) {
+    return content
+  }
+
+  const language = detectCodeLanguage(trimmed)
+
+  if (!language) {
+    return content
+  }
+
+  return `\`\`\`${language}\n${trimmed}\n\`\`\``
 }
 
 export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps) {
@@ -73,6 +156,7 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        showCloseButton={false}
         className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
       >
         <SheetHeader className="border-b px-4 py-3">
@@ -81,15 +165,25 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
               <Sparkles className="size-4 text-accent" />
               AI Assistant
             </SheetTitle>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <Button
-                variant="ghost"
-                size="icon-xs"
+                variant="outline"
+                size="xs"
                 onClick={clearChat}
                 title="New chat"
               >
                 <Plus className="size-3.5" />
+                New chat
               </Button>
+              <SheetClose asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  title="Close AI assistant"
+                >
+                  <X className="size-4" />
+                </Button>
+              </SheetClose>
             </div>
           </div>
         </SheetHeader>
@@ -99,7 +193,7 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
           {messages.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className="flex flex-col gap-1 p-4">
+            <div className="flex flex-col gap-3 p-4">
               {messages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
@@ -183,29 +277,44 @@ function EmptyState() {
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user'
+  const renderedAssistantContent = React.useMemo(
+    () => normalizeAssistantContent(message.content),
+    [message.content],
+  )
 
   return (
     <div className={cn('flex flex-col gap-1', isUser ? 'items-end' : 'items-start')}>
       <div
         className={cn(
-          'max-w-[85%] rounded-lg px-3 py-2 text-sm',
+          'max-w-[92%] overflow-hidden rounded-xl px-3 py-2.5 text-sm shadow-[0_1px_1px_rgba(15,23,42,0.04)]',
           isUser
             ? 'bg-accent text-accent-foreground'
-            : 'bg-muted/60',
+            : 'border border-border/70 bg-card/90',
         )}
       >
-        <div className="prose prose-sm max-w-none dark:prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-          {message.content || '\u00A0'}
-        </div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap break-words leading-6">{message.content || '\u00A0'}</div>
+        ) : (
+          <MarkdownPreview
+            content={renderedAssistantContent}
+            className={cn(
+              'max-w-none text-[13px] leading-6 [overflow-wrap:anywhere]',
+              '[&_.doc-json-viewer]:my-0 [&_.doc-schema-viewer]:my-0 [&_.doc-heatmap]:my-0',
+              '[&_pre]:my-3 [&_pre]:border-border/70 [&_pre]:bg-background/80 [&_pre]:shadow-none',
+              '[&_table]:text-[12.5px] [&_table]:leading-6',
+              '[&_code]:break-words [&_blockquote]:text-foreground/75',
+            )}
+          />
+        )}
       </div>
 
       {/* Source citations */}
       {message.sources && message.sources.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-1">
+        <div className="flex max-w-[92%] flex-wrap gap-1 px-1">
           {message.sources.map((source, i) => (
             <span
               key={source.chunkId}
-              className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/90 px-1.5 py-0.5 text-[10px] text-muted-foreground"
               title={source.preview}
             >
               <FileText className="size-2.5" />
@@ -226,13 +335,23 @@ export function AiChatTrigger() {
   return (
     <>
       <Button
-        variant="default"
-        size="icon"
-        className="fixed bottom-6 right-6 z-50 size-11 rounded-full shadow-lg"
+        variant="outline"
+        size="sm"
+        className="hidden gap-2 border-border/60 bg-background/80 shadow-sm transition-colors hover:bg-muted/70 lg:inline-flex"
         onClick={() => setOpen(true)}
         title="Ask AI"
       >
-        <Sparkles className="size-5" />
+        <Sparkles className="size-4" />
+        Ask AI
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="lg:hidden"
+        onClick={() => setOpen(true)}
+        title="Ask AI"
+      >
+        <Sparkles className="size-4" />
       </Button>
       <AiChatPanel open={open} onOpenChange={setOpen} />
     </>
