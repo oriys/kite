@@ -58,6 +58,9 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 type ThemeChoice = 'system' | 'light' | 'dark'
 
+const DEFAULT_UI_FONT_VALUE = '__default_ui_font__'
+const DEFAULT_CODE_FONT_VALUE = '__default_code_font__'
+
 const THEME_OPTIONS: ReadonlyArray<{
   value: ThemeChoice
   label: string
@@ -173,14 +176,20 @@ function ThemePanelCard({
               The typeface for headings, labels, and body text.
             </FieldDescription>
             <Select
-              value={panel.fonts.uiFont ?? ''}
-              onValueChange={(v) => onFontChange('uiFont', v || null)}
+              value={panel.fonts.uiFont ?? DEFAULT_UI_FONT_VALUE}
+              onValueChange={(v) =>
+                onFontChange(
+                  'uiFont',
+                  v === DEFAULT_UI_FONT_VALUE ? null : v,
+                )}
             >
               <SelectTrigger size="sm">
                 <SelectValue placeholder="Default (Geist)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Default (Geist)</SelectItem>
+                <SelectItem value={DEFAULT_UI_FONT_VALUE}>
+                  Default (Geist)
+                </SelectItem>
                 {UI_FONT_PRESETS.slice(1).map((preset) => (
                   <SelectItem key={preset.value} value={preset.value}>
                     {preset.label}
@@ -198,14 +207,20 @@ function ThemePanelCard({
               The monospace typeface for code blocks and inline code.
             </FieldDescription>
             <Select
-              value={panel.fonts.codeFont ?? ''}
-              onValueChange={(v) => onFontChange('codeFont', v || null)}
+              value={panel.fonts.codeFont ?? DEFAULT_CODE_FONT_VALUE}
+              onValueChange={(v) =>
+                onFontChange(
+                  'codeFont',
+                  v === DEFAULT_CODE_FONT_VALUE ? null : v,
+                )}
             >
               <SelectTrigger size="sm">
                 <SelectValue placeholder="Default (Geist Mono)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Default (Geist Mono)</SelectItem>
+                <SelectItem value={DEFAULT_CODE_FONT_VALUE}>
+                  Default (Geist Mono)
+                </SelectItem>
                 {CODE_FONT_PRESETS.slice(1).map((preset) => (
                   <SelectItem key={preset.value} value={preset.value}>
                     {preset.label}

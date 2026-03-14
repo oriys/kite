@@ -45,7 +45,7 @@ export async function getTranslationsForDocument(documentId: string) {
           sql`(
             SELECT v.id FROM document_translation_versions v
             WHERE v.translation_id = ${documentTranslations.id}
-            ORDER BY v.created_at DESC
+            ORDER BY v.created_at DESC, v.id DESC
             LIMIT 1
           )`,
         ),
@@ -114,7 +114,10 @@ export async function getLatestTranslationVersion(translationId: string) {
     .select()
     .from(documentTranslationVersions)
     .where(eq(documentTranslationVersions.translationId, translationId))
-    .orderBy(desc(documentTranslationVersions.createdAt))
+    .orderBy(
+      desc(documentTranslationVersions.createdAt),
+      desc(documentTranslationVersions.id),
+    )
     .limit(1)
 
   return version ?? null
@@ -125,7 +128,10 @@ export async function getTranslationVersions(translationId: string) {
     .select()
     .from(documentTranslationVersions)
     .where(eq(documentTranslationVersions.translationId, translationId))
-    .orderBy(desc(documentTranslationVersions.createdAt))
+    .orderBy(
+      desc(documentTranslationVersions.createdAt),
+      desc(documentTranslationVersions.id),
+    )
 }
 
 // --- Mutations ---

@@ -447,6 +447,10 @@ export function DocEditor({
     if (editorFocusRef) {
       editorFocusRef.current = {
         focus: () => editor?.commands.focus(),
+        flushPendingContent: () => {
+          flushHtmlToMd()
+          return latestMdRef.current
+        },
         applyCommentMark: (from: number, to: number, commentId: string) => {
           if (!editor || from >= to) return
           const commentMark = editor.schema.marks.comment
@@ -463,7 +467,7 @@ export function DocEditor({
         },
       }
     }
-  }, [editor, editorFocusRef])
+  }, [editor, editorFocusRef, flushHtmlToMd])
 
   // ── Mode changes ─────────────────────────────────────────────────────────
 

@@ -228,7 +228,9 @@ export const documents = pgTable(
     }),
   },
   (t) => [
-    index('documents_workspace_id_idx').on(t.workspaceId),
+    index('documents_workspace_active_updated_idx')
+      .on(t.workspaceId, t.updatedAt)
+      .where(sql`${t.deletedAt} is null`),
     index('documents_status_idx').on(t.status),
     index('documents_created_by_idx').on(t.createdBy),
     index('documents_api_version_id_idx').on(t.apiVersionId),
@@ -543,7 +545,9 @@ export const searchLogs = pgTable(
     id: text('id')
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    workspaceId: text('workspace_id').notNull(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
     userId: text('user_id'),
     query: text('query').notNull(),
     resultCount: integer('result_count').notNull(),
@@ -619,7 +623,6 @@ export const inlineComments = pgTable(
     deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
-    index('inline_comments_document_id_idx').on(t.documentId),
     index('inline_comments_parent_id_idx').on(t.parentId),
     index('inline_comments_document_deleted_created_idx').on(
       t.documentId,
@@ -638,7 +641,9 @@ export const linkChecks = pgTable(
     id: text('id')
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    workspaceId: text('workspace_id').notNull(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
     documentId: text('document_id')
       .notNull()
       .references(() => documents.id, { onDelete: 'cascade' }),
@@ -769,8 +774,6 @@ export const auditLogs = pgTable(
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [
-    index('audit_logs_workspace_id_idx').on(t.workspaceId),
-    index('audit_logs_actor_id_idx').on(t.actorId),
     index('audit_logs_resource_idx').on(t.resourceType, t.resourceId),
     index('audit_logs_created_at_idx').on(t.createdAt),
     index('audit_logs_workspace_actor_idx').on(t.workspaceId, t.actorId),
@@ -833,7 +836,6 @@ export const notifications = pgTable(
   (t) => [
     index('notifications_recipient_id_idx').on(t.recipientId),
     index('notifications_workspace_id_idx').on(t.workspaceId),
-    index('notifications_is_read_idx').on(t.isRead),
     index('notifications_created_at_idx').on(t.createdAt),
     index('notifications_recipient_workspace_read_created_idx').on(
       t.recipientId,
@@ -1016,7 +1018,6 @@ export const webhookDeliveries = pgTable(
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [
-    index('webhook_deliveries_webhook_id_idx').on(t.webhookId),
     index('webhook_deliveries_created_at_idx').on(t.createdAt),
     index('webhook_deliveries_webhook_created_idx').on(t.webhookId, t.createdAt),
   ],
@@ -1332,9 +1333,7 @@ export const apiRequestHistory = pgTable(
     deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
-    index('api_request_history_workspace_id_idx').on(t.workspaceId),
     index('api_request_history_user_id_idx').on(t.userId),
-    index('api_request_history_created_at_idx').on(t.createdAt),
     index('api_request_history_workspace_user_created_idx').on(
       t.workspaceId,
       t.userId,

@@ -2,7 +2,14 @@ import { eq, and } from 'drizzle-orm'
 import { db } from '../db'
 import { workspaces, workspaceMembers } from '../schema'
 
-export async function getUserWorkspaces(userId: string) {
+type UserWorkspace = Pick<
+  typeof workspaces.$inferSelect,
+  'id' | 'name' | 'slug' | 'createdAt'
+> & {
+  role: typeof workspaceMembers.$inferSelect.role
+}
+
+export async function getUserWorkspaces(userId: string): Promise<UserWorkspace[]> {
   const rows = await db
     .select({
       id: workspaces.id,
@@ -23,18 +30,22 @@ export async function createWorkspace(
   name: string,
   slug: string,
   ownerId: string,
-) {
+) : Promise<UserWorkspace> {
   const [ws] = await db.insert(workspaces).values({ name, slug }).returning()
   await db
     .insert(workspaceMembers)
     .values({ userId: ownerId, workspaceId: ws.id, role: 'owner' })
-  return ws
+
+  return {
+    ...ws,
+    role: 'owner',
+  }
 }
 
 export async function ensureDefaultWorkspace(
   userId: string,
   userName: string,
-) {
+): Promise<UserWorkspace> {
   const existing = await getUserWorkspaces(userId)
   if (existing.length > 0) return existing[0]
 
@@ -43,7 +54,9 @@ export async function ensureDefaultWorkspace(
   return createWorkspace(name, slug, userId)
 }
 
-export async function getDefaultWorkspace(userId: string) {
+export async function getDefaultWorkspace(
+  userId: string,
+): Promise<UserWorkspace | null> {
   const userWorkspaces = await getUserWorkspaces(userId)
   return userWorkspaces[0] ?? null
 }

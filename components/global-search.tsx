@@ -6,7 +6,7 @@ import { FileText, Search, Loader2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { sanitizeSearchHeadline } from '@/lib/sanitize'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 interface SearchResult {
   id: string
@@ -127,13 +127,15 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
       <DialogContent
         className="overflow-hidden p-0 sm:max-w-[560px]"
         showCloseButton={false}
+        aria-labelledby="global-search-title"
+        aria-describedby="global-search-description"
       >
-        <DialogHeader className="sr-only">
-          <DialogTitle id="global-search-title">Search documents</DialogTitle>
-          <DialogDescription id="global-search-description">
-            Full-text search across all workspace documents
-          </DialogDescription>
-        </DialogHeader>
+        <DialogTitle id="global-search-title" className="sr-only">
+          Search documents
+        </DialogTitle>
+        <DialogDescription id="global-search-description" className="sr-only">
+          Full-text search across all workspace documents
+        </DialogDescription>
         <CommandPrimitive
           className="flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground"
           shouldFilter={false}

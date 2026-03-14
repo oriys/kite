@@ -55,6 +55,7 @@ export interface DocEditorProps {
 
 export interface DocEditorHandle {
   focus: () => void
+  flushPendingContent?: () => string
   applyCommentMark?: (from: number, to: number, commentId: string) => void
 }
 

@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server'
+import { eq } from 'drizzle-orm'
+
 import { auth } from './auth'
-import { getDefaultWorkspace, verifyWorkspaceMembership } from './queries/workspaces'
+import { db } from './db'
+import { users } from './schema'
+import {
+  ensureDefaultWorkspace,
+  getDefaultWorkspace,
+  verifyWorkspaceMembership,
+} from './queries/workspaces'
 
 type MemberRole = 'owner' | 'admin' | 'member' | 'guest'
 
@@ -19,6 +27,47 @@ export async function getWorkspaceContext(userId: string) {
   return getDefaultWorkspace(userId)
 }
 
+async function resolveSessionUser(sessionUser: Awaited<ReturnType<typeof getAuthenticatedUser>>) {
+  if (!sessionUser?.id) {
+    return null
+  }
+
+  const byId = await db.query.users.findFirst({
+    where: eq(users.id, sessionUser.id),
+  })
+  if (byId) {
+    return byId
+  }
+
+  if (sessionUser.email) {
+    const byEmail = await db.query.users.findFirst({
+      where: eq(users.email, sessionUser.email),
+    })
+    if (byEmail) {
+      return byEmail
+    }
+  }
+
+  const [createdUser] = await db
+    .insert(users)
+    .values({
+      id: sessionUser.id,
+      name: sessionUser.name ?? null,
+      email: sessionUser.email ?? null,
+      image: sessionUser.image ?? null,
+    })
+    .onConflictDoNothing()
+    .returning()
+
+  if (createdUser) {
+    return createdUser
+  }
+
+  return db.query.users.findFirst({
+    where: eq(users.id, sessionUser.id),
+  })
+}
+
 /**
  * Authenticate user and verify workspace membership in one call.
  * Pass `requiredRole` to enforce minimum permissions:
@@ -30,10 +79,16 @@ export async function getWorkspaceContext(userId: string) {
 export async function withWorkspaceAuth(
   requiredRole: MemberRole = 'guest',
 ): Promise<{ ctx: WorkspaceContext } | { error: NextResponse }> {
-  const user = await getAuthenticatedUser()
-  if (!user?.id) return { error: unauthorized() }
+  const sessionUser = await getAuthenticatedUser()
+  if (!sessionUser?.id) return { error: unauthorized() }
 
-  const workspace = await getDefaultWorkspace(user.id)
+  const user = await resolveSessionUser(sessionUser)
+  if (!user?.id) return { error: forbidden() }
+
+  let workspace = await getDefaultWorkspace(user.id)
+  if (!workspace) {
+    workspace = await ensureDefaultWorkspace(user.id, user.name ?? 'My Workspace')
+  }
   if (!workspace) return { error: forbidden() }
 
   const membership = await verifyWorkspaceMembership(user.id, workspace.id)

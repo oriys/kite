@@ -142,50 +142,53 @@ export async function importDocuments(
   if (sourceDocs.length === 0) return []
 
   return db.transaction(async (tx) => {
-    const imported = []
-
-    for (const sourceDoc of sourceDocs) {
+    const docValues = sourceDocs.map((sourceDoc) => {
       const createdAt = sourceDoc.createdAt ? new Date(sourceDoc.createdAt) : new Date()
       const updatedAt = sourceDoc.updatedAt ? new Date(sourceDoc.updatedAt) : createdAt
-      const status = sourceDoc.status ?? 'draft'
 
-      const [doc] = await tx
-        .insert(documents)
-        .values({
-          workspaceId,
-          title: sourceDoc.title,
-          content: sourceDoc.content,
-          summary: sourceDoc.summary ?? '',
-          status,
-          createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
-          updatedAt: Number.isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
-          createdBy,
-        })
-        .returning()
-
-      const versions = Array.isArray(sourceDoc.versions) ? sourceDoc.versions : []
-      if (versions.length > 0) {
-        await tx.insert(documentVersions).values(
-          versions.map((version) => {
-            const savedAt = version.savedAt ? new Date(version.savedAt) : new Date()
-
-            return {
-              documentId: doc.id,
-              content: version.content,
-              wordCount:
-                typeof version.wordCount === 'number'
-                  ? version.wordCount
-                  : wordCount(version.content),
-              savedAt: Number.isNaN(savedAt.getTime()) ? new Date() : savedAt,
-            }
-          }),
-        )
+      return {
+        workspaceId,
+        title: sourceDoc.title,
+        content: sourceDoc.content,
+        summary: sourceDoc.summary ?? '',
+        status: (sourceDoc.status ?? 'draft') as DocStatusValue,
+        createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+        updatedAt: Number.isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
+        createdBy,
       }
+    })
 
-      imported.push({ ...doc, versions: [] })
+    const inserted = await tx.insert(documents).values(docValues).returning()
+
+    // Collect all versions across all documents into a single batch
+    const allVersionValues: {
+      documentId: string
+      content: string
+      wordCount: number
+      savedAt: Date
+    }[] = []
+
+    for (let i = 0; i < inserted.length; i++) {
+      const versions = Array.isArray(sourceDocs[i].versions) ? sourceDocs[i].versions! : []
+      for (const version of versions) {
+        const savedAt = version.savedAt ? new Date(version.savedAt) : new Date()
+        allVersionValues.push({
+          documentId: inserted[i].id,
+          content: version.content,
+          wordCount:
+            typeof version.wordCount === 'number'
+              ? version.wordCount
+              : wordCount(version.content),
+          savedAt: Number.isNaN(savedAt.getTime()) ? new Date() : savedAt,
+        })
+      }
     }
 
-    return imported
+    if (allVersionValues.length > 0) {
+      await tx.insert(documentVersions).values(allVersionValues)
+    }
+
+    return inserted.map((doc) => ({ ...doc, versions: [] }))
   })
 }
 
@@ -194,7 +197,19 @@ export async function updateDocument(
   workspaceId: string,
   patch: { title?: string; content?: string; visibility?: VisibilityValue },
 ) {
-  const existing = await getDocument(id, workspaceId)
+  // Light read: only fetch the content needed for version diffing
+  const [existing] = await db
+    .select({ content: documents.content })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.id, id),
+        eq(documents.workspaceId, workspaceId),
+        isNull(documents.deletedAt),
+      ),
+    )
+    .limit(1)
+
   if (!existing) return null
 
   // Version the old content when content changes
