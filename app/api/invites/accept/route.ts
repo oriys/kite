@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   if (!token) return badRequest('Token is required')
 
   try {
-    const result = await acceptInvite(token, user.id)
+    const result = await acceptInvite(token, user.id, user.email)
     return NextResponse.json(result)
   } catch (e) {
     return badRequest((e as Error).message)

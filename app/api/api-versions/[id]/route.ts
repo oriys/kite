@@ -20,9 +20,8 @@ export async function GET(
   if ('error' in result) return result.error
 
   const { id } = await context.params
-  const version = await getApiVersion(id)
-  if (!version || version.workspaceId !== result.ctx.workspaceId)
-    return notFound()
+  const version = await getApiVersion(id, result.ctx.workspaceId)
+  if (!version) return notFound()
 
   return NextResponse.json(version)
 }
@@ -35,14 +34,13 @@ export async function PUT(
   if ('error' in result) return result.error
 
   const { id } = await context.params
-  const existing = await getApiVersion(id)
-  if (!existing || existing.workspaceId !== result.ctx.workspaceId)
-    return notFound()
+  const existing = await getApiVersion(id, result.ctx.workspaceId)
+  if (!existing) return notFound()
 
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
 
-  const patch: Parameters<typeof updateApiVersion>[1] = {}
+  const patch: Parameters<typeof updateApiVersion>[2] = {}
 
   if (typeof body.label === 'string') {
     const label = body.label.trim()
@@ -80,7 +78,7 @@ export async function PUT(
     return badRequest('No valid fields to update')
 
   try {
-    const updated = await updateApiVersion(id, patch)
+    const updated = await updateApiVersion(id, result.ctx.workspaceId, patch)
     if (!updated) return notFound()
     return NextResponse.json(updated)
   } catch (err: unknown) {
@@ -100,11 +98,10 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await context.params
-  const existing = await getApiVersion(id)
-  if (!existing || existing.workspaceId !== result.ctx.workspaceId)
-    return notFound()
+  const existing = await getApiVersion(id, result.ctx.workspaceId)
+  if (!existing) return notFound()
 
-  const deleted = await deleteApiVersion(id)
+  const deleted = await deleteApiVersion(id, result.ctx.workspaceId)
   if (!deleted) return notFound()
 
   return NextResponse.json({ ok: true })

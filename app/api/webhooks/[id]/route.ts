@@ -32,7 +32,7 @@ export async function GET(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const wh = await getWebhook(id)
+  const wh = await getWebhook(id, result.ctx.workspaceId)
   if (!wh) return notFound()
 
   return NextResponse.json(wh)
@@ -61,7 +61,7 @@ export async function PUT(
   if (Array.isArray(body.events)) data.events = body.events
   if (typeof body.isActive === 'boolean') data.isActive = body.isActive
 
-  const wh = await updateWebhook(id, data)
+  const wh = await updateWebhook(id, result.ctx.workspaceId, data)
   if (!wh) return notFound()
 
   return NextResponse.json(serializeWebhookSummary(wh))
@@ -75,6 +75,6 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await params
-  await deleteWebhook(id)
+  await deleteWebhook(id, result.ctx.workspaceId)
   return NextResponse.json({ success: true })
 }

@@ -15,7 +15,7 @@ export async function GET(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const env = await getEnvironment(id)
+  const env = await getEnvironment(id, result.ctx.workspaceId)
   if (!env) return notFound()
 
   return NextResponse.json(env)
@@ -38,7 +38,7 @@ export async function PUT(
   if (typeof body.variables === 'object') data.variables = body.variables
   if (typeof body.isDefault === 'boolean') data.isDefault = body.isDefault
 
-  const env = await updateEnvironment(id, data)
+  const env = await updateEnvironment(id, result.ctx.workspaceId, data)
   if (!env) return notFound()
 
   return NextResponse.json(env)
@@ -52,6 +52,6 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await params
-  await deleteEnvironment(id)
+  await deleteEnvironment(id, result.ctx.workspaceId)
   return NextResponse.json({ success: true })
 }

@@ -29,6 +29,6 @@ export async function DELETE(
 
   if (!group) return notFound()
 
-  await deletePartnerGroup(id)
+  await deletePartnerGroup(id, result.ctx.workspaceId)
   return NextResponse.json({ success: true })
 }

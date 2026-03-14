@@ -27,15 +27,15 @@ export async function PUT(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const existing = await getAiProviderConfig(id)
-  if (!existing || existing.workspaceId !== result.ctx.workspaceId) {
+  const existing = await getAiProviderConfig(id, result.ctx.workspaceId)
+  if (!existing) {
     return notFound()
   }
 
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
 
-  const patch: Parameters<typeof updateAiProviderConfig>[1] = {}
+  const patch: Parameters<typeof updateAiProviderConfig>[2] = {}
 
   if (typeof body.name === 'string') {
     const name = normalizeOptionalString(body.name)
@@ -80,7 +80,7 @@ export async function PUT(
     }
   }
 
-  const provider = await updateAiProviderConfig(id, patch)
+  const provider = await updateAiProviderConfig(id, result.ctx.workspaceId, patch)
   if (!provider) return notFound()
 
   return NextResponse.json(serializeAiProviderConfig(provider))
@@ -94,11 +94,11 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const existing = await getAiProviderConfig(id)
-  if (!existing || existing.workspaceId !== result.ctx.workspaceId) {
+  const existing = await getAiProviderConfig(id, result.ctx.workspaceId)
+  if (!existing) {
     return notFound()
   }
 
-  await deleteAiProviderConfig(id)
+  await deleteAiProviderConfig(id, result.ctx.workspaceId)
   return NextResponse.json({ success: true })
 }

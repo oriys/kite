@@ -15,6 +15,29 @@ function isLoopbackHostname(hostname: string) {
   )
 }
 
+function isPrivateIPv4(hostname: string): boolean {
+  const parts = hostname.split('.').map(Number)
+  if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) return false
+  const [a, b] = parts
+  return (
+    a === 10 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254) ||
+    a === 0
+  )
+}
+
+function isPrivateIPv6(hostname: string): boolean {
+  const normalized = normalizeHostname(hostname).toLowerCase()
+  return (
+    normalized === '::' ||
+    normalized.startsWith('fe80') ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd')
+  )
+}
+
 export function parsePublicHttpUrl(input: string): URL {
   let targetUrl: URL
 
@@ -30,6 +53,10 @@ export function parsePublicHttpUrl(input: string): URL {
 
   if (isLoopbackHostname(targetUrl.hostname)) {
     throw new Error('Loopback URLs are not allowed')
+  }
+
+  if (isPrivateIPv4(targetUrl.hostname) || isPrivateIPv6(targetUrl.hostname)) {
+    throw new Error('Private/internal URLs are not allowed')
   }
 
   return targetUrl

@@ -11,7 +11,7 @@ export async function GET(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const approval = await getApprovalRequest(id)
+  const approval = await getApprovalRequest(id, result.ctx.workspaceId)
   if (!approval) return notFound()
 
   return NextResponse.json(approval)

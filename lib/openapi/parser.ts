@@ -1,4 +1,4 @@
-import { parse as openapiParse, dereference } from '@readme/openapi-parser'
+import { parse as openapiParse } from '@readme/openapi-parser'
 import YAML from 'yaml'
 import { createHash } from 'crypto'
 
@@ -34,16 +34,16 @@ export async function parseOpenAPISpec(content: string): Promise<ParsedSpec> {
     parsed = YAML.parse(content) as Record<string, unknown>
   }
 
-  // Parse and dereference the spec so $ref pointers are resolved
+  // Parse and validate the spec. Use parse (not dereference) to prevent
+  // external $ref URLs from being fetched (SSRF protection).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let api: Record<string, any>
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    api = (await dereference(parsed as any)) as Record<string, any>
-  } catch {
-    // Fall back to basic parse if dereference fails (e.g. circular refs)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     api = (await openapiParse(parsed as any)) as Record<string, any>
+  } catch {
+    // If strict parsing fails, use the raw parsed object
+    api = parsed
   }
 
   const info = (api.info ?? {}) as Record<string, unknown>

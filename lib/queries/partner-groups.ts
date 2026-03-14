@@ -23,11 +23,11 @@ export async function createPartnerGroup(workspaceId: string, name: string) {
   return group
 }
 
-export async function deletePartnerGroup(id: string) {
+export async function deletePartnerGroup(id: string, workspaceId: string) {
   const [deleted] = await db
     .update(partnerGroups)
     .set({ deletedAt: new Date() })
-    .where(and(eq(partnerGroups.id, id), isNull(partnerGroups.deletedAt)))
+    .where(and(eq(partnerGroups.id, id), eq(partnerGroups.workspaceId, workspaceId), isNull(partnerGroups.deletedAt)))
     .returning()
   return deleted ?? null
 }

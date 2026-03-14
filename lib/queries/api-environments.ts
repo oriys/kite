@@ -52,14 +52,15 @@ export async function listEnvironments(workspaceId: string) {
     .orderBy(desc(apiEnvironments.createdAt))
 }
 
-export async function getEnvironment(id: string) {
+export async function getEnvironment(id: string, workspaceId: string) {
   return (await db.query.apiEnvironments.findFirst({
-    where: and(eq(apiEnvironments.id, id), isNull(apiEnvironments.deletedAt)),
+    where: and(eq(apiEnvironments.id, id), eq(apiEnvironments.workspaceId, workspaceId), isNull(apiEnvironments.deletedAt)),
   })) ?? null
 }
 
 export async function updateEnvironment(
   id: string,
+  workspaceId: string,
   data: Partial<{
     name: string
     baseUrl: string
@@ -70,16 +71,16 @@ export async function updateEnvironment(
   const [env] = await db
     .update(apiEnvironments)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(apiEnvironments.id, id), isNull(apiEnvironments.deletedAt)))
+    .where(and(eq(apiEnvironments.id, id), eq(apiEnvironments.workspaceId, workspaceId), isNull(apiEnvironments.deletedAt)))
     .returning()
   return env ?? null
 }
 
-export async function deleteEnvironment(id: string) {
+export async function deleteEnvironment(id: string, workspaceId: string) {
   await db
     .update(apiEnvironments)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(apiEnvironments.id, id), isNull(apiEnvironments.deletedAt)))
+    .where(and(eq(apiEnvironments.id, id), eq(apiEnvironments.workspaceId, workspaceId), isNull(apiEnvironments.deletedAt)))
 }
 
 // ─── Auth Configs ───────────────────────────────────────────────
@@ -119,6 +120,7 @@ export async function listAuthConfigs(workspaceId: string) {
 
 export async function updateAuthConfig(
   id: string,
+  workspaceId: string,
   data: Partial<{
     name: string
     authType: (typeof apiAuthConfigs.$inferInsert)['authType']
@@ -128,16 +130,16 @@ export async function updateAuthConfig(
   const [ac] = await db
     .update(apiAuthConfigs)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(apiAuthConfigs.id, id), isNull(apiAuthConfigs.deletedAt)))
+    .where(and(eq(apiAuthConfigs.id, id), eq(apiAuthConfigs.workspaceId, workspaceId), isNull(apiAuthConfigs.deletedAt)))
     .returning()
   return ac ?? null
 }
 
-export async function deleteAuthConfig(id: string) {
+export async function deleteAuthConfig(id: string, workspaceId: string) {
   await db
     .update(apiAuthConfigs)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(apiAuthConfigs.id, id), isNull(apiAuthConfigs.deletedAt)))
+    .where(and(eq(apiAuthConfigs.id, id), eq(apiAuthConfigs.workspaceId, workspaceId), isNull(apiAuthConfigs.deletedAt)))
 }
 
 // ─── Request History ────────────────────────────────────────────

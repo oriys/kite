@@ -22,7 +22,7 @@ export async function PUT(
   if (body.authType) data.authType = body.authType
   if (typeof body.config === 'object') data.config = body.config
 
-  const ac = await updateAuthConfig(id, data)
+  const ac = await updateAuthConfig(id, result.ctx.workspaceId, data)
   if (!ac) return notFound()
 
   return NextResponse.json(ac)
@@ -36,6 +36,6 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await params
-  await deleteAuthConfig(id)
+  await deleteAuthConfig(id, result.ctx.workspaceId)
   return NextResponse.json({ success: true })
 }

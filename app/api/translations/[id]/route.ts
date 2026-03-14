@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
+import { db } from '@/lib/db'
+import { documents } from '@/lib/schema'
+import { eq, and, isNull } from 'drizzle-orm'
 import {
   updateTranslationStatus,
   deleteTranslation,
@@ -20,6 +23,13 @@ export async function GET(
   const { id } = await params
   const translation = await getTranslation(id)
   if (!translation) return notFound()
+
+  // Verify translation belongs to this workspace
+  const doc = await db.query.documents.findFirst({
+    where: and(eq(documents.id, translation.documentId), eq(documents.workspaceId, result.ctx.workspaceId), isNull(documents.deletedAt)),
+    columns: { id: true },
+  })
+  if (!doc) return notFound()
 
   const [latestVersion, versions] = await Promise.all([
     getLatestTranslationVersion(id),
@@ -43,6 +53,15 @@ export async function PUT(
   const { id } = await params
   const body = await request.json().catch(() => null)
 
+  // Verify translation belongs to this workspace
+  const translation = await getTranslation(id)
+  if (!translation) return notFound()
+  const doc = await db.query.documents.findFirst({
+    where: and(eq(documents.id, translation.documentId), eq(documents.workspaceId, result.ctx.workspaceId), isNull(documents.deletedAt)),
+    columns: { id: true },
+  })
+  if (!doc) return notFound()
+
   // Update status
   if (body?.status) {
     const updated = await updateTranslationStatus(id, body.status)
@@ -52,9 +71,6 @@ export async function PUT(
 
   // Add a new version
   if (body?.title !== undefined || body?.content !== undefined) {
-    const translation = await getTranslation(id)
-    if (!translation) return notFound()
-
     const latest = await getLatestTranslationVersion(id)
     const version = await addTranslationVersion({
       translationId: id,
@@ -77,6 +93,16 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await params
+
+  // Verify translation belongs to this workspace
+  const translation = await getTranslation(id)
+  if (!translation) return notFound()
+  const doc = await db.query.documents.findFirst({
+    where: and(eq(documents.id, translation.documentId), eq(documents.workspaceId, result.ctx.workspaceId), isNull(documents.deletedAt)),
+    columns: { id: true },
+  })
+  if (!doc) return notFound()
+
   await deleteTranslation(id)
   return NextResponse.json({ success: true })
 }

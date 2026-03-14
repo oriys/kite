@@ -101,7 +101,7 @@ export async function listPendingInvites(
       workspaceId: workspaceInvites.workspaceId,
       email: workspaceInvites.email,
       role: workspaceInvites.role,
-      token: workspaceInvites.token,
+
       type: workspaceInvites.type,
       invitedBy: workspaceInvites.invitedBy,
       inviterName: users.name,
@@ -146,11 +146,13 @@ export async function revokeInvite(
 export async function acceptInvite(
   token: string,
   userId: string,
+  userEmail?: string | null,
 ): Promise<{ workspaceId: string; role: MemberRole }> {
   const [invite] = await db
     .select({
       id: workspaceInvites.id,
       workspaceId: workspaceInvites.workspaceId,
+      email: workspaceInvites.email,
       role: workspaceInvites.role,
       type: workspaceInvites.type,
       invitedBy: workspaceInvites.invitedBy,
@@ -164,43 +166,52 @@ export async function acceptInvite(
   if (invite.acceptedAt) throw new Error('Invite already used')
   if (invite.expiresAt < new Date()) throw new Error('Invite expired')
 
-  // Check if already a member
-  const [existing] = await db
-    .select({ userId: workspaceMembers.userId })
-    .from(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.userId, userId),
-        eq(workspaceMembers.workspaceId, invite.workspaceId),
-      ),
-    )
+  // For email invites, verify the accepting user's email matches
+  if (invite.type === 'email' && invite.email) {
+    if (!userEmail || userEmail.toLowerCase() !== invite.email.toLowerCase()) {
+      throw new Error('Email does not match the invite')
+    }
+  }
 
-  if (existing) throw new Error('Already a workspace member')
+  return await db.transaction(async (tx) => {
+    // Check if already a member
+    const [existing] = await tx
+      .select({ userId: workspaceMembers.userId })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.userId, userId),
+          eq(workspaceMembers.workspaceId, invite.workspaceId),
+        ),
+      )
 
-  // Add member
-  await db.insert(workspaceMembers).values({
-    userId,
-    workspaceId: invite.workspaceId,
-    role: invite.role,
-    invitedBy: invite.invitedBy,
+    if (existing) throw new Error('Already a workspace member')
+
+    // Add member
+    await tx.insert(workspaceMembers).values({
+      userId,
+      workspaceId: invite.workspaceId,
+      role: invite.role,
+      invitedBy: invite.invitedBy,
+    })
+
+    // Mark invite accepted
+    await tx
+      .update(workspaceInvites)
+      .set({ acceptedAt: new Date() })
+      .where(eq(workspaceInvites.id, invite.id))
+
+    await emitAuditEvent({
+      workspaceId: invite.workspaceId,
+      actorId: userId,
+      action: 'member_add',
+      resourceType: 'member',
+      resourceId: userId,
+      metadata: { role: invite.role, inviteType: invite.type },
+    })
+
+    return { workspaceId: invite.workspaceId, role: invite.role as MemberRole }
   })
-
-  // Mark invite accepted
-  await db
-    .update(workspaceInvites)
-    .set({ acceptedAt: new Date() })
-    .where(eq(workspaceInvites.id, invite.id))
-
-  await emitAuditEvent({
-    workspaceId: invite.workspaceId,
-    actorId: userId,
-    action: 'member_add',
-    resourceType: 'member',
-    resourceId: userId,
-    metadata: { role: invite.role, inviteType: invite.type },
-  })
-
-  return { workspaceId: invite.workspaceId, role: invite.role as MemberRole }
 }
 
 export async function cleanExpiredInvites(workspaceId: string) {

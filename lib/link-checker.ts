@@ -26,6 +26,14 @@ export function extractLinksFromContent(content: string): string[] {
 }
 
 export async function checkLink(url: string): Promise<LinkCheckResult> {
+  // Validate URL is safe to fetch (SSRF protection)
+  try {
+    const { parsePublicHttpUrl } = await import('@/lib/outbound-http')
+    parsePublicHttpUrl(url)
+  } catch {
+    return { url, statusCode: null, isAlive: false, errorMessage: 'URL blocked by security policy' }
+  }
+
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 10_000)
 

@@ -123,10 +123,10 @@ export async function listApprovalRequests(
   return query
 }
 
-export async function getApprovalRequest(id: string) {
+export async function getApprovalRequest(id: string, workspaceId: string) {
   return (
     (await db.query.approvalRequests.findFirst({
-      where: eq(approvalRequests.id, id),
+      where: and(eq(approvalRequests.id, id), eq(approvalRequests.workspaceId, workspaceId)),
       with: {
         document: true,
         requester: true,
@@ -198,13 +198,14 @@ export async function submitApprovalDecision(
   })
 }
 
-export async function cancelApprovalRequest(id: string) {
+export async function cancelApprovalRequest(id: string, workspaceId: string) {
   const [request] = await db
     .update(approvalRequests)
     .set({ status: 'cancelled', resolvedAt: new Date(), updatedAt: new Date() })
     .where(
       and(
         eq(approvalRequests.id, id),
+        eq(approvalRequests.workspaceId, workspaceId),
         eq(approvalRequests.status, 'pending'),
       ),
     )

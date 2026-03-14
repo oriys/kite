@@ -5,6 +5,7 @@ import { Command as CommandPrimitive } from 'cmdk'
 import { FileText, Search, Loader2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { sanitizeSearchHeadline } from '@/lib/sanitize'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 interface SearchResult {
@@ -196,7 +197,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                       {result.headline && (
                         <p
                           className="line-clamp-2 text-xs leading-relaxed text-muted-foreground [&_mark]:rounded-sm [&_mark]:bg-[oklch(0.946_0.015_244)] [&_mark]:px-0.5 [&_mark]:text-[oklch(0.314_0.017_244)] dark:[&_mark]:bg-[oklch(0.35_0.04_244)] dark:[&_mark]:text-[oklch(0.82_0.04_244)]"
-                          dangerouslySetInnerHTML={{ __html: result.headline }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeSearchHeadline(result.headline) }}
                         />
                       )}
 

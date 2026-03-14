@@ -14,6 +14,6 @@ export async function GET(
   const limit = Math.min(Number(request.nextUrl.searchParams.get('limit') ?? 20), 100)
   const offset = Number(request.nextUrl.searchParams.get('offset') ?? 0)
 
-  const deliveries = await listWebhookDeliveries(id, limit, offset)
+  const deliveries = await listWebhookDeliveries(id, result.ctx.workspaceId, limit, offset)
   return NextResponse.json(deliveries)
 }

@@ -37,14 +37,15 @@ export async function listWebhooks(workspaceId: string) {
     .orderBy(desc(webhooks.createdAt))
 }
 
-export async function getWebhook(id: string) {
+export async function getWebhook(id: string, workspaceId: string) {
   return (await db.query.webhooks.findFirst({
-    where: and(eq(webhooks.id, id), isNull(webhooks.deletedAt)),
+    where: and(eq(webhooks.id, id), eq(webhooks.workspaceId, workspaceId), isNull(webhooks.deletedAt)),
   })) ?? null
 }
 
 export async function updateWebhook(
   id: string,
+  workspaceId: string,
   data: Partial<{
     name: string
     url: string
@@ -55,23 +56,28 @@ export async function updateWebhook(
   const [wh] = await db
     .update(webhooks)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(webhooks.id, id), isNull(webhooks.deletedAt)))
+    .where(and(eq(webhooks.id, id), eq(webhooks.workspaceId, workspaceId), isNull(webhooks.deletedAt)))
     .returning()
   return wh ?? null
 }
 
-export async function deleteWebhook(id: string) {
+export async function deleteWebhook(id: string, workspaceId: string) {
   await db
     .update(webhooks)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(webhooks.id, id), isNull(webhooks.deletedAt)))
+    .where(and(eq(webhooks.id, id), eq(webhooks.workspaceId, workspaceId), isNull(webhooks.deletedAt)))
 }
 
 export async function listWebhookDeliveries(
   webhookId: string,
+  workspaceId: string,
   limit = 20,
   offset = 0,
 ) {
+  // Verify webhook belongs to workspace before listing deliveries
+  const wh = await getWebhook(webhookId, workspaceId)
+  if (!wh) return []
+
   return db
     .select({
       id: webhookDeliveries.id,

@@ -46,10 +46,10 @@ export async function clearPresenceForDocument(documentId: string) {
 export async function getActiveEditors(documentId: string) {
   const cutoff = new Date(Date.now() - PRESENCE_TIMEOUT_MS)
 
-  // Clean up stale entries
+  // Clean up stale entries for this document only
   await db
     .delete(activeEditors)
-    .where(lt(activeEditors.lastSeenAt, cutoff))
+    .where(and(eq(activeEditors.documentId, documentId), lt(activeEditors.lastSeenAt, cutoff)))
 
   return db
     .select({

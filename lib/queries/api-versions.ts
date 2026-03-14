@@ -16,9 +16,9 @@ export async function listApiVersions(workspaceId: string) {
     .orderBy(asc(apiVersions.sortOrder), asc(apiVersions.createdAt))
 }
 
-export async function getApiVersion(id: string) {
+export async function getApiVersion(id: string, workspaceId: string) {
   const version = await db.query.apiVersions.findFirst({
-    where: and(eq(apiVersions.id, id), isNull(apiVersions.deletedAt)),
+    where: and(eq(apiVersions.id, id), eq(apiVersions.workspaceId, workspaceId), isNull(apiVersions.deletedAt)),
   })
   return version ?? null
 }
@@ -46,6 +46,7 @@ export async function createApiVersion(data: {
 
 export async function updateApiVersion(
   id: string,
+  workspaceId: string,
   data: Partial<{
     label: string
     slug: string
@@ -58,17 +59,17 @@ export async function updateApiVersion(
   const [updated] = await db
     .update(apiVersions)
     .set(data)
-    .where(and(eq(apiVersions.id, id), isNull(apiVersions.deletedAt)))
+    .where(and(eq(apiVersions.id, id), eq(apiVersions.workspaceId, workspaceId), isNull(apiVersions.deletedAt)))
     .returning()
 
   return updated ?? null
 }
 
-export async function deleteApiVersion(id: string) {
+export async function deleteApiVersion(id: string, workspaceId: string) {
   const result = await db
     .update(apiVersions)
     .set({ deletedAt: new Date() })
-    .where(and(eq(apiVersions.id, id), isNull(apiVersions.deletedAt)))
+    .where(and(eq(apiVersions.id, id), eq(apiVersions.workspaceId, workspaceId), isNull(apiVersions.deletedAt)))
     .returning()
 
   return result.length > 0

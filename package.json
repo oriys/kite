@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:neon": "node --env-file=.env.neon ./node_modules/next/dist/bin/next dev",
     "build": "next build",
     "postbuild": "mkdir -p .next/standalone/.next/static .next/standalone/public && cp -R .next/static/. .next/standalone/.next/static && cp -R public/. .next/standalone/public",
     "start": "node --env-file=.env .next/standalone/server.js",
@@ -11,6 +12,7 @@
     "db:generate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs generate",
     "db:migrate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs migrate",
     "db:push": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs push",
+    "db:push:neon": "node --env-file=.env.neon ./node_modules/drizzle-kit/bin.cjs push",
     "db:studio": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
@@ -70,6 +72,7 @@
     "framer-motion": "^12.35.2",
     "httpsnippet-lite": "^3.0.5",
     "input-otp": "1.4.2",
+    "isomorphic-dompurify": "^3.3.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.564.0",
     "marked": "^17.0.4",

@@ -11,7 +11,7 @@ export async function POST(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const approval = await cancelApprovalRequest(id)
+  const approval = await cancelApprovalRequest(id, result.ctx.workspaceId)
   if (!approval) return notFound()
 
   return NextResponse.json(approval)

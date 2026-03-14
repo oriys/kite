@@ -14,9 +14,8 @@ export async function POST(
   if ('error' in result) return result.error
 
   const { id: sourceId } = await context.params
-  const sourceVersion = await getApiVersion(sourceId)
-  if (!sourceVersion || sourceVersion.workspaceId !== result.ctx.workspaceId)
-    return notFound()
+  const sourceVersion = await getApiVersion(sourceId, result.ctx.workspaceId)
+  if (!sourceVersion) return notFound()
 
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
@@ -27,9 +26,8 @@ export async function POST(
       : ''
   if (!targetVersionId) return badRequest('targetVersionId is required')
 
-  const targetVersion = await getApiVersion(targetVersionId)
-  if (!targetVersion || targetVersion.workspaceId !== result.ctx.workspaceId)
-    return badRequest('Target version not found in this workspace')
+  const targetVersion = await getApiVersion(targetVersionId, result.ctx.workspaceId)
+  if (!targetVersion) return badRequest('Target version not found in this workspace')
 
   const cloned = await cloneVersionDocuments(
     sourceId,

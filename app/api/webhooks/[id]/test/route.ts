@@ -11,7 +11,7 @@ export async function POST(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const wh = await getWebhook(id)
+  const wh = await getWebhook(id, result.ctx.workspaceId)
   if (!wh) return notFound()
 
   await dispatchWebhookEvent(result.ctx.workspaceId, 'webhook.test', {

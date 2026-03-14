@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../db'
 import {
   documentTranslations,
@@ -20,15 +20,37 @@ export const SUPPORTED_LOCALES = [
 // --- Queries ---
 
 export async function getTranslationsForDocument(documentId: string) {
-  const translations = await db
+  const rows = await db
     .select({
       id: documentTranslations.id,
       locale: documentTranslations.locale,
       status: documentTranslations.status,
       createdAt: documentTranslations.createdAt,
       updatedAt: documentTranslations.updatedAt,
+      versionId: documentTranslationVersions.id,
+      versionTitle: documentTranslationVersions.title,
+      versionTranslatedBy: documentTranslationVersions.translatedBy,
+      versionCreatedAt: documentTranslationVersions.createdAt,
     })
     .from(documentTranslations)
+    .leftJoin(
+      documentTranslationVersions,
+      and(
+        eq(
+          documentTranslationVersions.translationId,
+          documentTranslations.id,
+        ),
+        eq(
+          documentTranslationVersions.id,
+          sql`(
+            SELECT v.id FROM document_translation_versions v
+            WHERE v.translation_id = ${documentTranslations.id}
+            ORDER BY v.created_at DESC
+            LIMIT 1
+          )`,
+        ),
+      ),
+    )
     .where(
       and(
         eq(documentTranslations.documentId, documentId),
@@ -36,29 +58,21 @@ export async function getTranslationsForDocument(documentId: string) {
       ),
     )
 
-  // For each translation, fetch the latest version
-  const results = await Promise.all(
-    translations.map(async (translation) => {
-      const [latestVersion] = await db
-        .select({
-          id: documentTranslationVersions.id,
-          title: documentTranslationVersions.title,
-          translatedBy: documentTranslationVersions.translatedBy,
-          createdAt: documentTranslationVersions.createdAt,
-        })
-        .from(documentTranslationVersions)
-        .where(eq(documentTranslationVersions.translationId, translation.id))
-        .orderBy(desc(documentTranslationVersions.createdAt))
-        .limit(1)
-
-      return {
-        ...translation,
-        latestVersion: latestVersion ?? null,
-      }
-    }),
-  )
-
-  return results
+  return rows.map((row) => ({
+    id: row.id,
+    locale: row.locale,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    latestVersion: row.versionId
+      ? {
+          id: row.versionId,
+          title: row.versionTitle!,
+          translatedBy: row.versionTranslatedBy,
+          createdAt: row.versionCreatedAt!,
+        }
+      : null,
+  }))
 }
 
 export async function getTranslation(translationId: string) {

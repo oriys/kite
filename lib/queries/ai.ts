@@ -107,7 +107,7 @@ export async function listAiProviderConfigsForClient(workspaceId: string) {
   }))
 }
 
-export async function getAiProviderConfig(id: string) {
+export async function getAiProviderConfig(id: string, workspaceId: string) {
   return (
     (await db
       .select({
@@ -115,7 +115,7 @@ export async function getAiProviderConfig(id: string) {
         workspaceId: aiProviderConfigs.workspaceId,
       })
       .from(aiProviderConfigs)
-      .where(and(eq(aiProviderConfigs.id, id), isNull(aiProviderConfigs.deletedAt)))
+      .where(and(eq(aiProviderConfigs.id, id), eq(aiProviderConfigs.workspaceId, workspaceId), isNull(aiProviderConfigs.deletedAt)))
       .limit(1)
       .then(([provider]) => provider)) ?? null
   )
@@ -123,6 +123,7 @@ export async function getAiProviderConfig(id: string) {
 
 export async function updateAiProviderConfig(
   id: string,
+  workspaceId: string,
   data: Partial<{
     name: string
     providerType: (typeof aiProviderConfigs.$inferInsert)['providerType']
@@ -138,17 +139,17 @@ export async function updateAiProviderConfig(
       ...data,
       updatedAt: new Date(),
     })
-    .where(and(eq(aiProviderConfigs.id, id), isNull(aiProviderConfigs.deletedAt)))
+    .where(and(eq(aiProviderConfigs.id, id), eq(aiProviderConfigs.workspaceId, workspaceId), isNull(aiProviderConfigs.deletedAt)))
     .returning()
 
   return provider ?? null
 }
 
-export async function deleteAiProviderConfig(id: string) {
+export async function deleteAiProviderConfig(id: string, workspaceId: string) {
   await db
     .update(aiProviderConfigs)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(aiProviderConfigs.id, id), isNull(aiProviderConfigs.deletedAt)))
+    .where(and(eq(aiProviderConfigs.id, id), eq(aiProviderConfigs.workspaceId, workspaceId), isNull(aiProviderConfigs.deletedAt)))
 }
 
 export async function getAiWorkspaceSettings(workspaceId: string) {
