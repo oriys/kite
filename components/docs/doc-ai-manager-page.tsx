@@ -5,21 +5,16 @@ import { toast } from 'sonner'
 import {
   Bot,
   BrainCircuit,
-  ExternalLink,
-  PencilLine,
   Plus,
   RefreshCw,
   Search,
   Sparkles,
-  Trash2,
 } from 'lucide-react'
 
 import {
   createDefaultAiProviderFormValues,
   formatAiContextWindow,
   getAiProviderDefaultBaseUrl,
-  getAiProviderDocsUrl,
-  type AiProviderConfigListItem,
   type AiProviderFormValues,
 } from '@/lib/ai'
 import { useAiModels } from '@/hooks/use-ai-models'
@@ -27,6 +22,8 @@ import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { useAiProviders } from '@/hooks/use-ai-providers'
 import { cn } from '@/lib/utils'
 import { DocsAdminShell } from '@/components/docs/docs-admin-shell'
+import { ProviderCardItem, type ProviderCard } from '@/components/docs/doc-ai-provider-card'
+import { ProviderFormDialog } from '@/components/docs/doc-ai-provider-form-dialog'
 import {
   Accordion,
   AccordionContent,
@@ -51,28 +48,12 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import {
   InputGroup,
   InputGroupAddon,
@@ -105,34 +86,20 @@ function formatFetchedAt(value: string) {
 }
 
 function createProviderValues(
-  provider: AiProviderConfigListItem | null,
+  provider: ProviderCard,
 ): AiProviderFormValues {
-  if (!provider) {
+  if (!provider.editableConfig) {
     return createDefaultAiProviderFormValues()
   }
 
   return {
-    name: provider.name,
-    providerType: provider.providerType,
-    baseUrl: provider.baseUrl || getAiProviderDefaultBaseUrl(provider.providerType),
+    name: provider.editableConfig.name,
+    providerType: provider.editableConfig.providerType,
+    baseUrl: provider.editableConfig.baseUrl || getAiProviderDefaultBaseUrl(provider.editableConfig.providerType),
     apiKey: '',
-    defaultModelId: provider.defaultModelId,
-    enabled: provider.enabled,
+    defaultModelId: provider.editableConfig.defaultModelId,
+    enabled: provider.editableConfig.enabled,
   }
-}
-
-type ProviderCard = {
-  id: string
-  name: string
-  providerType: AiProviderConfigListItem['providerType']
-  providerLabel: string
-  baseUrl: string
-  defaultModelId: string
-  enabled: boolean
-  source: 'database' | 'env'
-  modelCount: number
-  error?: string
-  editableConfig: AiProviderConfigListItem | null
 }
 
 export function DocAiManagerPage() {
@@ -382,7 +349,7 @@ export function DocAiManagerPage() {
 
     setFormMode('edit')
     setEditingProviderId(provider.id)
-    setFormValues(createProviderValues(provider.editableConfig))
+    setFormValues(createProviderValues(provider))
     setFormError(null)
     setFormOpen(true)
   }, [])
@@ -393,7 +360,7 @@ export function DocAiManagerPage() {
 
       try {
         await updateProvider(provider.id, {
-          ...createProviderValues(provider.editableConfig),
+          ...createProviderValues(provider),
           enabled,
         })
         await refreshCatalog()
@@ -583,113 +550,14 @@ export function DocAiManagerPage() {
           ) : (
             <div className="grid gap-3 px-4 py-4 sm:px-5 lg:grid-cols-2">
               {providerCards.map((provider) => (
-                <article
+                <ProviderCardItem
                   key={provider.id}
-                  className="rounded-xl border border-border/70 bg-background/70 p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-semibold tracking-tight text-foreground">
-                          {provider.name}
-                        </h3>
-                        <Badge variant="outline">{provider.providerLabel}</Badge>
-                        <Badge
-                          variant={provider.enabled ? 'secondary' : 'outline'}
-                        >
-                          {provider.enabled ? 'Enabled' : 'Hidden'}
-                        </Badge>
-                        {provider.source === 'env' ? (
-                          <Badge variant="outline">Env fallback</Badge>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {provider.baseUrl || 'No endpoint configured'}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {provider.editableConfig ? (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEditDialog(provider)}
-                          >
-                            <PencilLine data-icon="inline-start" />
-                            Edit
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDeleteTarget(provider)}
-                          >
-                            <Trash2 data-icon="inline-start" />
-                            Delete
-                          </Button>
-                        </>
-                      ) : null}
-                      <a
-                        href={getAiProviderDocsUrl(provider.providerType)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-primary transition-colors hover:text-primary/80"
-                      >
-                        Docs
-                        <ExternalLink className="size-3.5" />
-                      </a>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">
-                      {numberFormatter.format(provider.modelCount)} synced models
-                    </Badge>
-                    {provider.defaultModelId ? (
-                      <Badge variant="outline" className="max-w-full truncate">
-                        Provider default {provider.defaultModelId}
-                      </Badge>
-                    ) : null}
-                    {provider.editableConfig?.apiKeyHint ? (
-                      <Badge variant="outline">
-                        Key {provider.editableConfig.apiKeyHint}
-                      </Badge>
-                    ) : null}
-                  </div>
-
-                  {provider.error ? (
-                    <p className="mt-3 text-xs leading-5 text-destructive">
-                      {provider.error}
-                    </p>
-                  ) : (
-                    <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                      {provider.enabled
-                        ? 'This provider contributes models to the workspace catalog.'
-                        : 'This provider is saved but excluded from model routing until re-enabled.'}
-                    </p>
-                  )}
-
-                  {provider.editableConfig ? (
-                    <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2">
-                      <div>
-                        <p className="text-xs font-medium text-foreground">
-                          Include in catalog
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Disable a provider without deleting its credentials.
-                        </p>
-                      </div>
-                      <Switch
-                        checked={provider.enabled}
-                        onCheckedChange={(checked) =>
-                          void handleProviderToggle(provider, checked)
-                        }
-                        aria-label={`Enable ${provider.name}`}
-                        disabled={providerMutating}
-                      />
-                    </div>
-                  ) : null}
-                </article>
+                  provider={provider}
+                  onEdit={openEditDialog}
+                  onDelete={setDeleteTarget}
+                  onToggle={handleProviderToggle}
+                  mutating={providerMutating}
+                />
               ))}
             </div>
           )}
@@ -917,7 +785,7 @@ export function DocAiManagerPage() {
         </section>
       </div>
 
-      <Dialog
+      <ProviderFormDialog
         open={formOpen}
         onOpenChange={(open) => {
           setFormOpen(open)
@@ -925,194 +793,14 @@ export function DocAiManagerPage() {
             setFormError(null)
           }
         }}
-      >
-        <DialogContent className="sm:max-w-2xl">
-          <form onSubmit={handleFormSubmit}>
-            <DialogHeader>
-              <DialogTitle>
-                {formMode === 'create' ? 'Add AI provider' : 'Edit AI provider'}
-              </DialogTitle>
-              <DialogDescription>
-                Save provider credentials in the workspace database, then sync its model
-                catalog into the editor.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="max-h-[70vh] overflow-y-auto py-4">
-              <FieldGroup className="gap-4">
-                <Field>
-                  <FieldLabel htmlFor="ai-provider-name">Connection name</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="ai-provider-name"
-                      value={formValues.name}
-                      onChange={(event) =>
-                        setFormValues((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
-                      placeholder="Primary Anthropic"
-                      aria-invalid={Boolean(formError && !formValues.name.trim())}
-                    />
-                    <FieldDescription>
-                      Keep it short. This name appears in the AI model picker.
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="ai-provider-type">Provider type</FieldLabel>
-                  <FieldContent>
-                    <Select
-                      value={formValues.providerType}
-                      onValueChange={handleProviderTypeChange}
-                    >
-                      <SelectTrigger id="ai-provider-type" className="w-full">
-                        <SelectValue placeholder="Select a provider type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="openai_compatible">
-                            OpenAI-compatible
-                          </SelectItem>
-                          <SelectItem value="anthropic">Anthropic</SelectItem>
-                          <SelectItem value="gemini">Google Gemini</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FieldDescription>
-                      OpenAI-compatible works for AIHubMix and other `/models` + `/chat/completions`
-                      providers.
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="ai-provider-url">Base URL</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="ai-provider-url"
-                      value={formValues.baseUrl}
-                      onChange={(event) =>
-                        setFormValues((current) => ({
-                          ...current,
-                          baseUrl: event.target.value,
-                        }))
-                      }
-                      placeholder={getAiProviderDefaultBaseUrl(formValues.providerType)}
-                    />
-                    <FieldDescription>
-                      Leave the default unless this provider uses a custom endpoint.
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="ai-provider-key">API key</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="ai-provider-key"
-                      type="password"
-                      value={formValues.apiKey}
-                      onChange={(event) =>
-                        setFormValues((current) => ({
-                          ...current,
-                          apiKey: event.target.value,
-                        }))
-                      }
-                      placeholder={
-                        formMode === 'edit'
-                          ? 'Leave blank to keep the saved key'
-                          : 'sk-...'
-                      }
-                    />
-                    <FieldDescription>
-                      {formMode === 'edit'
-                        ? 'Leave blank to keep the existing key. Enter a new key only when you want to replace it.'
-                        : 'The key is stored with this workspace provider configuration.'}
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="ai-provider-default-model">
-                    Provider default model
-                  </FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="ai-provider-default-model"
-                      value={formValues.defaultModelId}
-                      onChange={(event) =>
-                        setFormValues((current) => ({
-                          ...current,
-                          defaultModelId: event.target.value,
-                        }))
-                      }
-                      placeholder="gpt-4o-mini or claude-sonnet-4-5"
-                    />
-                    <FieldDescription>
-                      Optional fallback model used before the catalog is synced or when the
-                      provider is temporarily unreachable.
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="ai-provider-enabled">Include in catalog</FieldLabel>
-                  <FieldContent>
-                    <div className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          Provider visibility
-                        </p>
-                        <p className="text-xs leading-5 text-muted-foreground">
-                          Disabled providers stay saved but their models disappear from the
-                          workspace catalog.
-                        </p>
-                      </div>
-                      <Switch
-                        id="ai-provider-enabled"
-                        checked={formValues.enabled}
-                        onCheckedChange={(checked) =>
-                          setFormValues((current) => ({
-                            ...current,
-                            enabled: checked,
-                          }))
-                        }
-                      />
-                    </div>
-                  </FieldContent>
-                </Field>
-              </FieldGroup>
-
-              {formError ? (
-                <p className="mt-4 text-sm text-destructive">{formError}</p>
-              ) : null}
-            </div>
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                type="button"
-                onClick={() => setFormOpen(false)}
-                disabled={providerMutating}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={providerMutating}>
-                {providerMutating
-                  ? formMode === 'create'
-                    ? 'Adding…'
-                    : 'Saving…'
-                  : formMode === 'create'
-                    ? 'Add Provider'
-                    : 'Save Changes'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+        mode={formMode}
+        values={formValues}
+        onValuesChange={setFormValues}
+        onProviderTypeChange={handleProviderTypeChange}
+        onSubmit={handleFormSubmit}
+        error={formError}
+        mutating={providerMutating}
+      />
 
       <AlertDialog
         open={Boolean(deleteTarget)}
