@@ -36,38 +36,37 @@ function HighlightedCode({ code, language }: { code: string; language: string })
 
 export function CodeSnippetTabs({ config, className }: CodeSnippetTabsProps) {
   const [activeTab, setActiveTab] = React.useState(CODE_TARGETS[0].id)
-  const [snippets, setSnippets] = React.useState<Record<string, string>>({})
+  const [snippet, setSnippet] = React.useState('')
   const [loading, setLoading] = React.useState<string | null>(null)
 
-  // Serialize config for cache invalidation
   const configKey = React.useMemo(
     () => JSON.stringify(config),
     [config],
   )
 
-  // Clear cache when config changes
-  React.useEffect(() => {
-    setSnippets({})
-  }, [configKey])
+  const requestConfig = React.useMemo<RequestConfig>(
+    () => JSON.parse(configKey) as RequestConfig,
+    [configKey],
+  )
 
-  // Generate snippet lazily when tab is selected
   React.useEffect(() => {
     const target = CODE_TARGETS.find((t) => t.id === activeTab)
-    if (!target || snippets[activeTab]) return
+    if (!target) return
 
     let cancelled = false
     setLoading(activeTab)
+    setSnippet('')
 
-    generateCodeSnippet(config, target).then((code) => {
+    void generateCodeSnippet(requestConfig, target).then((code) => {
       if (cancelled) return
-      setSnippets((prev) => ({ ...prev, [activeTab]: code }))
+      setSnippet(code)
       setLoading(null)
     })
 
     return () => {
       cancelled = true
     }
-  }, [activeTab, configKey, config, snippets])
+  }, [activeTab, requestConfig])
 
   return (
     <div className={cn('overflow-hidden rounded-md border border-border/80', className)}>
@@ -99,19 +98,19 @@ export function CodeSnippetTabs({ config, className }: CodeSnippetTabsProps) {
                   <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-6 text-neutral-200">
                     <code>
                       <HighlightedCode
-                        code={snippets[target.id] ?? ''}
+                        code={activeTab === target.id ? snippet : ''}
                         language={target.language}
                       />
                     </code>
                   </pre>
-                  {snippets[target.id] && (
+                  {activeTab === target.id && snippet ? (
                     <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
                       <CopyButton
-                        value={snippets[target.id]}
+                        value={snippet}
                         className="h-6 w-6 border border-neutral-700 bg-neutral-900/80 text-neutral-400 shadow-sm backdrop-blur-sm hover:bg-neutral-800 hover:text-neutral-200"
                       />
                     </div>
-                  )}
+                  ) : null}
                 </>
               )}
             </div>

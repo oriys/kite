@@ -60,8 +60,8 @@ export async function POST(
   const body = await request.json().catch(() => null)
   const targetLocale =
     typeof body?.targetLocale === 'string' ? body.targetLocale.trim() : ''
-  const title = typeof body?.title === 'string' ? body.title : ''
-  const content = typeof body?.content === 'string' ? body.content : ''
+  const title = typeof body?.title === 'string' ? body.title : undefined
+  const content = typeof body?.content === 'string' ? body.content : undefined
 
   if (!targetLocale) return badRequest('targetLocale is required')
   if (!SUPPORTED_LOCALES.some((locale) => locale.code === targetLocale)) {
@@ -82,8 +82,8 @@ export async function POST(
   const created = await createTranslation({
     documentId: doc.id,
     locale: targetLocale,
-    title: title || doc.title,
-    content: content || doc.content,
+    title: title ?? doc.title,
+    content: content ?? doc.content,
     translatedBy: result.ctx.userId,
   })
 

@@ -253,6 +253,7 @@ export function DocEditor({
 
   const editor = useEditor({
     immediatelyRender: false,
+    content: mdToHtml(content),
     extensions: [
       StarterKit.configure({
         codeBlock: false,
@@ -427,7 +428,8 @@ export function DocEditor({
 
   React.useEffect(() => {
     if (!editor || switchingRef.current) return
-    if (content !== latestMdRef.current) {
+    const editorMd = htmlToMd(editor.getHTML())
+    if (content !== latestMdRef.current || editorMd !== content) {
       const html = mdToHtml(content)
       editor.commands.setContent(html, { emitUpdate: false })
       latestMdRef.current = content

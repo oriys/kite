@@ -156,33 +156,17 @@ export function DocEditorPageClient() {
   const editorFocusRef = React.useRef<DocEditorHandle | null>(null)
   const editorOverlayRef = React.useRef<HTMLDivElement | null>(null)
   const localeSwitchingRef = React.useRef(false)
-  const prevTranslationParamRef = React.useRef<string | null | undefined>(undefined)
+  const localeSwitchRequestRef = React.useRef<{
+    locale: string
+    translationId: string | null
+    targetLabel: string
+    previousSelection: { locale: string; translationId: string | null }
+    created: boolean
+    createdWithOriginalContent: boolean
+  } | null>(null)
   const { documentWidth, setDocumentWidth } = useDocEditorWidth()
   const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
   const sourceLocale = doc?.locale ?? 'en'
-  const snapshotCacheRef = React.useRef<Map<string, EditorSnapshot>>(new Map())
-
-  const getSnapshotCacheKey = React.useCallback(
-    (translationId: string | null) =>
-      translationId ? `translation:${translationId}` : `source:${docId ?? 'current'}`,
-    [docId],
-  )
-
-  const cacheSnapshot = React.useCallback(
-    (snapshot: EditorSnapshot) => {
-      snapshotCacheRef.current.set(
-        getSnapshotCacheKey(snapshot.translationId),
-        snapshot,
-      )
-    },
-    [getSnapshotCacheKey],
-  )
-
-  const getCachedSnapshot = React.useCallback(
-    (translationId: string | null) =>
-      snapshotCacheRef.current.get(getSnapshotCacheKey(translationId)) ?? null,
-    [getSnapshotCacheKey],
-  )
 
   const replaceEditorQuery = React.useCallback(
     (translationId: string | null) => {
@@ -221,7 +205,6 @@ export function DocEditorPageClient() {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
       }
-      cacheSnapshot(snapshot)
       setTitle(snapshot.title)
       setContent(snapshot.content)
       setActiveLocale(snapshot.locale)
@@ -230,7 +213,86 @@ export function DocEditorPageClient() {
       pendingSaveRef.current = null
       setSaveState('idle')
     },
-    [cacheSnapshot],
+    [],
+  )
+
+  const clearLocaleTransientState = React.useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+    if (savedFeedbackRef.current) {
+      clearTimeout(savedFeedbackRef.current)
+      savedFeedbackRef.current = null
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+    retryCountRef.current = 0
+    pendingSaveRef.current = null
+    savedSnapshotRef.current = null
+    setSaveState('idle')
+  }, [])
+
+  const loadSourceSnapshotFromDatabase = React.useCallback(async (): Promise<EditorSnapshot> => {
+    if (!docId) {
+      throw new Error('Document is missing.')
+    }
+
+    const response = await fetch(`/api/documents/${docId}`)
+    if (!response.ok) {
+      throw new Error('Failed to load the source language.')
+    }
+
+    const data = (await response.json()) as Doc
+    setVisibility(data.visibility)
+
+    return {
+      title: data.title,
+      content: data.content,
+      locale: data.locale ?? sourceLocale,
+      translationId: null,
+    }
+  }, [docId, sourceLocale])
+
+  const loadTranslationSnapshotFromDatabase = React.useCallback(
+    async (translationId: string, fallbackLocale: string): Promise<EditorSnapshot> => {
+      const response = await fetch(`/api/translations/${translationId}`)
+      if (!response.ok) {
+        throw new Error('Failed to load translation')
+      }
+
+      const data = (await response.json()) as {
+        locale?: string | null
+        latestVersion?: { title?: string; content?: string } | null
+      }
+
+      return {
+        title: data.latestVersion?.title ?? '',
+        content: data.latestVersion?.content ?? '',
+        locale: data.locale?.trim() || fallbackLocale,
+        translationId,
+      }
+    },
+    [],
+  )
+
+  const loadLocaleSnapshotFromDatabase = React.useCallback(
+    async ({
+      locale,
+      translationId,
+    }: {
+      locale: string
+      translationId: string | null
+    }): Promise<EditorSnapshot> => {
+      if (!translationId) {
+        return loadSourceSnapshotFromDatabase()
+      }
+
+      return loadTranslationSnapshotFromDatabase(translationId, locale)
+    },
+    [loadSourceSnapshotFromDatabase, loadTranslationSnapshotFromDatabase],
   )
 
   const isSnapshotDirty = React.useCallback((snapshot: EditorSnapshot) => {
@@ -243,10 +305,6 @@ export function DocEditorPageClient() {
       || savedSnapshot.content !== snapshot.content
     )
   }, [])
-
-  React.useEffect(() => {
-    snapshotCacheRef.current.clear()
-  }, [docId])
 
   React.useEffect(() => {
     if (doc && initializedDocId !== doc.id) {
@@ -270,7 +328,6 @@ export function DocEditorPageClient() {
       setActiveTranslationId(null)
       setAvailableLocales([])
       setPendingLocale(null)
-      snapshotCacheRef.current.clear()
       pendingSaveRef.current = null
       savedSnapshotRef.current = null
       return
@@ -335,59 +392,70 @@ export function DocEditorPageClient() {
   }, [doc?.id])
 
   React.useEffect(() => {
-    // Track whether translationParam actually changed — when handleLocaleChange
-    // updates activeTranslationId via applySnapshot, router.replace hasn't
-    // committed yet. Without this guard the effect would re-fire with the stale
-    // URL param and reload the OLD translation, overwriting the new one.
-    const prevParam = prevTranslationParamRef.current
-    prevTranslationParamRef.current = translationParam
-    if (prevParam === translationParam) return
-
-    const currentDoc = doc
-
-    if (!currentDoc || !translationParam) return
-    if (translationParam === activeTranslationId) return
-
-    const sourceSnapshot = getCachedSnapshot(null)
-    const baseTitle = sourceSnapshot?.title ?? currentDoc.title
-    const baseContent = sourceSnapshot?.content ?? currentDoc.content
+    if (!doc) return
+    if (!translationParam && activeTranslationId === null) {
+      return
+    }
+    if (translationParam && translationParam === activeTranslationId) {
+      return
+    }
 
     let cancelled = false
 
-    async function loadTranslation() {
+    async function syncLocaleFromQuery() {
+      const switchRequest = localeSwitchRequestRef.current
+
       try {
-        const cachedSnapshot = getCachedSnapshot(translationParam)
-        if (cachedSnapshot) {
-          applySnapshot(cachedSnapshot)
-          return
-        }
-
-        const response = await fetch(`/api/translations/${translationParam}`)
-        if (!response.ok) {
-          throw new Error('Failed to restore translation')
-        }
-
-        const data = (await response.json()) as {
-          locale?: string | null
-          latestVersion?: { title?: string; content?: string } | null
-        }
-
-        if (cancelled) return
-
-        applySnapshot({
-          title: data.latestVersion?.title ?? baseTitle,
-          content: data.latestVersion?.content ?? baseContent,
-          locale: data.locale?.trim() || activeLocale,
+        clearLocaleTransientState()
+        const snapshot = await loadLocaleSnapshotFromDatabase({
+          locale: switchRequest?.locale ?? activeLocale,
           translationId: translationParam,
         })
-      } catch {
-        if (!cancelled) {
-          replaceEditorQuery(null)
+        if (cancelled) return
+        applySnapshot(snapshot)
+
+        if (
+          switchRequest
+          && switchRequest.translationId === snapshot.translationId
+          && switchRequest.locale === snapshot.locale
+        ) {
+          if (switchRequest.created && snapshot.translationId) {
+            if (switchRequest.createdWithOriginalContent) {
+              toast.info('Translation created', {
+                description:
+                  'AI translation was unavailable — the original content was saved.',
+              })
+            } else {
+              toast.success(`${switchRequest.targetLabel} translation created`)
+            }
+          } else {
+            toast.info(`Loaded ${switchRequest.targetLabel}`)
+          }
+          localeSwitchRequestRef.current = null
+        }
+      } catch (error) {
+        if (cancelled) return
+
+        toast.error('Failed to load selected language', {
+          description:
+            error instanceof Error ? error.message : 'Could not load the selected language.',
+        })
+
+        if (switchRequest) {
+          localeSwitchRequestRef.current = null
+          replaceEditorQuery(switchRequest.previousSelection.translationId)
+        } else if (translationParam) {
+          replaceEditorQuery(activeTranslationId)
+        }
+      } finally {
+        if (switchRequest) {
+          localeSwitchingRef.current = false
+          setPendingLocale(null)
         }
       }
     }
 
-    void loadTranslation()
+    void syncLocaleFromQuery()
 
     return () => {
       cancelled = true
@@ -396,8 +464,9 @@ export function DocEditorPageClient() {
     activeLocale,
     activeTranslationId,
     applySnapshot,
+    clearLocaleTransientState,
     doc,
-    getCachedSnapshot,
+    loadLocaleSnapshotFromDatabase,
     replaceEditorQuery,
     translationParam,
   ])
@@ -453,7 +522,6 @@ export function DocEditorPageClient() {
           : snapshot
 
         pendingSaveRef.current = null
-        cacheSnapshot(persistedSnapshot)
         savedSnapshotRef.current = persistedSnapshot
         retryCountRef.current = 0
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
@@ -476,7 +544,7 @@ export function DocEditorPageClient() {
         return false
       }
     },
-    [cacheSnapshot, update],
+    [update],
   )
 
   // ── Online/offline detection ────────────────────────────────────────────
@@ -791,8 +859,14 @@ export function DocEditorPageClient() {
       if (locale === activeLocale) return
       if (localeSwitchingRef.current) return
 
+      const previousSelection = {
+        locale: activeLocale,
+        translationId: activeTranslationId,
+      }
+
       localeSwitchingRef.current = true
       setPendingLocale(locale)
+      let handedOffToQueryLoader = false
       try {
         const latestContent = syncLatestEditorContent()
         const flushed = await flushPendingSave(
@@ -802,114 +876,80 @@ export function DocEditorPageClient() {
           throw new Error('Save the current draft before switching languages.')
         }
 
-        if (locale === sourceLocale) {
-          applySnapshot(
-            getCachedSnapshot(null) ?? {
-              title: doc.title,
-              content: doc.content,
-              locale: sourceLocale,
-              translationId: null,
-            },
-          )
-          replaceEditorQuery(null)
-          return
-        }
+        let nextTranslationId = locale === sourceLocale ? null : (translationId ?? null)
+        let createdWithOriginalContent = false
+        let created = false
 
-        if (translationId) {
-          const cachedTranslation = getCachedSnapshot(translationId)
-          if (cachedTranslation) {
-            applySnapshot(cachedTranslation)
-            replaceEditorQuery(translationId)
-            toast.info(`Loaded ${targetLabel} translation`)
-            return
+        if (!nextTranslationId) {
+          if (locale !== sourceLocale) {
+            const translateText = async (text: string) => {
+              if (!text.trim()) return text
+              const res = await fetch('/api/ai/transform', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'translate',
+                  text,
+                  targetLanguage: targetLabel,
+                }),
+              })
+              if (!res.ok) return null
+              const data = (await res.json().catch(() => null)) as
+                | { result?: string }
+                | null
+              return data?.result ?? null
+            }
+
+            const [translatedTitle, translatedContent] = await Promise.all([
+              translateText(title),
+              translateText(latestContent),
+            ])
+
+            const response = await fetch(`/api/documents/${doc.id}/translations`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                targetLocale: locale,
+                title: translatedTitle ?? title,
+                content: translatedContent ?? latestContent,
+              }),
+            })
+
+            const data = (await response.json().catch(() => null)) as
+              | { translationId?: string; error?: string }
+              | null
+
+            if (!response.ok || !data?.translationId) {
+              throw new Error(
+                data && 'error' in data && typeof data.error === 'string'
+                  ? data.error
+                  : 'Could not create the translation.',
+              )
+            }
+
+            nextTranslationId = data.translationId
+            created = true
+            createdWithOriginalContent = translatedContent === null
+
+            setAvailableLocales((prev) => {
+              const next = prev.filter((item) => item.code !== locale)
+              return [...next, { code: locale, translationId: data.translationId }]
+            })
           }
-
-          const res = await fetch(`/api/translations/${translationId}`)
-          if (!res.ok) throw new Error('Failed to load translation')
-          const data = (await res.json()) as {
-            latestVersion?: { title?: string; content?: string } | null
-          }
-
-          const sourceFallback = getCachedSnapshot(null)
-
-          applySnapshot({
-            title: data.latestVersion?.title ?? sourceFallback?.title ?? doc.title,
-            content: data.latestVersion?.content ?? sourceFallback?.content ?? doc.content,
-            locale,
-            translationId,
-          })
-          replaceEditorQuery(translationId)
-          toast.info(`Loaded ${targetLabel} translation`)
-          return
         }
 
-        const translateText = async (text: string) => {
-          if (!text.trim()) return text
-          const res = await fetch('/api/ai/transform', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'translate',
-              text,
-              targetLanguage: targetLabel,
-            }),
-          })
-          if (!res.ok) return null
-          const data = (await res.json().catch(() => null)) as
-            | { result?: string }
-            | null
-          return data?.result ?? null
+        localeSwitchRequestRef.current = {
+          locale,
+          translationId: nextTranslationId,
+          targetLabel,
+          previousSelection,
+          created,
+          createdWithOriginalContent,
         }
-
-        const [translatedTitle, translatedContent] = await Promise.all([
-          translateText(title),
-          translateText(latestContent),
-        ])
-
-        const response = await fetch(`/api/documents/${doc.id}/translations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            targetLocale: locale,
-            title: translatedTitle ?? title,
-            content: translatedContent ?? latestContent,
-          }),
-        })
-
-        const data = (await response.json().catch(() => null)) as
-          | { translationId?: string; error?: string }
-          | null
-
-        if (!response.ok || !data?.translationId) {
-          throw new Error(
-            data && 'error' in data && typeof data.error === 'string'
-              ? data.error
-              : 'Could not create the translation.',
-          )
-        }
-
-        setAvailableLocales((prev) => {
-          const next = prev.filter((item) => item.code !== locale)
-          return [...next, { code: locale, translationId: data.translationId }]
-        })
-
-      applySnapshot({
-        title: translatedTitle ?? title,
-        content: translatedContent ?? latestContent,
-        locale,
-        translationId: data.translationId,
-      })
-        replaceEditorQuery(data.translationId)
-
-        if (translatedContent !== null) {
-          toast.success(`${targetLabel} translation created`)
-        } else {
-          toast.info('Translation created', {
-            description:
-              'AI translation was unavailable — the original content was saved.',
-          })
-        }
+        replaceEditorQuery(nextTranslationId)
+        handedOffToQueryLoader = true
       } catch (error) {
+        localeSwitchRequestRef.current = null
         toast.error('Translation failed', {
           description:
             error instanceof Error
@@ -917,17 +957,18 @@ export function DocEditorPageClient() {
               : 'Could not create the translation.',
         })
       } finally {
-        localeSwitchingRef.current = false
-        setPendingLocale(null)
+        if (!handedOffToQueryLoader) {
+          localeSwitchingRef.current = false
+          setPendingLocale(null)
+        }
       }
     },
     [
       activeLocale,
-      applySnapshot,
+      activeTranslationId,
       content,
       doc,
       flushPendingSave,
-      getCachedSnapshot,
       replaceEditorQuery,
       sourceLocale,
       syncLatestEditorContent,
