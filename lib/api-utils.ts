@@ -15,6 +15,7 @@ type MemberRole = 'owner' | 'admin' | 'member' | 'guest'
 interface WorkspaceContext {
   userId: string
   workspaceId: string
+  workspaceName: string
   role: MemberRole
 }
 
@@ -97,7 +98,14 @@ export async function withWorkspaceAuth(
   const role = membership.role as MemberRole
   if (!hasMinimumRole(role, requiredRole)) return { error: forbidden() }
 
-  return { ctx: { userId: user.id, workspaceId: workspace.id, role } }
+  return {
+    ctx: {
+      userId: user.id,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      role,
+    },
+  }
 }
 
 const ROLE_LEVELS: Record<MemberRole, number> = {

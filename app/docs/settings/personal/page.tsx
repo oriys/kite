@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 
 import { PersonalSettingsPage } from '@/components/settings/personal-settings-page'
-import { getAuthenticatedUser, getWorkspaceContext } from '@/lib/api-utils'
+import { withWorkspaceAuth } from '@/lib/api-utils'
 import { getNotificationPreferences } from '@/lib/queries/notifications'
 
 export const metadata: Metadata = {
@@ -12,25 +12,24 @@ export const metadata: Metadata = {
 }
 
 export default async function PersonalSettingsRoute() {
-  const user = await getAuthenticatedUser()
-  if (!user?.id) {
-    redirect('/auth/signin')
-  }
+  const result = await withWorkspaceAuth('guest')
+  if ('error' in result) {
+    if (result.error.status === 401) {
+      redirect('/auth/signin')
+    }
 
-  const workspace = await getWorkspaceContext(user.id)
-  if (!workspace) {
     redirect('/docs')
   }
 
   const initialNotificationPreferences = await getNotificationPreferences(
-    user.id,
-    workspace.id,
+    result.ctx.userId,
+    result.ctx.workspaceId,
   )
 
   return (
     <PersonalSettingsPage
       initialNotificationPreferences={initialNotificationPreferences}
-      workspaceName={workspace.name}
+      workspaceName={result.ctx.workspaceName}
     />
   )
 }
