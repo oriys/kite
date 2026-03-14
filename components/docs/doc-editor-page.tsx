@@ -16,7 +16,7 @@ import {
   queuePendingDocumentSummary,
 } from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
-import { MessageSquare } from 'lucide-react'
+import { BookOpenText, MessageSquare } from 'lucide-react'
 import { getDocEditorHref } from '@/lib/documents'
 import type { CommentSelection } from '@/lib/editor/editor-helpers'
 import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
@@ -34,6 +34,12 @@ import { EditorErrorBoundary } from '@/components/docs/editor-error-boundary'
 import { DocStatusBar, type SaveState } from '@/components/docs/doc-status-bar'
 import { type EditorViewMode } from '@/components/docs/doc-toolbar'
 import { DocCommentSidebar } from '@/components/docs/doc-comment-sidebar'
+import { DocReferenceSidebar } from '@/components/docs/doc-reference-sidebar'
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable'
 import { VisibilitySelector } from '@/components/visibility-selector'
 import { VisibilityBadge } from '@/components/visibility-badge'
 import { DocFeedback } from '@/components/doc-feedback'
@@ -138,8 +144,10 @@ export function DocEditorPageClient() {
   const [initializedDocId, setInitializedDocId] = React.useState<string | null>(null)
   const [saveState, setSaveState] = React.useState<SaveState>('idle')
   const [commentSidebarOpen, setCommentSidebarOpen] = React.useState(false)
+  const [referencePanelOpen, setReferencePanelOpen] = React.useState(false)
   const [isEditorFullscreen, setIsEditorFullscreen] = React.useState(false)
   const [pendingComment, setPendingComment] = React.useState<CommentSelection | null>(null)
+  const [referenceDocId, setReferenceDocId] = React.useState<string | null>(null)
   const [visibility, setVisibility] = React.useState<'public' | 'partner' | 'private'>(
     doc?.visibility ?? 'private',
   )
@@ -328,6 +336,9 @@ export function DocEditorPageClient() {
       setActiveTranslationId(null)
       setAvailableLocales([])
       setPendingLocale(null)
+      setCommentSidebarOpen(false)
+      setReferencePanelOpen(false)
+      setReferenceDocId(null)
       pendingSaveRef.current = null
       savedSnapshotRef.current = null
       return
@@ -336,6 +347,14 @@ export function DocEditorPageClient() {
       setInitializedDocId(null)
     }
   }, [docId, initializedDocId])
+
+  React.useEffect(() => {
+    if (!referenceDocId || referenceDocId !== docId) {
+      return
+    }
+
+    setReferenceDocId(null)
+  }, [docId, referenceDocId])
 
   React.useEffect(() => {
     const currentDocId = doc?.id
@@ -991,6 +1010,72 @@ export function DocEditorPageClient() {
   const editorShellStyle = isEditorFullscreen
     ? undefined
     : getEditorShellStyle(documentWidth)
+  const showCommentSidebar = !isEditorFullscreen && commentSidebarOpen
+  const showReferencePanel = !isEditorFullscreen && referencePanelOpen
+  const editorWorkspace = (
+    <div
+      className={cn(
+        'flex h-full w-full min-h-0 min-w-0',
+        isEditorFullscreen ? 'overflow-hidden' : 'overflow-y-auto xl:overflow-hidden',
+      )}
+    >
+      <div className="flex flex-1 min-h-0 min-w-0">
+        <div
+          ref={editorOverlayRef}
+          className="relative flex min-h-0 flex-1 min-w-0 flex-col"
+        >
+          <div className="flex-1 min-h-0 min-w-0">
+            <div
+              className={cn(
+                isEditorFullscreen
+                  ? 'h-full w-full px-0 py-0 sm:px-0'
+                  : getEditorShellClassName(documentResizeActive),
+                !isEditorFullscreen && 'py-4 xl:h-full',
+              )}
+              style={editorShellStyle}
+            >
+              <EditorErrorBoundary>
+                <DocEditor
+                  key={activeTranslationId ? `${doc.id}:${activeTranslationId}` : `${doc.id}:source`}
+                  content={content}
+                  onChange={handleContentChange}
+                  readOnly={isReadOnly}
+                  readOnlyAiActions={readOnlyAiActions}
+                  className={cn(
+                    'min-h-[60vh]',
+                    isEditorFullscreen ? 'h-full' : 'xl:h-full',
+                  )}
+                  onModeChange={setEditorMode}
+                  editorFocusRef={editorFocusRef}
+                  statsOverlayContainerRef={editorOverlayRef}
+                  commentsEnabled={!isEditorFullscreen}
+                  documentWidth={isEditorFullscreen ? undefined : documentWidth}
+                  onDocumentWidthChange={
+                    isEditorFullscreen ? undefined : setDocumentWidth
+                  }
+                  onDocumentResizeStateChange={setDocumentResizeActive}
+                  fullscreen={isEditorFullscreen}
+                  onFullscreenChange={setIsEditorFullscreen}
+                  aiPreviewSide={aiPanelSide}
+                  onAiPreviewSideChange={setAiPanelSide}
+                  onComment={handleComment}
+                />
+              </EditorErrorBoundary>
+            </div>
+          </div>
+        </div>
+        {showCommentSidebar ? (
+          <DocCommentSidebar
+            documentId={doc.id}
+            className="w-80 shrink-0 border-l"
+            pendingComment={pendingComment}
+            onCommentCreated={handleCommentCreated}
+            onPendingClear={() => setPendingComment(null)}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
 
   return (
     <div
@@ -1036,11 +1121,22 @@ export function DocEditorPageClient() {
               />
               <PresenceAvatars documentId={doc.id} currentUserId={doc.createdBy ?? ''} />
               <Button
-                variant="ghost"
+                variant={referencePanelOpen ? 'secondary' : 'ghost'}
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                aria-label="Toggle reference document panel"
+                aria-pressed={referencePanelOpen}
+                onClick={() => setReferencePanelOpen((current) => !current)}
+              >
+                <BookOpenText className="size-4" />
+              </Button>
+              <Button
+                variant={commentSidebarOpen ? 'secondary' : 'ghost'}
                 size="icon"
                 className="h-8 w-8 shrink-0"
                 aria-label="Toggle comment sidebar"
-                onClick={() => setCommentSidebarOpen((v) => !v)}
+                aria-pressed={commentSidebarOpen}
+                onClick={() => setCommentSidebarOpen((current) => !current)}
               >
                 <MessageSquare className="size-4" />
               </Button>
@@ -1061,62 +1157,26 @@ export function DocEditorPageClient() {
         </div>
       ) : null}
 
-      <div ref={editorOverlayRef} className="relative flex flex-1 min-h-0">
-        <div
-          className={cn(
-            'flex flex-1',
-            isEditorFullscreen ? 'overflow-hidden' : 'overflow-y-auto xl:overflow-hidden',
-          )}
-        >
-          <div className="flex-1">
-            <div
-              className={cn(
-                isEditorFullscreen
-                  ? 'h-full w-full px-0 py-0 sm:px-0'
-                  : getEditorShellClassName(documentResizeActive),
-                !isEditorFullscreen && 'py-4 xl:h-full',
-              )}
-              style={editorShellStyle}
-            >
-              <EditorErrorBoundary>
-                <DocEditor
-                  key={activeTranslationId ? `${doc.id}:${activeTranslationId}` : `${doc.id}:source`}
-                  content={content}
-                  onChange={handleContentChange}
-                  readOnly={isReadOnly}
-                  readOnlyAiActions={readOnlyAiActions}
-                  className={cn(
-                    'min-h-[60vh]',
-                    isEditorFullscreen ? 'h-full' : 'xl:h-full',
-                  )}
-                  onModeChange={setEditorMode}
-                  editorFocusRef={editorFocusRef}
-                  statsOverlayContainerRef={editorOverlayRef}
-                  commentsEnabled={!isEditorFullscreen}
-                  documentWidth={isEditorFullscreen ? undefined : documentWidth}
-                  onDocumentWidthChange={
-                    isEditorFullscreen ? undefined : setDocumentWidth
-                  }
-                  onDocumentResizeStateChange={setDocumentResizeActive}
-                  fullscreen={isEditorFullscreen}
-                  onFullscreenChange={setIsEditorFullscreen}
-                  aiPreviewSide={aiPanelSide}
-                  onAiPreviewSideChange={setAiPanelSide}
-                  onComment={handleComment}
-                />
-              </EditorErrorBoundary>
-            </div>
-          </div>
-        </div>
-        {!isEditorFullscreen && commentSidebarOpen ? (
-          <DocCommentSidebar
-            documentId={doc.id}
-            className="w-80 shrink-0 border-l"
-            pendingComment={pendingComment}
-            onCommentCreated={handleCommentCreated}
-            onPendingClear={() => setPendingComment(null)}
-          />
-        ) : null}
+      <div className="relative flex flex-1 min-h-0">
+        {showReferencePanel ? (
+          <ResizablePanelGroup direction="horizontal" className="flex-1">
+            <ResizablePanel defaultSize={60} minSize={35}>
+              {editorWorkspace}
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={40} minSize={24}>
+              <DocReferenceSidebar
+                activeDocumentId={doc.id}
+                referenceDocumentId={referenceDocId}
+                className="h-full border-l border-border/50"
+                onReferenceDocumentChange={setReferenceDocId}
+                onClose={() => setReferencePanelOpen(false)}
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          editorWorkspace
+        )}
       </div>
 
       {!isEditorFullscreen && doc.status === 'published' ? (
