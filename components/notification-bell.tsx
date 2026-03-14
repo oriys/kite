@@ -43,10 +43,10 @@ export function NotificationBell() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative h-8 w-8"
+          className="relative size-8"
           aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
         >
-          <Bell className="h-4 w-4" />
+          <Bell className="size-4" />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -64,11 +64,10 @@ export function NotificationBell() {
           {unreadCount > 0 && (
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 text-xs"
+              size="xs"
               onClick={markAllRead}
             >
-              <CheckCheck className="mr-1 h-3 w-3" />
+              <CheckCheck className="mr-1 size-3" />
               Mark all read
             </Button>
           )}
@@ -103,13 +102,13 @@ export function NotificationBell() {
                   >
                     <div
                       className={cn(
-                        'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+                        'mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full',
                         n.isRead
                           ? 'bg-muted text-muted-foreground'
                           : 'bg-accent/10 text-accent-foreground',
                       )}
                     >
-                      <Icon className="h-3.5 w-3.5" />
+                      <Icon className="size-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm leading-snug font-medium">

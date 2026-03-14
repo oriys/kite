@@ -27,22 +27,22 @@ export function ExportMenu({ documentId }: ExportMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs">
-          <Download className="h-3.5 w-3.5" />
+        <Button variant="ghost" size="xs">
+          <Download className="size-3.5" />
           Export
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem onClick={() => handleExport('markdown')}>
-          <FileText className="mr-2 h-4 w-4" />
+          <FileText className="size-4" />
           Markdown (.md)
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => handleExport('html', 'light')}>
-          <Code2 className="mr-2 h-4 w-4" />
+          <Code2 className="size-4" />
           HTML (Light)
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => handleExport('html', 'dark')}>
-          <Globe className="mr-2 h-4 w-4" />
+          <Globe className="size-4" />
           HTML (Dark)
         </DropdownMenuItem>
       </DropdownMenuContent>

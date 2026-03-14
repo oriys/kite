@@ -55,10 +55,10 @@ export function LocaleSwitcher({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
-          <Globe className="h-3.5 w-3.5" />
+        <Button variant="outline" size="xs">
+          <Globe className="size-3.5" />
           {currentLabel}
-          <ChevronDown className="h-3 w-3 opacity-50" />
+          <ChevronDown className="size-3 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-48 p-1">

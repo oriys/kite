@@ -129,7 +129,7 @@ export function TemplatePicker({ trigger, onCreated }: TemplatePickerProps) {
       <DialogTrigger asChild>
         {trigger ?? (
           <Button variant="outline" size="sm" className="gap-1.5">
-            <LayoutTemplate className="h-3.5 w-3.5" />
+            <LayoutTemplate className="size-3.5" />
             From Template
           </Button>
         )}
@@ -163,7 +163,7 @@ export function TemplatePicker({ trigger, onCreated }: TemplatePickerProps) {
                   className="h-6 gap-1 text-xs"
                   onClick={() => setFilter(cat)}
                 >
-                  <Icon className="h-3 w-3" />
+                  <Icon className="size-3" />
                   {cfg.label}
                 </Button>
               )
@@ -194,7 +194,7 @@ export function TemplatePicker({ trigger, onCreated }: TemplatePickerProps) {
                   >
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
-                        <Icon className={cn('h-4 w-4', cfg.color)} />
+                        <Icon className={cn('size-4', cfg.color)} />
                         <CardTitle className="text-sm">{tpl.name}</CardTitle>
                       </div>
                       <CardDescription className="text-xs line-clamp-2">

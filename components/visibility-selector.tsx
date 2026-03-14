@@ -25,21 +25,21 @@ const options = [
     label: 'Public',
     description: 'Visible to everyone',
     icon: Globe,
-    iconClass: 'text-emerald-600 dark:text-emerald-400',
+    iconClass: 'text-tone-success-text',
   },
   {
     value: 'partner' as const,
     label: 'Partner',
     description: 'Visible to partner groups',
     icon: Users,
-    iconClass: 'text-amber-600 dark:text-amber-400',
+    iconClass: 'text-tone-caution-text',
   },
   {
     value: 'private' as const,
     label: 'Private',
     description: 'Visible to workspace members only',
     icon: Lock,
-    iconClass: 'text-rose-600 dark:text-rose-400',
+    iconClass: 'text-tone-error-text',
   },
 ]
 

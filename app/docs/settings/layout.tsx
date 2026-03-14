@@ -12,7 +12,7 @@ export default function SettingsLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-6xl gap-8 px-4 py-8">
+    <div className="mx-auto flex w-full max-w-6xl gap-8 px-4 py-8 sm:px-6">
       <SettingsSidebar />
       <div className="min-w-0 flex-1">{children}</div>
     </div>

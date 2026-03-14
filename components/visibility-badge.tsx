@@ -15,19 +15,19 @@ const config = {
     label: 'Public',
     icon: Globe,
     classes:
-      'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-400',
+      'border-tone-success-border bg-tone-success-bg text-tone-success-text',
   },
   partner: {
     label: 'Partner',
     icon: Users,
     classes:
-      'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400',
+      'border-tone-caution-border bg-tone-caution-bg text-tone-caution-text',
   },
   private: {
     label: 'Private',
     icon: Lock,
     classes:
-      'border-rose-500/20 bg-rose-500/10 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-400',
+      'border-tone-error-border bg-tone-error-bg text-tone-error-text',
   },
 } as const
 

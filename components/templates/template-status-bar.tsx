@@ -55,7 +55,7 @@ function getSaveStateMeta(saveState: TemplateSaveState) {
       return {
         icon: Check,
         label: 'Saved',
-        className: 'text-emerald-600 dark:text-emerald-400',
+        className: 'text-tone-success-text',
         iconClassName: '',
       }
     case 'error':
@@ -69,7 +69,7 @@ function getSaveStateMeta(saveState: TemplateSaveState) {
       return {
         icon: WifiOff,
         label: 'Offline',
-        className: 'text-amber-600 dark:text-amber-400',
+        className: 'text-tone-caution-text',
         iconClassName: '',
       }
     default:

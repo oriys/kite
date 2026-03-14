@@ -176,7 +176,7 @@ export function ApprovalBanner({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <StatusIcon className={cn('h-4 w-4', config.color)} />
+            <StatusIcon className={cn('size-4', config.color)} />
             <CardTitle className="text-sm">{config.label}</CardTitle>
             <Badge variant="outline" className="text-xs">
               {approvedCount}/{approval.requiredApprovals} approvals
@@ -200,7 +200,7 @@ export function ApprovalBanner({
               key={r.id}
               className="flex items-center gap-1.5 rounded-md border px-2 py-1"
             >
-              <Avatar className="h-5 w-5">
+              <Avatar className="size-5">
                 <AvatarImage src={r.reviewer.image ?? undefined} />
                 <AvatarFallback className="text-[10px]">
                   {(r.reviewer.name ?? '?')[0]}
@@ -208,13 +208,13 @@ export function ApprovalBanner({
               </Avatar>
               <span className="text-xs">{r.reviewer.name ?? 'Unknown'}</span>
               {r.decision === 'approved' && (
-                <CheckCircle2 className="h-3 w-3 text-success" />
+                <CheckCircle2 className="size-3 text-success" />
               )}
               {r.decision === 'rejected' && (
-                <XCircle className="h-3 w-3 text-destructive" />
+                <XCircle className="size-3 text-destructive" />
               )}
               {r.decision === 'changes_requested' && (
-                <AlertCircle className="h-3 w-3 text-warning" />
+                <AlertCircle className="size-3 text-warning" />
               )}
             </div>
           ))}
@@ -230,31 +230,29 @@ export function ApprovalBanner({
             />
             <div className="flex gap-2">
               <Button
-                size="sm"
-                className="h-7 bg-success text-success-foreground hover:bg-success/90"
+                size="xs"
+                className="bg-success text-success-foreground hover:bg-success/90"
                 disabled={submitting}
                 onClick={() => handleDecision('approved')}
               >
-                <CheckCircle2 className="mr-1 h-3 w-3" />
+                <CheckCircle2 className="size-3" />
                 Approve
               </Button>
               <Button
-                size="sm"
+                size="xs"
                 variant="outline"
-                className="h-7"
                 disabled={submitting}
                 onClick={() => handleDecision('changes_requested')}
               >
                 Request Changes
               </Button>
               <Button
-                size="sm"
+                size="xs"
                 variant="destructive"
-                className="h-7"
                 disabled={submitting}
                 onClick={() => handleDecision('rejected')}
               >
-                <XCircle className="mr-1 h-3 w-3" />
+                <XCircle className="size-3" />
                 Reject
               </Button>
             </div>

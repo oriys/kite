@@ -1146,9 +1146,9 @@ export function DocEditorPageClient() {
       ) : null}
 
       {!isEditorFullscreen && isReadOnly ? (
-        <div className="border-b border-amber-500/20 bg-amber-50/50 px-4 py-1.5 dark:bg-amber-950/20 sm:px-6">
+        <div className="border-b border-tone-caution-border bg-tone-caution-bg px-4 py-1.5 sm:px-6">
           <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
-            <p className="text-xs text-amber-700 dark:text-amber-400">
+            <p className="text-xs text-tone-caution-text">
               {isStatusReadOnly
                 ? `This document is ${doc.status}. Revert to draft to make changes.`
                 : 'You currently have view-only access to this document. Ask a document manager for edit permission.'}

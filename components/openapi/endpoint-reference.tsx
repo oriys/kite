@@ -38,13 +38,13 @@ interface EndpointReferenceProps {
 }
 
 const METHOD_COLORS: Record<string, string> = {
-  GET: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/25',
-  POST: 'bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/25',
-  PUT: 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/25',
-  DELETE: 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/25',
-  PATCH: 'bg-purple-500/15 text-purple-700 dark:text-purple-400 border-purple-500/25',
-  OPTIONS: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-400 border-neutral-500/25',
-  HEAD: 'bg-neutral-500/15 text-neutral-700 dark:text-neutral-400 border-neutral-500/25',
+  GET: 'bg-method-get/15 text-method-get border-method-get/25',
+  POST: 'bg-method-post/15 text-method-post border-method-post/25',
+  PUT: 'bg-method-put/15 text-method-put border-method-put/25',
+  DELETE: 'bg-method-delete/15 text-method-delete border-method-delete/25',
+  PATCH: 'bg-method-patch/15 text-method-patch border-method-patch/25',
+  OPTIONS: 'bg-muted text-muted-foreground border-border/50',
+  HEAD: 'bg-muted text-muted-foreground border-border/50',
 }
 
 export function EndpointReference({
@@ -97,7 +97,7 @@ export function EndpointReference({
                     {ep.deprecated && (
                       <Badge
                         variant="outline"
-                        className="border-amber-500/30 text-amber-600 dark:text-amber-400"
+                        className="border-tone-caution-border text-tone-caution-text"
                       >
                         Deprecated
                       </Badge>
@@ -180,7 +180,7 @@ function EndpointDetails({ endpoint }: { endpoint: Endpoint }) {
                     </TableCell>
                     <TableCell className="text-xs">
                       {param.required ? (
-                        <span className="text-amber-600 dark:text-amber-400">
+                        <span className="text-tone-caution-text">
                           Yes
                         </span>
                       ) : (
@@ -247,10 +247,10 @@ function EndpointDetails({ endpoint }: { endpoint: Endpoint }) {
 function StatusBadge({ code }: { code: string }) {
   const num = parseInt(code, 10)
   let color = 'bg-muted text-muted-foreground'
-  if (num >= 200 && num < 300) color = 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-  else if (num >= 300 && num < 400) color = 'bg-blue-500/15 text-blue-700 dark:text-blue-400'
-  else if (num >= 400 && num < 500) color = 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
-  else if (num >= 500) color = 'bg-rose-500/15 text-rose-700 dark:text-rose-400'
+  if (num >= 200 && num < 300) color = 'bg-tone-success-bg text-tone-success-text'
+  else if (num >= 300 && num < 400) color = 'bg-tone-info-bg text-tone-info-text'
+  else if (num >= 400 && num < 500) color = 'bg-tone-caution-bg text-tone-caution-text'
+  else if (num >= 500) color = 'bg-tone-error-bg text-tone-error-text'
 
   return (
     <span

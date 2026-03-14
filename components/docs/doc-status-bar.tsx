@@ -191,9 +191,9 @@ function VersionDiffView({
             {changes.length > 0 && (
               <>
                 {' · '}
-                {added > 0 && <span className="text-emerald-600 dark:text-emerald-400">+{added}</span>}
+                {added > 0 && <span className="text-tone-success-text">+{added}</span>}
                 {added > 0 && removed > 0 && ' '}
-                {removed > 0 && <span className="text-rose-600 dark:text-rose-400">-{removed}</span>}
+                {removed > 0 && <span className="text-tone-error-text">-{removed}</span>}
                 {' lines changed'}
               </>
             )}
@@ -218,8 +218,8 @@ function VersionDiffView({
             key={i}
             className={cn(
               'whitespace-pre-wrap px-3 py-px',
-              line.type === 'added' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-              line.type === 'removed' && 'bg-rose-500/10 text-rose-700 dark:text-rose-300',
+              line.type === 'added' && 'bg-diff-add-bg text-diff-add-text',
+              line.type === 'removed' && 'bg-diff-remove-bg text-diff-remove-text',
               line.type === 'unchanged' && 'text-muted-foreground/70',
             )}
           >
@@ -290,18 +290,18 @@ export function DocStatusBar({
             </>
           ) : saveState === 'saved' ? (
             <>
-              <Check className="size-3 text-emerald-500" />
-              <span className="text-emerald-600 dark:text-emerald-400">Saved</span>
+              <Check className="size-3 text-success" />
+              <span className="text-tone-success-text">Saved</span>
             </>
           ) : saveState === 'error' ? (
             <>
-              <AlertCircle className="size-3 text-amber-500" />
-              <span className="text-amber-600 dark:text-amber-400">Save failed · retrying</span>
+              <AlertCircle className="size-3 text-warning" />
+              <span className="text-tone-caution-text">Save failed · retrying</span>
             </>
           ) : saveState === 'offline' ? (
             <>
-              <WifiOff className="size-3 text-amber-500" />
-              <span className="text-amber-600 dark:text-amber-400">Offline · will retry</span>
+              <WifiOff className="size-3 text-warning" />
+              <span className="text-tone-caution-text">Offline · will retry</span>
             </>
           ) : (
             <>

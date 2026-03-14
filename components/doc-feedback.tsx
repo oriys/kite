@@ -74,7 +74,7 @@ export function DocFeedback({ documentId, className }: DocFeedbackProps) {
     return (
       <div className={cn('border-t py-6 text-center', className)}>
         <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Check className="h-4 w-4 text-emerald-600" />
+          <Check className="size-4 text-success" />
           Thank you for your feedback!
         </div>
       </div>
@@ -128,7 +128,7 @@ export function DocFeedback({ documentId, className }: DocFeedbackProps) {
             setPhase('comment')
           }}
         >
-          <ThumbsUp className="mr-1.5 h-4 w-4" />
+          <ThumbsUp className="size-4" />
           Yes
         </Button>
         <Button
@@ -139,7 +139,7 @@ export function DocFeedback({ documentId, className }: DocFeedbackProps) {
             setPhase('comment')
           }}
         >
-          <ThumbsDown className="mr-1.5 h-4 w-4" />
+          <ThumbsDown className="size-4" />
           No
         </Button>
       </div>

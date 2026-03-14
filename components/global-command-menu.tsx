@@ -53,7 +53,7 @@ export function GlobalCommandMenu({ open, onOpenChange, onAction }: GlobalComman
         <CommandEmpty>No results found.</CommandEmpty>
         <CommandGroup heading="General">
           <CommandItem onSelect={() => run('show-shortcuts')}>
-            <Calculator className="mr-2 h-4 w-4" />
+            <Calculator className="size-4" />
             <span>Keyboard Shortcuts</span>
             <CommandShortcut>⌘/</CommandShortcut>
           </CommandItem>
@@ -61,17 +61,17 @@ export function GlobalCommandMenu({ open, onOpenChange, onAction }: GlobalComman
         <CommandSeparator />
         <CommandGroup heading="Editor View">
           <CommandItem onSelect={() => run('view-wysiwyg')}>
-            <Eye className="mr-2 h-4 w-4" />
+            <Eye className="size-4" />
             <span>Visual Editor</span>
             <CommandShortcut>Alt 1</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => run('view-source')}>
-            <Code className="mr-2 h-4 w-4" />
+            <Code className="size-4" />
             <span>Source Code</span>
             <CommandShortcut>Alt 2</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => run('view-split')}>
-            <Columns className="mr-2 h-4 w-4" />
+            <Columns className="size-4" />
             <span>Split View</span>
             <CommandShortcut>Alt 3</CommandShortcut>
           </CommandItem>
@@ -79,11 +79,11 @@ export function GlobalCommandMenu({ open, onOpenChange, onAction }: GlobalComman
         <CommandSeparator />
         <CommandGroup heading="Insert">
           <CommandItem onSelect={() => run('insert-table')}>
-            <Table className="mr-2 h-4 w-4" />
+            <Table className="size-4" />
             <span>Table</span>
           </CommandItem>
           <CommandItem onSelect={() => run('insert-code-block')}>
-            <FileText className="mr-2 h-4 w-4" />
+            <FileText className="size-4" />
             <span>Code Block</span>
             <CommandShortcut>⌘⇧C</CommandShortcut>
           </CommandItem>
@@ -91,12 +91,12 @@ export function GlobalCommandMenu({ open, onOpenChange, onAction }: GlobalComman
         <CommandSeparator />
         <CommandGroup heading="Formatting">
           <CommandItem onSelect={() => run('format-bold')}>
-            <Type className="mr-2 h-4 w-4" />
+            <Type className="size-4" />
             <span>Bold</span>
             <CommandShortcut>⌘B</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => run('format-italic')}>
-            <Type className="mr-2 h-4 w-4" />
+            <Type className="size-4" />
             <span>Italic</span>
             <CommandShortcut>⌘I</CommandShortcut>
           </CommandItem>

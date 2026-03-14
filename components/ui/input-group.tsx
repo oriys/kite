@@ -13,7 +13,7 @@ function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
       data-slot="input-group"
       role="group"
       className={cn(
-        'group/input-group relative flex w-full items-stretch overflow-hidden rounded-md border border-input/80 bg-background/85 shadow-none transition-[border-color,box-shadow,background-color] outline-none',
+        'group/input-group relative flex w-full items-stretch overflow-hidden rounded-md border border-input/80 bg-background/80 shadow-none transition-[border-color,box-shadow,background-color] outline-none',
         'min-h-10 has-[>textarea]:min-h-0 has-[>textarea]:items-stretch has-[>[data-align=block-start]]:flex-col has-[>[data-align=block-end]]:flex-col',
         'focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/35',
         'has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-2 has-[[data-slot][aria-invalid=true]]:ring-destructive/15',
