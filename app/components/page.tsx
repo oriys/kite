@@ -184,7 +184,7 @@ export default function Page() {
     <div className="min-h-[100dvh]">
       <SkipLink />
       <SearchCommand sections={sections} />
-      <div className="mx-auto max-w-[1480px] px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <header className="editorial-surface editorial-reveal mb-6 px-5 py-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">

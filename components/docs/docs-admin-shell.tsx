@@ -26,7 +26,7 @@ export function DocsAdminShell({
   return (
     <div
       className={cn(
-        'mx-auto flex max-w-[1360px] flex-col gap-4 px-4 py-6 sm:px-6',
+        'mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8 sm:px-6',
         className,
       )}
     >
