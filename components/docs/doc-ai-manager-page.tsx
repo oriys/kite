@@ -21,7 +21,6 @@ import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { useAiProviders } from '@/hooks/use-ai-providers'
 import { cn } from '@/lib/utils'
-import { DocsAdminShell } from '@/components/docs/docs-admin-shell'
 import { ProviderCardItem, type ProviderCard } from '@/components/docs/doc-ai-provider-card'
 import { ProviderFormDialog } from '@/components/docs/doc-ai-provider-form-dialog'
 import {
@@ -448,32 +447,35 @@ export function DocAiManagerPage() {
     aiModelsLoading || providersLoading || providerMutating || savingModelSettings
 
   return (
-    <DocsAdminShell
-      kicker="AI Models"
-      title="Manage AI providers and models"
-      description="Connect multiple providers, sync their catalogs, and control which models the editor can route to."
-      actions={(
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void refreshAll()}
-            disabled={isRefreshing}
-          >
-            <RefreshCw
-              data-icon="inline-start"
-              className={cn(isRefreshing && 'animate-spin')}
-            />
-            Sync catalog
-          </Button>
-          <Button size="sm" onClick={openCreateDialog}>
-            <Plus data-icon="inline-start" />
-            Add provider
-          </Button>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-semibold tracking-tight">AI Models</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+              Connect multiple providers, sync their catalogs, and control which models the editor can route to.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void refreshAll()}
+              disabled={isRefreshing}
+            >
+              <RefreshCw
+                data-icon="inline-start"
+                className={cn(isRefreshing && 'animate-spin')}
+              />
+              Sync catalog
+            </Button>
+            <Button size="sm" onClick={openCreateDialog}>
+              <Plus data-icon="inline-start" />
+              Add provider
+            </Button>
+          </div>
         </div>
-      )}
-      meta={(
-        <>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant={configured ? 'secondary' : 'outline'}>
             {configured ? 'Configured' : 'Fallback'}
           </Badge>
@@ -485,35 +487,33 @@ export function DocAiManagerPage() {
             Default {activeLabel}
           </Badge>
           <Badge variant="outline">Last fetch {formatFetchedAt(fetchedAt)}</Badge>
-        </>
-      )}
-      notice={(
-        <div className="grid gap-3">
-          <Alert>
-            <Bot />
-            <AlertTitle>Workspace AI connections</AlertTitle>
-            <AlertDescription>
-              Provider credentials, enabled models, and routing defaults now live in the
-              database for this workspace instead of staying on one browser.
-            </AlertDescription>
-          </Alert>
-          {catalogError ? (
-            <Alert className="border-destructive/25">
-              <Sparkles />
-              <AlertTitle>Catalog warnings</AlertTitle>
-              <AlertDescription>{catalogError}</AlertDescription>
-            </Alert>
-          ) : null}
-          {providerError ? (
-            <Alert className="border-destructive/25">
-              <Sparkles />
-              <AlertTitle>Provider list unavailable</AlertTitle>
-              <AlertDescription>{providerError}</AlertDescription>
-            </Alert>
-          ) : null}
         </div>
-      )}
-    >
+      </div>
+
+      <div className="grid gap-3">
+        <Alert>
+          <Bot />
+          <AlertTitle>Workspace AI connections</AlertTitle>
+          <AlertDescription>
+            Provider credentials, enabled models, and routing defaults now live in the
+            database for this workspace instead of staying on one browser.
+          </AlertDescription>
+        </Alert>
+        {catalogError ? (
+          <Alert className="border-destructive/25">
+            <Sparkles />
+            <AlertTitle>Catalog warnings</AlertTitle>
+            <AlertDescription>{catalogError}</AlertDescription>
+          </Alert>
+        ) : null}
+        {providerError ? (
+          <Alert className="border-destructive/25">
+            <Sparkles />
+            <AlertTitle>Provider list unavailable</AlertTitle>
+            <AlertDescription>{providerError}</AlertDescription>
+          </Alert>
+        ) : null}
+      </div>
       <div className="grid gap-4">
         <section className="editorial-surface overflow-hidden editorial-reveal">
           <div className="border-b border-border/70 px-4 py-4 sm:px-5">
@@ -832,6 +832,6 @@ export function DocAiManagerPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </DocsAdminShell>
+    </div>
   )
 }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Palette, SlidersHorizontal, Users, UsersRound } from 'lucide-react'
+import { BrainCircuit, Palette, PencilLine, SlidersHorizontal, Users, UsersRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const SETTINGS_NAV = [
@@ -26,6 +26,8 @@ const SETTINGS_NAV = [
     items: [
       { href: '/docs/settings/members', label: 'Members', icon: Users },
       { href: '/docs/settings/teams', label: 'Teams', icon: UsersRound },
+      { href: '/docs/settings/ai', label: 'AI Models', icon: BrainCircuit },
+      { href: '/docs/settings/ai-prompts', label: 'AI Prompts', icon: PencilLine },
     ],
   },
 ] as const

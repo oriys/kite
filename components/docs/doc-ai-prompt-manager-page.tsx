@@ -24,7 +24,6 @@ import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
 import { ActionOverrideItem } from '@/components/docs/doc-ai-action-override-item'
 import { Accordion } from '@/components/ui/accordion'
-import { DocsAdminShell } from '@/components/docs/docs-admin-shell'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -173,29 +172,32 @@ export function DocAiPromptManagerPage() {
   )
 
   return (
-    <DocsAdminShell
-      kicker="AI Prompts"
-      title="Manage AI prompts"
-      description="Edit shared defaults and per-action overrides."
-      actions={(
-        <>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleResetAll}
-            disabled={!isDirty && draftCustomizedCount === 0}
-          >
-            <RefreshCw data-icon="inline-start" />
-            Restore defaults
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={!isDirty}>
-            <Sparkles data-icon="inline-start" />
-            Save changes
-          </Button>
-        </>
-      )}
-      meta={(
-        <>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-semibold tracking-tight">AI Prompts</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+              Edit shared defaults and per-action overrides.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleResetAll}
+              disabled={!isDirty && draftCustomizedCount === 0}
+            >
+              <RefreshCw data-icon="inline-start" />
+              Restore defaults
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={!isDirty}>
+              <Sparkles data-icon="inline-start" />
+              Save changes
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant={isDirty ? 'secondary' : 'outline'}>
             {isDirty ? 'Unsaved changes' : 'Saved'}
           </Badge>
@@ -213,32 +215,30 @@ export function DocAiPromptManagerPage() {
           <Badge variant="outline" className="max-w-full truncate sm:max-w-[20rem]">
             Default {defaultModelLabel}
           </Badge>
-        </>
-      )}
-      notice={(
-        <div className="grid gap-3">
-          <Alert>
-            <Bot />
-            <AlertTitle>Workspace-shared routing</AlertTitle>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        <Alert>
+          <Bot />
+          <AlertTitle>Workspace-shared routing</AlertTitle>
+          <AlertDescription>
+            Prompt overrides now live in the workspace database. If a dedicated model
+            disappears, the action falls back to the current workspace default when you
+            save.
+          </AlertDescription>
+        </Alert>
+        {enabledModels.length === 0 ? (
+          <Alert className="border-destructive/25">
+            <Sparkles />
+            <AlertTitle>No enabled models yet</AlertTitle>
             <AlertDescription>
-              Prompt overrides now live in the workspace database. If a dedicated model
-              disappears, the action falls back to the current workspace default when you
-              save.
+              Open AI Models first and enable at least one model. You can still edit prompts
+              now, but per-action routing will stay inactive until the editor has a model pool.
             </AlertDescription>
           </Alert>
-          {enabledModels.length === 0 ? (
-            <Alert className="border-destructive/25">
-              <Sparkles />
-              <AlertTitle>No enabled models yet</AlertTitle>
-              <AlertDescription>
-                Open AI Models first and enable at least one model. You can still edit prompts
-                now, but per-action routing will stay inactive until the editor has a model pool.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-        </div>
-      )}
-    >
+        ) : null}
+      </div>
       <div className="grid gap-4">
         <section className="editorial-surface overflow-hidden editorial-reveal">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 px-4 py-4 sm:px-5">
@@ -335,6 +335,6 @@ export function DocAiPromptManagerPage() {
           </Accordion>
         </section>
       </div>
-    </DocsAdminShell>
+    </div>
   )
 }

@@ -4,7 +4,7 @@ import { FeatureGuard } from '@/components/docs/feature-guard'
 import { DocAiManagerPage } from '@/components/docs/doc-ai-manager-page'
 
 export const metadata: Metadata = {
-  title: 'AI Control Center — Editorial System',
+  title: 'AI Models — Settings',
   description: 'Manage which AI models are enabled inside the editor.',
 }
 

@@ -29,11 +29,11 @@ interface DocsAiMenuProps {
 }
 
 function getCurrentLabel(pathname: string) {
-  if (pathname.startsWith('/docs/ai/prompts')) {
+  if (pathname.startsWith('/docs/settings/ai-prompts')) {
     return 'AI Prompts'
   }
 
-  if (pathname.startsWith('/docs/ai')) {
+  if (pathname.startsWith('/docs/settings/ai')) {
     return 'AI Models'
   }
 
@@ -68,7 +68,7 @@ export function DocsAiMenu({
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem asChild className="items-start py-2">
-            <Link href="/docs/ai" className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3">
+            <Link href="/docs/settings/ai" className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3">
               <BrainCircuit className="mt-0.5 size-4 text-muted-foreground" />
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="font-medium text-foreground">AI Models</span>
@@ -76,12 +76,12 @@ export function DocsAiMenu({
                   Enable the models the editor can call.
                 </span>
               </span>
-              {pathname === '/docs/ai' ? <Badge variant="secondary">Current</Badge> : null}
+              {pathname === '/docs/settings/ai' ? <Badge variant="secondary">Current</Badge> : null}
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild className="items-start py-2">
             <Link
-              href="/docs/ai/prompts"
+              href="/docs/settings/ai-prompts"
               className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3"
             >
               <PencilLine className="mt-0.5 size-4 text-muted-foreground" />
@@ -91,7 +91,7 @@ export function DocsAiMenu({
                   Adjust system and action prompts for this workspace.
                 </span>
               </span>
-              {pathname.startsWith('/docs/ai/prompts') ? (
+              {pathname.startsWith('/docs/settings/ai-prompts') ? (
                 <Badge variant="secondary">Current</Badge>
               ) : null}
             </Link>

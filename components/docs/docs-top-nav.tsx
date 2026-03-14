@@ -7,7 +7,6 @@ import {
   BarChart3,
   Blocks,
   Braces,
-  BrainCircuit,
   ChevronDown,
   ClipboardCheck,
   FileText,
@@ -16,7 +15,6 @@ import {
   LinkIcon,
   Menu,
   Palette,
-  PencilLine,
   Search,
   Settings,
   Shield,
@@ -56,18 +54,6 @@ const NAV_ITEMS = [
     label: 'OpenAPI',
     icon: Braces,
     featureId: 'openApi' as PersonalFeatureId,
-  },
-  {
-    href: '/docs/ai',
-    label: 'AI Models',
-    icon: BrainCircuit,
-    featureId: 'aiWorkspace' as PersonalFeatureId,
-  },
-  {
-    href: '/docs/ai/prompts',
-    label: 'AI Prompts',
-    icon: PencilLine,
-    featureId: 'aiWorkspace' as PersonalFeatureId,
   },
   {
     href: '/docs/analytics',
@@ -150,9 +136,6 @@ function isActive(pathname: string, href: string) {
   }
   if (href === '/docs/compare') {
     return pathname.startsWith('/docs/compare')
-  }
-  if (href === '/docs/ai') {
-    return pathname === '/docs/ai'
   }
   return pathname.startsWith(href)
 }

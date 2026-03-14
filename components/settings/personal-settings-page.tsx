@@ -206,13 +206,13 @@ export function PersonalSettingsPage({
           {featureVisibility.aiWorkspace ? (
             <>
               <Button asChild variant="outline" size="sm">
-                <Link href="/docs/ai">
+                <Link href="/docs/settings/ai">
                   <BrainCircuit data-icon="inline-start" />
                   AI models
                 </Link>
               </Button>
               <Button asChild variant="outline" size="sm">
-                <Link href="/docs/ai/prompts">
+                <Link href="/docs/settings/ai-prompts">
                   <PencilLine data-icon="inline-start" />
                   AI prompts
                 </Link>

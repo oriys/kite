@@ -48,7 +48,7 @@ export const PERSONAL_FEATURE_CONFIG: Record<
     label: 'AI workspace',
     description:
       'Hide the AI models and AI prompts management pages when you do not need to tune browser-level AI controls.',
-    href: '/docs/ai',
+    href: '/docs/settings/ai',
   },
   analytics: {
     label: 'Analytics',

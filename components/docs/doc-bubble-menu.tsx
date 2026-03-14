@@ -985,7 +985,7 @@ export function DocBubbleMenu({
                           className="rounded-lg px-2 py-2"
                           onSelect={() => {
                             closeAiMenu()
-                            router.push('/docs/ai')
+                            router.push('/docs/settings/ai')
                           }}
                         >
                           <AiMenuItemContent
