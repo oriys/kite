@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 
 import { REVIEW_READ_ONLY_AI_ACTIONS } from '@/lib/ai'
@@ -43,6 +44,7 @@ import {
 import { VisibilitySelector } from '@/components/visibility-selector'
 import { VisibilityBadge } from '@/components/visibility-badge'
 import { DocFeedback } from '@/components/doc-feedback'
+import { ApprovalBanner } from '@/components/approval-banner'
 import { ExportMenu } from '@/components/export-menu'
 import { PresenceAvatars } from '@/components/presence-avatars'
 import { LocaleSwitcher } from '@/components/locale-switcher'
@@ -126,6 +128,8 @@ interface EditorSnapshot {
 export function DocEditorPageClient() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { data: session } = useSession()
+  const currentUserId = session?.user?.id ?? ''
   const docId = searchParams.get('doc')
   const translationParam = searchParams.get('translation')
   const { doc, loading, update, transition, remove, duplicate, refresh } = useDocument(docId)
@@ -1119,7 +1123,7 @@ export function DocEditorPageClient() {
                 pendingLocale={pendingLocale}
                 onLocaleChange={handleLocaleChange}
               />
-              <PresenceAvatars documentId={doc.id} currentUserId={doc.createdBy ?? ''} />
+              <PresenceAvatars documentId={doc.id} currentUserId={currentUserId} />
               <Button
                 variant={referencePanelOpen ? 'secondary' : 'ghost'}
                 size="icon"
@@ -1153,6 +1157,18 @@ export function DocEditorPageClient() {
                 ? `This document is ${doc.status}. Revert to draft to make changes.`
                 : 'You currently have view-only access to this document. Ask a document manager for edit permission.'}
             </p>
+          </div>
+        </div>
+      ) : null}
+
+      {!isEditorFullscreen && doc.status === 'review' ? (
+        <div className="border-b border-border/60 px-4 py-3 sm:px-6">
+          <div className={getEditorShellClassName(documentResizeActive)} style={editorShellStyle}>
+            <ApprovalBanner
+              documentId={doc.id}
+              currentUserId={currentUserId}
+              onStatusChange={() => void refresh()}
+            />
           </div>
         </div>
       ) : null}

@@ -60,6 +60,7 @@ interface ApprovalRequest {
 interface ApprovalBannerProps {
   documentId: string
   currentUserId: string
+  onStatusChange?: (status: ApprovalRequest['status']) => void
   className?: string
 }
 
@@ -93,6 +94,7 @@ const statusConfig = {
 export function ApprovalBanner({
   documentId,
   currentUserId,
+  onStatusChange,
   className,
 }: ApprovalBannerProps) {
   const [approval, setApproval] = React.useState<ApprovalRequest | null>(null)
@@ -106,7 +108,6 @@ export function ApprovalBanner({
     async function loadApproval() {
       try {
         const params = new URLSearchParams({
-          status: 'pending',
           documentId,
           limit: '1',
         })
@@ -160,11 +161,13 @@ export function ApprovalBanner({
       })
       if (res.ok) {
         const data = await res.json()
+        const newStatus = data.requestStatus ?? approval.status
         setApproval((prev) =>
           prev
-            ? { ...prev, status: data.requestStatus ?? prev.status }
+            ? { ...prev, status: newStatus }
             : null,
         )
+        onStatusChange?.(newStatus)
       }
     } finally {
       setSubmitting(false)

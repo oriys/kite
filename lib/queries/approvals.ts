@@ -194,7 +194,7 @@ export async function submitApprovalDecision(
         .where(eq(approvalRequests.id, requestId))
     }
 
-    return { reviewer, requestStatus: newStatus }
+    return { reviewer, requestStatus: newStatus, requesterId: request.requesterId, documentId: request.documentId }
   })
 }
 

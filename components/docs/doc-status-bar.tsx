@@ -44,6 +44,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { SubmitForReviewDialog } from '@/components/docs/submit-for-review-dialog'
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error' | 'offline'
 
@@ -251,6 +252,7 @@ export function DocStatusBar({
   const recentVersions = doc.versions.slice(0, 6)
   const totalVersions = doc.versionCount ?? doc.versions.length
   const [diffVersionId, setDiffVersionId] = React.useState<string | null>(null)
+  const [reviewDialogOpen, setReviewDialogOpen] = React.useState(false)
   const hasSecondaryActions = doc.canDuplicate || doc.canDelete
 
   return (
@@ -444,29 +446,50 @@ export function DocStatusBar({
 
         {/* Primary lifecycle action */}
         {doc.canTransition && config.next && config.nextLabel && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button size="sm" className="h-7 px-3 text-xs">
+          config.next === 'review' ? (
+            <>
+              <Button
+                size="sm"
+                className="h-7 px-3 text-xs"
+                onClick={() => setReviewDialogOpen(true)}
+              >
                 {config.nextLabel}
                 <ChevronRight className="ml-1 size-3" />
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{config.nextLabel}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will move &ldquo;{doc.title}&rdquo; from {config.label} to{' '}
-                  {STATUS_CONFIG[config.next].label}. You can revert to Draft later.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => onTransition(config.next!)}>
+              <SubmitForReviewDialog
+                open={reviewDialogOpen}
+                onOpenChange={setReviewDialogOpen}
+                documentId={doc.id}
+                documentTitle={doc.title}
+                workspaceId={doc.workspaceId}
+                onConfirm={() => onTransition(config.next!)}
+              />
+            </>
+          ) : (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" className="h-7 px-3 text-xs">
                   {config.nextLabel}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                  <ChevronRight className="ml-1 size-3" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{config.nextLabel}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will move &ldquo;{doc.title}&rdquo; from {config.label} to{' '}
+                    {STATUS_CONFIG[config.next].label}. You can revert to Draft later.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onTransition(config.next!)}>
+                    {config.nextLabel}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )
         )}
       </div>
     </div>

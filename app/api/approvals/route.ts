@@ -5,6 +5,7 @@ import {
   createApprovalRequest,
   listApprovalRequests,
 } from '@/lib/queries/approvals'
+import { createBulkNotifications } from '@/lib/queries/notifications'
 
 export async function GET(request: NextRequest) {
   const result = await withWorkspaceAuth('guest')
@@ -54,6 +55,21 @@ export async function POST(request: NextRequest) {
       requiredApprovals: body.requiredApprovals,
       deadline: body.deadline ? new Date(body.deadline) : undefined,
     },
+  )
+
+  // Notify all reviewers
+  await createBulkNotifications(
+    reviewerIds.map((reviewerId: string) => ({
+      recipientId: reviewerId,
+      workspaceId: result.ctx.workspaceId,
+      type: 'approval_request' as const,
+      title: 'Review requested',
+      body: `You have been asked to review: ${title}`,
+      linkUrl: `/docs/editor?doc=${documentId}`,
+      resourceType: 'approval',
+      resourceId: approval.id,
+      actorId: result.ctx.userId,
+    })),
   )
 
   return NextResponse.json(approval, { status: 201 })
