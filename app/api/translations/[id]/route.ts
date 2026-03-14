@@ -3,8 +3,35 @@ import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
 import {
   updateTranslationStatus,
-  deleteTranslationLink,
+  deleteTranslation,
+  getTranslation,
+  getLatestTranslationVersion,
+  getTranslationVersions,
+  addTranslationVersion,
 } from '@/lib/queries/translations'
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const result = await withWorkspaceAuth('guest')
+  if ('error' in result) return result.error
+
+  const { id } = await params
+  const translation = await getTranslation(id)
+  if (!translation) return notFound()
+
+  const [latestVersion, versions] = await Promise.all([
+    getLatestTranslationVersion(id),
+    getTranslationVersions(id),
+  ])
+
+  return NextResponse.json({
+    ...translation,
+    latestVersion,
+    versions,
+  })
+}
 
 export async function PUT(
   request: NextRequest,
@@ -15,12 +42,31 @@ export async function PUT(
 
   const { id } = await params
   const body = await request.json().catch(() => null)
-  if (!body?.status) return badRequest('status is required')
 
-  const link = await updateTranslationStatus(id, body.status)
-  if (!link) return notFound()
+  // Update status
+  if (body?.status) {
+    const updated = await updateTranslationStatus(id, body.status)
+    if (!updated) return notFound()
+    return NextResponse.json(updated)
+  }
 
-  return NextResponse.json(link)
+  // Add a new version
+  if (body?.title !== undefined || body?.content !== undefined) {
+    const translation = await getTranslation(id)
+    if (!translation) return notFound()
+
+    const latest = await getLatestTranslationVersion(id)
+    const version = await addTranslationVersion({
+      translationId: id,
+      title: typeof body.title === 'string' ? body.title : (latest?.title ?? ''),
+      content: typeof body.content === 'string' ? body.content : (latest?.content ?? ''),
+      translatedBy: result.ctx.userId,
+    })
+
+    return NextResponse.json(version)
+  }
+
+  return badRequest('Provide status, or title/content for a new version')
 }
 
 export async function DELETE(
@@ -31,6 +77,6 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await params
-  await deleteTranslationLink(id)
+  await deleteTranslation(id)
   return NextResponse.json({ success: true })
 }

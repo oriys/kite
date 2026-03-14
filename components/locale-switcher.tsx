@@ -1,13 +1,14 @@
 'use client'
 
-import { Globe, ChevronDown, Loader2 } from 'lucide-react'
+import * as React from 'react'
+import { Check, Globe, ChevronDown, Loader2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
 
 const LOCALES = [
   { code: 'en', label: 'English' },
@@ -23,9 +24,9 @@ const LOCALES = [
 
 interface LocaleSwitcherProps {
   currentLocale: string
-  availableLocales?: { code: string; label?: string; documentId?: string }[]
+  availableLocales?: { code: string; translationId?: string }[]
   pendingLocale?: string | null
-  onLocaleChange: (locale: string, documentId?: string) => void
+  onLocaleChange: (locale: string, translationId: string | undefined, label: string) => void
 }
 
 export function LocaleSwitcher({
@@ -34,6 +35,8 @@ export function LocaleSwitcher({
   pendingLocale = null,
   onLocaleChange,
 }: LocaleSwitcherProps) {
+  const [open, setOpen] = React.useState(false)
+
   const currentLabel =
     LOCALES.find((l) => l.code === currentLocale)?.label ?? currentLocale
 
@@ -42,40 +45,96 @@ export function LocaleSwitcher({
     return {
       ...l,
       available: !!available || l.code === currentLocale,
-      documentId: available?.documentId,
+      translationId: available?.translationId,
     }
   })
 
+  const existingLocales = mergedLocales.filter((l) => l.available)
+  const creatableLocales = mergedLocales.filter((l) => !l.available)
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
           <Globe className="h-3.5 w-3.5" />
           {currentLabel}
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
-        {mergedLocales.map((locale) => (
-          <DropdownMenuItem
-            key={locale.code}
-            disabled={locale.code === currentLocale || pendingLocale === locale.code}
-            className={
-              locale.code === currentLocale ? 'bg-accent/10 font-medium' : ''
-            }
-            onClick={() => onLocaleChange(locale.code, locale.documentId)}
-          >
-            <span className="flex-1">{locale.label}</span>
-            {pendingLocale === locale.code ? (
-              <Loader2 className="size-3 animate-spin text-muted-foreground" />
-            ) : !locale.available ? (
-              <span className="text-[10px] font-medium text-muted-foreground">
-                Create
-              </span>
-            ) : null}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-48 p-1">
+        {/* Existing translations */}
+        <div className="flex flex-col">
+          {existingLocales.map((locale) => {
+            const isCurrent = locale.code === currentLocale
+            const isPending = pendingLocale === locale.code
+
+            return (
+              <button
+                key={locale.code}
+                type="button"
+                disabled={isPending}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors',
+                  isCurrent
+                    ? 'font-medium text-foreground'
+                    : 'text-foreground hover:bg-accent/50',
+                  isPending && 'opacity-50',
+                )}
+                onClick={() => {
+                  if (isCurrent) return
+                  onLocaleChange(locale.code, locale.translationId, locale.label)
+                  setOpen(false)
+                }}
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  {isPending ? (
+                    <Loader2 className="size-3 animate-spin text-muted-foreground" />
+                  ) : isCurrent ? (
+                    <Check className="size-3.5" />
+                  ) : null}
+                </span>
+                <span className="flex-1 text-left">{locale.label}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Separator + creatable translations */}
+        {creatableLocales.length > 0 ? (
+          <>
+            <div className="my-1 h-px bg-border" />
+            <div className="flex flex-col">
+              {creatableLocales.map((locale) => {
+                const isPending = pendingLocale === locale.code
+
+                return (
+                  <button
+                    key={locale.code}
+                    type="button"
+                    disabled={isPending}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground',
+                      isPending && 'opacity-50',
+                    )}
+                    onClick={() => {
+                      onLocaleChange(locale.code, locale.translationId, locale.label)
+                    }}
+                  >
+                    <span className="flex size-4 shrink-0 items-center justify-center">
+                      {isPending ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Plus className="size-3 opacity-50" />
+                      )}
+                    </span>
+                    <span className="flex-1 text-left">{locale.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   )
 }

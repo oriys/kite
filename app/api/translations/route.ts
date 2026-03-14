@@ -7,7 +7,7 @@ import {
   notFound,
 } from '@/lib/api-utils'
 import {
-  createTranslationLink,
+  createTranslation,
   getTranslationsForDocument,
 } from '@/lib/queries/translations'
 import { getDocument } from '@/lib/queries/documents'
@@ -33,46 +33,33 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const result = await withWorkspaceAuth('guest')
+  const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
 
-  const { sourceDocumentId, translatedDocumentId, sourceLocale, targetLocale } = body
+  const { documentId, locale, title, content } = body
 
-  if (!sourceDocumentId || !translatedDocumentId || !sourceLocale || !targetLocale)
-    return badRequest('sourceDocumentId, translatedDocumentId, sourceLocale, and targetLocale are required')
-
-  const sourceDocument = await getDocument(
-    sourceDocumentId,
-    result.ctx.workspaceId,
-  )
-  const translatedDocument = await getDocument(
-    translatedDocumentId,
-    result.ctx.workspaceId,
-  )
-  if (!sourceDocument || !translatedDocument) return notFound()
-
-  const accessMap = await buildDocumentAccessMap(
-    [sourceDocument, translatedDocument],
-    result.ctx.userId,
-    result.ctx.role,
-  )
-
-  if (
-    !accessMap.get(sourceDocument.id)?.canEdit
-    || !accessMap.get(translatedDocument.id)?.canEdit
-  ) {
-    return forbidden()
+  if (!documentId || !locale) {
+    return badRequest('documentId and locale are required')
   }
 
-  const link = await createTranslationLink(
-    sourceDocumentId,
-    translatedDocumentId,
-    sourceLocale,
-    targetLocale,
-  )
+  const document = await getDocument(documentId, result.ctx.workspaceId)
+  if (!document) return notFound()
 
-  return NextResponse.json(link, { status: 201 })
+  const access = (
+    await buildDocumentAccessMap([document], result.ctx.userId, result.ctx.role)
+  ).get(document.id)
+  if (!access?.canEdit) return forbidden()
+
+  const created = await createTranslation({
+    documentId,
+    locale,
+    title: title || document.title,
+    content: content || document.content,
+    translatedBy: result.ctx.userId,
+  })
+
+  return NextResponse.json(created, { status: created.created ? 201 : 200 })
 }

@@ -115,7 +115,7 @@ export function DocEditorPageClient() {
   const docId = searchParams.get('doc')
   const { doc, loading, update, transition, remove, duplicate, refresh } = useDocument(docId)
   const [availableLocales, setAvailableLocales] = React.useState<
-    { code: string; documentId?: string }[]
+    { code: string; translationId?: string }[]
   >([])
   const [pendingLocale, setPendingLocale] = React.useState<string | null>(null)
   const [title, setTitle] = React.useState('')
@@ -189,7 +189,7 @@ export function DocEditorPageClient() {
 
         const data = (await response.json()) as {
           currentLocale: string
-          translations: { locale: string; documentId: string }[]
+          translations: { id: string; locale: string; status: string }[]
         }
 
         if (cancelled) return
@@ -197,7 +197,7 @@ export function DocEditorPageClient() {
         setAvailableLocales(
           data.translations.map((translation) => ({
             code: translation.locale,
-            documentId: translation.documentId,
+            translationId: translation.id,
           })),
         )
       } catch {
@@ -559,52 +559,96 @@ export function DocEditorPageClient() {
                 currentLocale={doc.locale ?? 'en'}
                 availableLocales={availableLocales}
                 pendingLocale={pendingLocale}
-                onLocaleChange={async (locale, targetDocumentId) => {
+                onLocaleChange={async (locale, translationId, targetLabel) => {
                   if (locale === (doc.locale ?? 'en')) {
-                    return
-                  }
-
-                  if (targetDocumentId) {
-                    router.push(getDocEditorHref(targetDocumentId))
                     return
                   }
 
                   setPendingLocale(locale)
                   try {
+                    if (translationId) {
+                      // Fetch existing translation content and load into editor
+                      const res = await fetch(`/api/translations/${translationId}`)
+                      if (!res.ok) throw new Error('Failed to load translation')
+                      const data = (await res.json()) as {
+                        latestVersion?: { title?: string; content?: string } | null
+                      }
+                      if (data.latestVersion) {
+                        setTitle(data.latestVersion.title ?? title)
+                        setContent(data.latestVersion.content ?? content)
+                        toast.info(`Loaded ${targetLabel} translation`)
+                      }
+                      return
+                    }
+
+                    // Create new translation — translate via AI first
+                    const translateText = async (text: string) => {
+                      if (!text.trim()) return text
+                      const res = await fetch('/api/ai/transform', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          action: 'translate',
+                          text,
+                          targetLanguage: targetLabel,
+                        }),
+                      })
+                      if (!res.ok) return null
+                      const data = await res.json().catch(() => null) as
+                        | { result?: string }
+                        | null
+                      return data?.result ?? null
+                    }
+
+                    const [translatedTitle, translatedContent] = await Promise.all([
+                      translateText(title),
+                      translateText(content),
+                    ])
+
                     const response = await fetch(`/api/documents/${doc.id}/translations`, {
                       method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         targetLocale: locale,
-                        title,
-                        content,
-                        visibility,
-                        apiVersionId: doc.apiVersionId,
-                        sourceLocale: doc.locale ?? 'en',
+                        title: translatedTitle ?? title,
+                        content: translatedContent ?? content,
                       }),
                     })
 
                     const data = await response.json().catch(() => null) as
-                      | { documentId?: string; error?: string }
+                      | { translationId?: string; versionId?: string; error?: string }
                       | null
 
-                    if (!response.ok || !data?.documentId) {
+                    if (!response.ok || !data?.translationId) {
                       throw new Error(
                         data && 'error' in data && typeof data.error === 'string'
                           ? data.error
-                          : 'Could not create the translation document.',
+                          : 'Could not create the translation.',
                       )
                     }
 
-                    router.push(getDocEditorHref(data.documentId))
+                    // Reload translations list and show translated content
+                    setAvailableLocales((prev) => [
+                      ...prev,
+                      { code: locale, translationId: data.translationId },
+                    ])
+
+                    if (translatedContent) {
+                      setTitle(translatedTitle ?? title)
+                      setContent(translatedContent)
+                      toast.success(`${targetLabel} translation created`)
+                    } else {
+                      toast.info('Translation created', {
+                        description:
+                          'AI translation was unavailable — the original content was saved.',
+                      })
+                    }
                   } catch (error) {
-                    toast.error('Translation creation failed', {
+                    toast.error('Translation failed', {
                       description:
                         error instanceof Error
                           ? error.message
-                          : 'Could not create the translation document.',
+                          : 'Could not create the translation.',
                     })
                   } finally {
                     setPendingLocale(null)

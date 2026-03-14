@@ -1185,38 +1185,68 @@ export const documentTranslations = pgTable(
     id: text('id')
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    sourceDocumentId: text('source_document_id')
+    documentId: text('document_id')
       .notNull()
       .references(() => documents.id, { onDelete: 'cascade' }),
-    translatedDocumentId: text('translated_document_id')
-      .notNull()
-      .references(() => documents.id, { onDelete: 'cascade' }),
-    sourceLocale: text('source_locale').notNull(),
-    targetLocale: text('target_locale').notNull(),
-    translationStatus: text('translation_status').notNull().default('draft'),
+    locale: text('locale').notNull(),
+    status: text('status').notNull().default('draft'),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { mode: 'date' }),
   },
   (t) => [
-    uniqueIndex('doc_translations_source_target_idx')
-      .on(t.sourceDocumentId, t.targetLocale)
+    uniqueIndex('doc_translations_doc_locale_idx')
+      .on(t.documentId, t.locale)
       .where(sql`${t.deletedAt} is null`),
-    index('doc_translations_translated_idx').on(t.translatedDocumentId),
+  ],
+)
+
+export const documentTranslationVersions = pgTable(
+  'document_translation_versions',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    translationId: text('translation_id')
+      .notNull()
+      .references(() => documentTranslations.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    translatedBy: text('translated_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('doc_translation_versions_translation_idx').on(t.translationId),
+    index('doc_translation_versions_created_idx').on(
+      t.translationId,
+      t.createdAt,
+    ),
   ],
 )
 
 export const documentTranslationsRelations = relations(
   documentTranslations,
-  ({ one }) => ({
-    sourceDocument: one(documents, {
-      fields: [documentTranslations.sourceDocumentId],
+  ({ one, many }) => ({
+    document: one(documents, {
+      fields: [documentTranslations.documentId],
       references: [documents.id],
-      relationName: 'sourceTranslations',
     }),
-    translatedDocument: one(documents, {
-      fields: [documentTranslations.translatedDocumentId],
-      references: [documents.id],
-      relationName: 'translatedFrom',
+    versions: many(documentTranslationVersions),
+  }),
+)
+
+export const documentTranslationVersionsRelations = relations(
+  documentTranslationVersions,
+  ({ one }) => ({
+    translation: one(documentTranslations, {
+      fields: [documentTranslationVersions.translationId],
+      references: [documentTranslations.id],
+    }),
+    translator: one(users, {
+      fields: [documentTranslationVersions.translatedBy],
+      references: [users.id],
     }),
   }),
 )

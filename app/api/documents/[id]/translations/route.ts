@@ -9,7 +9,7 @@ import {
 import { getDocument } from '@/lib/queries/documents'
 import { buildDocumentAccessMap } from '@/lib/queries/document-permissions'
 import {
-  createTranslatedDocument,
+  createTranslation,
   getTranslationsForDocument,
   SUPPORTED_LOCALES,
 } from '@/lib/queries/translations'
@@ -34,7 +34,18 @@ export async function GET(
 
   return NextResponse.json({
     currentLocale: doc.locale ?? 'en',
-    translations,
+    translations: translations.map((t) => ({
+      id: t.id,
+      locale: t.locale,
+      status: t.status,
+      latestVersion: t.latestVersion
+        ? {
+            id: t.latestVersion.id,
+            title: t.latestVersion.title,
+            createdAt: t.latestVersion.createdAt,
+          }
+        : null,
+    })),
   })
 }
 
@@ -49,24 +60,8 @@ export async function POST(
   const body = await request.json().catch(() => null)
   const targetLocale =
     typeof body?.targetLocale === 'string' ? body.targetLocale.trim() : ''
-  const sourceSnapshot = body && typeof body === 'object'
-    ? {
-        title: typeof body.title === 'string' ? body.title : undefined,
-        content: typeof body.content === 'string' ? body.content : undefined,
-        visibility:
-          body.visibility === 'public'
-          || body.visibility === 'partner'
-          || body.visibility === 'private'
-            ? body.visibility
-            : undefined,
-        apiVersionId:
-          typeof body.apiVersionId === 'string' || body.apiVersionId === null
-            ? body.apiVersionId
-            : undefined,
-        sourceLocale:
-          typeof body.sourceLocale === 'string' ? body.sourceLocale : undefined,
-      }
-    : undefined
+  const title = typeof body?.title === 'string' ? body.title : ''
+  const content = typeof body?.content === 'string' ? body.content : ''
 
   if (!targetLocale) return badRequest('targetLocale is required')
   if (!SUPPORTED_LOCALES.some((locale) => locale.code === targetLocale)) {
@@ -84,15 +79,13 @@ export async function POST(
   ).get(doc.id)
   if (!access?.canEdit) return forbidden()
 
-  const created = await createTranslatedDocument({
-    sourceDocumentId: doc.id,
-    workspaceId: result.ctx.workspaceId,
-    actorId: result.ctx.userId,
-    targetLocale,
-    sourceSnapshot,
+  const created = await createTranslation({
+    documentId: doc.id,
+    locale: targetLocale,
+    title: title || doc.title,
+    content: content || doc.content,
+    translatedBy: result.ctx.userId,
   })
-
-  if (!created) return notFound()
 
   return NextResponse.json(created, { status: created.created ? 201 : 200 })
 }

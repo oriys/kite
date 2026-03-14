@@ -1,195 +1,9 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import { db } from '../db'
-import { documentPermissions, documentTranslations, documents } from '../schema'
-
-export async function createTranslationLink(
-  sourceDocumentId: string,
-  translatedDocumentId: string,
-  sourceLocale: string,
-  targetLocale: string,
-) {
-  const [link] = await db
-    .insert(documentTranslations)
-    .values({ sourceDocumentId, translatedDocumentId, sourceLocale, targetLocale })
-    .returning()
-  return link
-}
-
-export async function createTranslatedDocument(input: {
-  sourceDocumentId: string
-  workspaceId: string
-  actorId: string
-  targetLocale: string
-  sourceSnapshot?: {
-    title?: string
-    content?: string
-    visibility?: 'public' | 'partner' | 'private'
-    apiVersionId?: string | null
-    sourceLocale?: string
-  }
-}) {
-  const existing = await db
-    .select({
-      documentId: documentTranslations.translatedDocumentId,
-    })
-    .from(documentTranslations)
-    .where(
-      and(
-        eq(documentTranslations.sourceDocumentId, input.sourceDocumentId),
-        eq(documentTranslations.targetLocale, input.targetLocale),
-        isNull(documentTranslations.deletedAt),
-      ),
-    )
-    .limit(1)
-
-  if (existing[0]) {
-    return {
-      created: false,
-      documentId: existing[0].documentId,
-    }
-  }
-
-  return db.transaction(async (tx) => {
-    const [sourceDocument] = await tx
-      .select({
-        id: documents.id,
-        workspaceId: documents.workspaceId,
-        title: documents.title,
-        content: documents.content,
-        visibility: documents.visibility,
-        apiVersionId: documents.apiVersionId,
-        locale: documents.locale,
-      })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.id, input.sourceDocumentId),
-          eq(documents.workspaceId, input.workspaceId),
-          isNull(documents.deletedAt),
-        ),
-      )
-
-    if (!sourceDocument) {
-      return null
-    }
-
-    const permissionRows = await tx
-      .select({
-        userId: documentPermissions.userId,
-        level: documentPermissions.level,
-        grantedBy: documentPermissions.grantedBy,
-      })
-      .from(documentPermissions)
-      .where(eq(documentPermissions.documentId, input.sourceDocumentId))
-
-    const [document] = await tx
-      .insert(documents)
-      .values({
-        workspaceId: sourceDocument.workspaceId,
-        title: input.sourceSnapshot?.title?.trim() || sourceDocument.title,
-        content: input.sourceSnapshot?.content ?? sourceDocument.content,
-        summary: '',
-        visibility: input.sourceSnapshot?.visibility ?? sourceDocument.visibility,
-        apiVersionId:
-          input.sourceSnapshot?.apiVersionId === undefined
-            ? sourceDocument.apiVersionId
-            : input.sourceSnapshot.apiVersionId,
-        locale: input.targetLocale,
-        createdBy: input.actorId,
-      })
-      .returning()
-
-    if (permissionRows.length > 0) {
-      await tx.insert(documentPermissions).values(
-        permissionRows.map((permission) => ({
-          documentId: document.id,
-          userId: permission.userId,
-          level: permission.level,
-          grantedBy: permission.grantedBy,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })),
-      )
-    }
-
-    await tx.insert(documentTranslations).values({
-      sourceDocumentId: input.sourceDocumentId,
-      translatedDocumentId: document.id,
-      sourceLocale: input.sourceSnapshot?.sourceLocale ?? sourceDocument.locale,
-      targetLocale: input.targetLocale,
-    })
-
-    return {
-      created: true,
-      documentId: document.id,
-    }
-  })
-}
-
-export async function getTranslationsForDocument(documentId: string) {
-  const asSource = await db
-    .select({
-      id: documentTranslations.id,
-      documentId: documentTranslations.translatedDocumentId,
-      locale: documentTranslations.targetLocale,
-      status: documentTranslations.translationStatus,
-      documentTitle: documents.title,
-    })
-    .from(documentTranslations)
-    .innerJoin(
-      documents,
-      eq(documentTranslations.translatedDocumentId, documents.id),
-    )
-    .where(
-      and(
-        eq(documentTranslations.sourceDocumentId, documentId),
-        isNull(documentTranslations.deletedAt),
-        isNull(documents.deletedAt),
-      ),
-    )
-
-  const asTarget = await db
-    .select({
-      id: documentTranslations.id,
-      documentId: documentTranslations.sourceDocumentId,
-      locale: documentTranslations.sourceLocale,
-      status: documentTranslations.translationStatus,
-      documentTitle: documents.title,
-    })
-    .from(documentTranslations)
-    .innerJoin(
-      documents,
-      eq(documentTranslations.sourceDocumentId, documents.id),
-    )
-    .where(
-      and(
-        eq(documentTranslations.translatedDocumentId, documentId),
-        isNull(documentTranslations.deletedAt),
-        isNull(documents.deletedAt),
-      ),
-    )
-
-  return [...asSource, ...asTarget]
-}
-
-export async function updateTranslationStatus(
-  id: string,
-  status: string,
-) {
-  const [result] = await db
-    .update(documentTranslations)
-    .set({ translationStatus: status })
-    .where(and(eq(documentTranslations.id, id), isNull(documentTranslations.deletedAt)))
-    .returning()
-  return result ?? null
-}
-
-export async function deleteTranslationLink(id: string) {
-  await db
-    .update(documentTranslations)
-    .set({ deletedAt: new Date() })
-    .where(and(eq(documentTranslations.id, id), isNull(documentTranslations.deletedAt)))
-}
+import {
+  documentTranslations,
+  documentTranslationVersions,
+} from '../schema'
 
 export const SUPPORTED_LOCALES = [
   { code: 'en', label: 'English' },
@@ -202,3 +16,213 @@ export const SUPPORTED_LOCALES = [
   { code: 'de', label: 'Deutsch' },
   { code: 'pt', label: 'Português' },
 ] as const
+
+// --- Queries ---
+
+export async function getTranslationsForDocument(documentId: string) {
+  const translations = await db
+    .select({
+      id: documentTranslations.id,
+      locale: documentTranslations.locale,
+      status: documentTranslations.status,
+      createdAt: documentTranslations.createdAt,
+      updatedAt: documentTranslations.updatedAt,
+    })
+    .from(documentTranslations)
+    .where(
+      and(
+        eq(documentTranslations.documentId, documentId),
+        isNull(documentTranslations.deletedAt),
+      ),
+    )
+
+  // For each translation, fetch the latest version
+  const results = await Promise.all(
+    translations.map(async (translation) => {
+      const [latestVersion] = await db
+        .select({
+          id: documentTranslationVersions.id,
+          title: documentTranslationVersions.title,
+          translatedBy: documentTranslationVersions.translatedBy,
+          createdAt: documentTranslationVersions.createdAt,
+        })
+        .from(documentTranslationVersions)
+        .where(eq(documentTranslationVersions.translationId, translation.id))
+        .orderBy(desc(documentTranslationVersions.createdAt))
+        .limit(1)
+
+      return {
+        ...translation,
+        latestVersion: latestVersion ?? null,
+      }
+    }),
+  )
+
+  return results
+}
+
+export async function getTranslation(translationId: string) {
+  const [translation] = await db
+    .select()
+    .from(documentTranslations)
+    .where(
+      and(
+        eq(documentTranslations.id, translationId),
+        isNull(documentTranslations.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  return translation ?? null
+}
+
+export async function getTranslationByLocale(
+  documentId: string,
+  locale: string,
+) {
+  const [translation] = await db
+    .select()
+    .from(documentTranslations)
+    .where(
+      and(
+        eq(documentTranslations.documentId, documentId),
+        eq(documentTranslations.locale, locale),
+        isNull(documentTranslations.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  return translation ?? null
+}
+
+export async function getLatestTranslationVersion(translationId: string) {
+  const [version] = await db
+    .select()
+    .from(documentTranslationVersions)
+    .where(eq(documentTranslationVersions.translationId, translationId))
+    .orderBy(desc(documentTranslationVersions.createdAt))
+    .limit(1)
+
+  return version ?? null
+}
+
+export async function getTranslationVersions(translationId: string) {
+  return db
+    .select()
+    .from(documentTranslationVersions)
+    .where(eq(documentTranslationVersions.translationId, translationId))
+    .orderBy(desc(documentTranslationVersions.createdAt))
+}
+
+// --- Mutations ---
+
+export async function createTranslation(input: {
+  documentId: string
+  locale: string
+  title: string
+  content: string
+  translatedBy: string
+}) {
+  // Check for existing translation
+  const existing = await getTranslationByLocale(input.documentId, input.locale)
+  if (existing) {
+    // Add a new version to the existing translation
+    const [version] = await db
+      .insert(documentTranslationVersions)
+      .values({
+        translationId: existing.id,
+        title: input.title,
+        content: input.content,
+        translatedBy: input.translatedBy,
+      })
+      .returning()
+
+    await db
+      .update(documentTranslations)
+      .set({ updatedAt: new Date() })
+      .where(eq(documentTranslations.id, existing.id))
+
+    return {
+      created: false,
+      translationId: existing.id,
+      versionId: version.id,
+    }
+  }
+
+  // Create new translation + first version
+  return db.transaction(async (tx) => {
+    const [translation] = await tx
+      .insert(documentTranslations)
+      .values({
+        documentId: input.documentId,
+        locale: input.locale,
+      })
+      .returning()
+
+    const [version] = await tx
+      .insert(documentTranslationVersions)
+      .values({
+        translationId: translation.id,
+        title: input.title,
+        content: input.content,
+        translatedBy: input.translatedBy,
+      })
+      .returning()
+
+    return {
+      created: true,
+      translationId: translation.id,
+      versionId: version.id,
+    }
+  })
+}
+
+export async function addTranslationVersion(input: {
+  translationId: string
+  title: string
+  content: string
+  translatedBy: string
+}) {
+  const [version] = await db
+    .insert(documentTranslationVersions)
+    .values({
+      translationId: input.translationId,
+      title: input.title,
+      content: input.content,
+      translatedBy: input.translatedBy,
+    })
+    .returning()
+
+  await db
+    .update(documentTranslations)
+    .set({ updatedAt: new Date() })
+    .where(eq(documentTranslations.id, input.translationId))
+
+  return version
+}
+
+export async function updateTranslationStatus(id: string, status: string) {
+  const [result] = await db
+    .update(documentTranslations)
+    .set({ status, updatedAt: new Date() })
+    .where(
+      and(
+        eq(documentTranslations.id, id),
+        isNull(documentTranslations.deletedAt),
+      ),
+    )
+    .returning()
+  return result ?? null
+}
+
+export async function deleteTranslation(id: string) {
+  await db
+    .update(documentTranslations)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(documentTranslations.id, id),
+        isNull(documentTranslations.deletedAt),
+      ),
+    )
+}
