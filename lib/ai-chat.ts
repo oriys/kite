@@ -15,6 +15,7 @@ import {
 import { listStoredDocumentRelations } from '@/lib/document-relations'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
+import { resolveWorkspaceMcpToolSet } from '@/lib/mcp-tools'
 import {
   DEFAULT_EMBEDDING_MODEL,
   DEFAULT_RERANKER_MODEL,
@@ -39,6 +40,7 @@ import {
   MAX_RERANK_DOCUMENT_CHARS,
   SHOPLINE_DOCS_BASE_URL,
   TEMPERATURE_CHAT,
+  MAX_MCP_TOOL_STEPS,
 } from '@/lib/ai-config'
 
 type ChatSourceRelationType = 'primary' | 'reference'
@@ -1597,10 +1599,11 @@ export async function streamChatResponse(input: {
   // 3. Build system prompt with RAG context
   const systemPrompt = `${CHAT_SYSTEM_PROMPT}\n\n---\n\nDocumentation context:\n\n${contextText}`
 
-  // 4. Resolve AI model
-  const [providers, settings] = await Promise.all([
+  // 4. Resolve AI model + MCP tools
+  const [providers, settings, mcpTools] = await Promise.all([
     resolveWorkspaceAiProviders(input.workspaceId),
     getAiWorkspaceSettings(input.workspaceId),
+    resolveWorkspaceMcpToolSet(input.workspaceId).catch(() => undefined),
   ])
 
   const selection = resolveAiModelSelection({
@@ -1630,6 +1633,8 @@ export async function streamChatResponse(input: {
     systemPrompt,
     messages,
     temperature: TEMPERATURE_CHAT,
+    tools: mcpTools,
+    maxSteps: mcpTools ? MAX_MCP_TOOL_STEPS : undefined,
   })
 
   return {

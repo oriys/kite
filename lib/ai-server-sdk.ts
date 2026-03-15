@@ -1,7 +1,7 @@
 import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { generateText, streamText, embedMany } from 'ai'
+import { generateText, streamText, embedMany, type ToolSet } from 'ai'
 import type { LanguageModel, EmbeddingModel } from 'ai'
 
 import { createAiModelRef } from '@/lib/ai'
@@ -278,6 +278,8 @@ export async function requestAiChatCompletionStream(input: {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>
   model: string
   temperature?: number
+  tools?: ToolSet
+  maxSteps?: number
 }) {
   if (!input.provider.apiKey.trim()) {
     throw new AiCompletionError('This AI provider is missing an API key.', 503)
@@ -290,6 +292,7 @@ export async function requestAiChatCompletionStream(input: {
       system: input.systemPrompt,
       messages: input.messages,
       temperature: input.temperature ?? TEMPERATURE_CHAT,
+      ...(input.tools ? { tools: input.tools, maxSteps: input.maxSteps ?? 1 } : {}),
     })
 
     const encoder = new TextEncoder()

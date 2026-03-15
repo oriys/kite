@@ -137,3 +137,20 @@ export const SHOPLINE_DOCS_BASE_URL = envStr(
   'AI_SHOPLINE_DOCS_BASE_URL',
   'https://developer.shopline.com',
 )
+
+// ---------------------------------------------------------------------------
+// MCP (Model Context Protocol)
+// ---------------------------------------------------------------------------
+export const MAX_MCP_TOOLS_PER_REQUEST = envInt(
+  'AI_MAX_MCP_TOOLS_PER_REQUEST',
+  64,
+)
+export const MAX_MCP_TOOL_STEPS = envInt('AI_MAX_MCP_TOOL_STEPS', 5)
+export const MCP_TOOL_CALL_TIMEOUT_MS = envInt(
+  'AI_MCP_TOOL_CALL_TIMEOUT_MS',
+  30_000,
+)
+export const MCP_CONNECTION_TIMEOUT_MS = envInt(
+  'AI_MCP_CONNECTION_TIMEOUT_MS',
+  10_000,
+)

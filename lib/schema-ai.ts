@@ -201,3 +201,45 @@ export const aiChatMessagesRelations = relations(aiChatMessages, ({ one }) => ({
     references: [aiChatSessions.id],
   }),
 }))
+
+export const mcpTransportTypeEnum = pgEnum('mcp_transport_type', [
+  'stdio',
+  'sse',
+  'streamable_http',
+])
+
+export const mcpServerConfigs = pgTable(
+  'mcp_server_configs',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    transportType: mcpTransportTypeEnum('transport_type').notNull(),
+    // stdio transport fields
+    command: text('command'),
+    args: jsonb('args').$type<string[]>().default([]),
+    env: jsonb('env').$type<Record<string, string>>().default({}),
+    // SSE / streamable-http transport fields
+    url: text('url'),
+    headers: jsonb('headers').$type<Record<string, string>>().default({}),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { mode: 'date' }),
+  },
+  (t) => [index('mcp_server_configs_workspace_id_idx').on(t.workspaceId)],
+)
+
+export const mcpServerConfigsRelations = relations(
+  mcpServerConfigs,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [mcpServerConfigs.workspaceId],
+      references: [workspaces.id],
+    }),
+  }),
+)

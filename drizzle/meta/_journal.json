@@ -36,6 +36,20 @@
       "when": 1773480000000,
       "tag": "0004_translation_schema_redesign",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1773566400000,
+      "tag": "0005_document_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1773652800000,
+      "tag": "0006_mcp_server_configs",
+      "breakpoints": true
     }
   ]
 }

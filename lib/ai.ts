@@ -319,6 +319,61 @@ export function isAiProviderType(value: string): value is AiProviderType {
   return AI_PROVIDER_TYPES.includes(value as AiProviderType)
 }
 
+// ---------------------------------------------------------------------------
+// MCP types & constants
+// ---------------------------------------------------------------------------
+
+export const MCP_TRANSPORT_TYPES = ['stdio', 'sse', 'streamable_http'] as const
+
+export type McpTransportType = (typeof MCP_TRANSPORT_TYPES)[number]
+
+export const MCP_TRANSPORT_TYPE_LABELS: Record<McpTransportType, string> = {
+  stdio: 'Standard I/O',
+  sse: 'SSE',
+  streamable_http: 'Streamable HTTP',
+}
+
+export const MAX_MCP_SERVER_NAME_LENGTH = 80
+export const MAX_MCP_COMMAND_LENGTH = 500
+export const MAX_MCP_URL_LENGTH = 500
+export const MAX_MCP_ARGS_COUNT = 20
+export const MAX_MCP_ENV_COUNT = 20
+export const MAX_MCP_HEADERS_COUNT = 20
+
+export function isMcpTransportType(value: string): value is McpTransportType {
+  return MCP_TRANSPORT_TYPES.includes(value as McpTransportType)
+}
+
+export function getMcpTransportLabel(type: McpTransportType) {
+  return MCP_TRANSPORT_TYPE_LABELS[type]
+}
+
+export interface McpServerFormValues {
+  name: string
+  transportType: McpTransportType
+  command: string
+  args: string
+  env: string
+  url: string
+  headers: string
+  enabled: boolean
+}
+
+export function createDefaultMcpServerFormValues(
+  transportType: McpTransportType = 'stdio',
+): McpServerFormValues {
+  return {
+    name: '',
+    transportType,
+    command: '',
+    args: '',
+    env: '',
+    url: '',
+    headers: '',
+    enabled: true,
+  }
+}
+
 export function createDefaultAiProviderFormValues(
   providerType: AiProviderType = 'openai_compatible',
 ): AiProviderFormValues {
