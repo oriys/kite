@@ -9,9 +9,27 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { SsoSignInSection } from '@/components/auth/sso-signin-section'
 
 function isSafeCallbackUrl(url: string): boolean {
   return url.startsWith('/') && !url.startsWith('//')
+}
+
+function ssoErrorMessage(code: string): string {
+  const messages: Record<string, string> = {
+    sso_not_configured: 'SSO is not configured for this workspace.',
+    sso_misconfigured: 'SSO is misconfigured. Contact your workspace admin.',
+    sso_token_exchange_failed: 'Failed to authenticate with the identity provider.',
+    sso_userinfo_failed: 'Failed to retrieve user information from the identity provider.',
+    sso_no_access_token: 'Identity provider did not return an access token.',
+    sso_no_identifier: 'Identity provider did not return an email or user ID.',
+    sso_user_creation_failed: 'Failed to create user account.',
+    sso_invalid_state: 'Invalid SSO state. Please try again.',
+    sso_no_code: 'No authorization code received.',
+    sso_server_error: 'Server configuration error. Contact your administrator.',
+    missing_workspace: 'Please enter a workspace slug to use SSO.',
+  }
+  return messages[code] ?? 'SSO authentication failed. Please try again.'
 }
 
 export default async function SignInPage(props: {
@@ -42,7 +60,9 @@ export default async function SignInPage(props: {
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">
               {error === 'OAuthAccountNotLinked'
                 ? 'This email is already linked to another provider.'
-                : 'Something went wrong. Please try again.'}
+                : error.startsWith('sso_')
+                  ? ssoErrorMessage(error)
+                  : 'Something went wrong. Please try again.'}
             </p>
           )}
           {DEV_MOCK_AUTH_ENABLED ? (
@@ -118,6 +138,15 @@ export default async function SignInPage(props: {
               Continue with Google
             </Button>
           </form>
+          <div className="relative my-1">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or</span>
+            </div>
+          </div>
+          <SsoSignInSection />
         </CardContent>
       </Card>
     </div>
