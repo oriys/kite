@@ -17,6 +17,7 @@ interface DocFindReplaceProps {
 export function DocFindReplace({ editor, open, onOpenChange }: DocFindReplaceProps) {
   const [showReplace, setShowReplace] = React.useState(false)
   const searchInputRef = React.useRef<HTMLInputElement>(null)
+  const wasOpenRef = React.useRef(open)
 
   const storage = (editor.storage as unknown as Record<string, unknown>).searchReplace as {
     searchTerm: string
@@ -35,11 +36,13 @@ export function DocFindReplace({ editor, open, onOpenChange }: DocFindReplacePro
   React.useEffect(() => {
     if (open) {
       requestAnimationFrame(() => searchInputRef.current?.focus())
-    } else {
+    } else if (wasOpenRef.current) {
       editor.commands.clearSearch()
       setSearchTerm('')
       setReplaceTerm('')
     }
+
+    wasOpenRef.current = open
   }, [open, editor])
 
   const handleSearchChange = React.useCallback(
