@@ -57,6 +57,9 @@ export const documents = pgTable(
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { mode: 'date' }),
     locale: text('locale').notNull().default('en'),
+    publishedSlug: text('published_slug'),
+    publishOrder: integer('publish_order').default(0),
+    navSection: text('nav_section'),
     createdBy: text('created_by').references(() => users.id, {
       onDelete: 'set null',
     }),

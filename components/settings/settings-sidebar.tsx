@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, BrainCircuit, KeyRound, Palette, PencilLine, SlidersHorizontal, Users, UsersRound } from 'lucide-react'
+import { Bell, BrainCircuit, Key, KeyRound, Palette, PencilLine, Plug, SlidersHorizontal, Users, UsersRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const SETTINGS_NAV = [
@@ -29,6 +29,8 @@ const SETTINGS_NAV = [
       { href: '/docs/settings/ai', label: 'AI Models', icon: BrainCircuit },
       { href: '/docs/settings/ai-prompts', label: 'AI Prompts', icon: PencilLine },
       { href: '/docs/settings/notifications', label: 'Notifications', icon: Bell },
+      { href: '/docs/settings/integrations', label: 'Integrations', icon: Plug },
+      { href: '/docs/settings/tokens', label: 'API Tokens', icon: Key },
       { href: '/docs/settings/sso', label: 'SSO', icon: KeyRound },
     ],
   },

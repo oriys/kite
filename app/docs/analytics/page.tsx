@@ -3,8 +3,9 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SearchAnalyticsDashboard } from '@/components/analytics/search-analytics-dashboard'
 import { FeedbackDashboard } from '@/components/analytics/feedback-dashboard'
+import { PageAnalyticsDashboard } from '@/components/analytics/page-analytics-dashboard'
 import { FeatureGuard } from '@/components/docs/feature-guard'
-import { BarChart3, MessageSquare } from 'lucide-react'
+import { BarChart3, MessageSquare, Eye } from 'lucide-react'
 
 export default function AnalyticsPage() {
   return (
@@ -15,7 +16,7 @@ export default function AnalyticsPage() {
             Analytics
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Search usage and reader feedback across your documentation.
+            Search usage, reader feedback, and page views across your documentation.
           </p>
         </div>
 
@@ -29,6 +30,10 @@ export default function AnalyticsPage() {
               <MessageSquare className="size-3.5" />
               Feedback
             </TabsTrigger>
+            <TabsTrigger value="pageviews" className="gap-1.5">
+              <Eye className="size-3.5" />
+              Page Views
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="search">
@@ -37,6 +42,10 @@ export default function AnalyticsPage() {
 
           <TabsContent value="feedback">
             <FeedbackDashboard />
+          </TabsContent>
+
+          <TabsContent value="pageviews">
+            <PageAnalyticsDashboard />
           </TabsContent>
         </Tabs>
       </div>

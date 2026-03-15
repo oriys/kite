@@ -12,7 +12,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, RefreshCw, Trash2, FileJson, Download, GitCompare, Clock, Sparkles } from 'lucide-react'
+import { LintResultsPanel } from '@/components/openapi/lint-results-panel'
+import { MockServerPanel } from '@/components/openapi/mock-server-panel'
+import { SdkGeneratorPanel } from '@/components/openapi/sdk-generator-panel'
+import { Plus, RefreshCw, Trash2, FileJson, Download, GitCompare, Clock, Sparkles, ShieldCheck, Server, Code2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -307,6 +310,18 @@ export default function OpenApiPage() {
                   <FileJson className="size-3.5" />
                   Endpoints
                 </TabsTrigger>
+                <TabsTrigger value="mock" className="gap-1.5 text-xs">
+                  <Server className="size-3.5" />
+                  Mock
+                </TabsTrigger>
+                <TabsTrigger value="lint" className="gap-1.5 text-xs">
+                  <ShieldCheck className="size-3.5" />
+                  Lint
+                </TabsTrigger>
+                <TabsTrigger value="sdk" className="gap-1.5 text-xs">
+                  <Code2 className="size-3.5" />
+                  SDK
+                </TabsTrigger>
                 <TabsTrigger value="diff" className="gap-1.5 text-xs">
                   <GitCompare className="size-3.5" />
                   Diff
@@ -327,6 +342,18 @@ export default function OpenApiPage() {
 
               <TabsContent value="endpoints">
                 <EndpointReference endpoints={endpoints} />
+              </TabsContent>
+
+              <TabsContent value="mock">
+                <MockServerPanel openapiSourceId={selected.id} />
+              </TabsContent>
+
+              <TabsContent value="lint">
+                <LintResultsPanel openapiSourceId={selected.id} />
+              </TabsContent>
+
+              <TabsContent value="sdk">
+                <SdkGeneratorPanel openapiSourceId={selected.id} />
               </TabsContent>
 
               <TabsContent value="diff">
