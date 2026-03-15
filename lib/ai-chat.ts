@@ -16,6 +16,8 @@ import { listStoredDocumentRelations } from '@/lib/document-relations'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
 import { resolveWorkspaceMcpToolSet } from '@/lib/mcp-tools'
+import { getMcpPrompt } from '@/lib/mcp-client'
+import { getMcpServerConfig } from '@/lib/queries/mcp'
 import {
   DEFAULT_EMBEDDING_MODEL,
   DEFAULT_RERANKER_MODEL,
@@ -1558,6 +1560,28 @@ export async function saveChatMessage(input: {
   return message
 }
 
+// ─── MCP prompt resolution ──────────────────────────────────────
+
+async function resolveMcpPromptMessages(
+  workspaceId: string,
+  mcpPrompt: { serverId: string; name: string; arguments?: Record<string, string> },
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }> | undefined> {
+  try {
+    const config = await getMcpServerConfig(mcpPrompt.serverId, workspaceId)
+    if (!config) return undefined
+
+    const result = await getMcpPrompt(config, mcpPrompt.name, mcpPrompt.arguments)
+    if (!result.messages.length) return undefined
+
+    return result.messages.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }))
+  } catch {
+    return undefined
+  }
+}
+
 // ─── RAG chat pipeline ──────────────────────────────────────────
 
 export async function streamChatResponse(input: {
@@ -1566,6 +1590,11 @@ export async function streamChatResponse(input: {
   userMessage: string
   documentId?: string
   model?: string
+  mcpPrompt?: {
+    serverId: string
+    name: string
+    arguments?: Record<string, string>
+  }
 }) {
   // 1. Get chat history for context
   const history = await getChatHistory(input.sessionId)
@@ -1599,11 +1628,14 @@ export async function streamChatResponse(input: {
   // 3. Build system prompt with RAG context
   const systemPrompt = `${CHAT_SYSTEM_PROMPT}\n\n---\n\nDocumentation context:\n\n${contextText}`
 
-  // 4. Resolve AI model + MCP tools
-  const [providers, settings, mcpTools] = await Promise.all([
+  // 4. Resolve AI model + MCP tools + optional MCP prompt
+  const [providers, settings, mcpTools, mcpPromptMessages] = await Promise.all([
     resolveWorkspaceAiProviders(input.workspaceId),
     getAiWorkspaceSettings(input.workspaceId),
     resolveWorkspaceMcpToolSet(input.workspaceId).catch(() => undefined),
+    input.mcpPrompt
+      ? resolveMcpPromptMessages(input.workspaceId, input.mcpPrompt)
+      : Promise.resolve(undefined),
   ])
 
   const selection = resolveAiModelSelection({
@@ -1623,6 +1655,8 @@ export async function streamChatResponse(input: {
 
   // 5. Stream response with full conversation context
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    // Prepend MCP prompt messages if provided
+    ...(mcpPromptMessages ?? []),
     ...recentHistory,
     { role: 'user' as const, content: input.userMessage },
   ]

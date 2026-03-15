@@ -101,8 +101,8 @@ export function McpServerCard({
 
       <p className="mt-3 text-xs leading-5 text-muted-foreground">
         {server.enabled
-          ? 'This MCP server provides tools to the AI assistant.'
-          : 'This MCP server is saved but disabled. Enable it to expose its tools to the AI.'}
+          ? 'This MCP server provides tools, prompts, and resources to the AI assistant.'
+          : 'This MCP server is saved but disabled. Enable it to expose its capabilities to the AI.'}
       </p>
 
       <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2">

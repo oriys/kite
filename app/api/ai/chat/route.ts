@@ -23,6 +23,21 @@ export async function POST(request: NextRequest) {
   const documentId =
     typeof body.documentId === 'string' ? body.documentId : undefined
   const model = typeof body.model === 'string' ? body.model.trim() : undefined
+  const mcpPrompt =
+    body.mcpPrompt &&
+    typeof body.mcpPrompt === 'object' &&
+    typeof body.mcpPrompt.serverId === 'string' &&
+    typeof body.mcpPrompt.name === 'string'
+      ? {
+          serverId: body.mcpPrompt.serverId as string,
+          name: body.mcpPrompt.name as string,
+          arguments:
+            body.mcpPrompt.arguments &&
+            typeof body.mcpPrompt.arguments === 'object'
+              ? (body.mcpPrompt.arguments as Record<string, string>)
+              : undefined,
+        }
+      : undefined
 
   if (!message) return badRequest('Message is required')
   if (message.length > MAX_MESSAGE_LENGTH) {
@@ -56,6 +71,7 @@ export async function POST(request: NextRequest) {
       userMessage: message,
       documentId,
       model,
+      mcpPrompt,
     })
 
     // Collect full response for persistence (fork the stream)

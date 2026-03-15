@@ -144,8 +144,20 @@ export function DocMcpManagerPage() {
     try {
       const result = await testConnection(server.id)
       if (result.ok) {
+        const parts: string[] = []
+        if (result.toolCount > 0) {
+          parts.push(`${result.toolCount} tool${result.toolCount === 1 ? '' : 's'}`)
+        }
+        if (result.promptCount > 0) {
+          parts.push(`${result.promptCount} prompt${result.promptCount === 1 ? '' : 's'}`)
+        }
+        if (result.resourceCount > 0) {
+          parts.push(`${result.resourceCount} resource${result.resourceCount === 1 ? '' : 's'}`)
+        }
         toast.success(
-          `Connected successfully — ${result.toolCount} tool${result.toolCount === 1 ? '' : 's'} available`,
+          parts.length > 0
+            ? `Connected — ${parts.join(', ')}`
+            : 'Connected (no capabilities exposed)',
         )
       } else {
         toast.error(result.error ?? 'Connection test failed')

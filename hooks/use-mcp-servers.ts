@@ -157,6 +157,8 @@ export function useMcpServers() {
       return (await response.json()) as {
         ok: boolean
         toolCount: number
+        promptCount: number
+        resourceCount: number
         error?: string
       }
     },
