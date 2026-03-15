@@ -20,7 +20,7 @@ import {
   queuePendingDocumentSummary,
 } from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
-import { BookOpenText, Link2, MessageSquare, Tag } from 'lucide-react'
+import { BookOpenText, ChevronDown, Download, Globe, Link2, Lock, MessageSquare, MoreHorizontal, ShieldCheck, Tag, Users } from 'lucide-react'
 import type { CommentSelection } from '@/lib/editor/editor-helpers'
 import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
@@ -43,12 +43,21 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable'
-import { VisibilitySelector } from '@/components/visibility-selector'
-import { VisibilityBadge } from '@/components/visibility-badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { ApprovalBanner } from '@/components/approval-banner'
-import { ExportMenu } from '@/components/export-menu'
 import { PresenceAvatars } from '@/components/presence-avatars'
-import { LocaleSwitcher } from '@/components/locale-switcher'
 import { DocumentPermissionsDialog } from '@/components/docs/document-permissions-dialog'
 
 function getEditorShellClassName(resizing = false) {
@@ -63,6 +72,24 @@ function getEditorShellStyle(documentWidth: number) {
     maxWidth: `${clampDocEditorWidth(documentWidth)}px`,
   } satisfies React.CSSProperties
 }
+
+const LOCALE_OPTIONS = [
+  { code: 'en', label: 'English' },
+  { code: 'zh-CN', label: '简体中文' },
+  { code: 'zh-TW', label: '繁體中文' },
+  { code: 'ja', label: '日本語' },
+  { code: 'ko', label: '한국어' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'pt', label: 'Português' },
+] as const
+
+const VISIBILITY_OPTIONS = [
+  { value: 'public' as const, label: 'Public', Icon: Globe, iconClass: 'text-tone-success-text' },
+  { value: 'partner' as const, label: 'Partner', Icon: Users, iconClass: 'text-tone-caution-text' },
+  { value: 'private' as const, label: 'Private', Icon: Lock, iconClass: 'text-tone-error-text' },
+]
 
 function EditorSkeleton() {
   return (
@@ -156,6 +183,8 @@ export function DocEditorPageClient() {
   const [commentSidebarOpen, setCommentSidebarOpen] = React.useState(false)
   const [referencePanelOpen, setReferencePanelOpen] = React.useState(false)
   const [isEditorFullscreen, setIsEditorFullscreen] = React.useState(false)
+  const [metadataExpanded, setMetadataExpanded] = React.useState(false)
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = React.useState(false)
   const [pendingComment, setPendingComment] = React.useState<CommentSelection | null>(null)
   const [referenceDocIdentifier, setReferenceDocIdentifier] = React.useState<string | null>(null)
   const [visibility, setVisibility] = React.useState<'public' | 'partner' | 'private'>(
@@ -1183,6 +1212,26 @@ export function DocEditorPageClient() {
     : getEditorShellStyle(documentWidth)
   const showCommentSidebar = !isEditorFullscreen && commentSidebarOpen
   const showReferencePanel = !isEditorFullscreen && referencePanelOpen
+  const currentVisibility = VISIBILITY_OPTIONS.find((o) => o.value === visibility) ?? VISIBILITY_OPTIONS[2]
+  const currentLocaleLabel = LOCALE_OPTIONS.find((l) => l.code === activeLocale)?.label ?? activeLocale
+  const mergedLocales = LOCALE_OPTIONS.map((l) => {
+    const available = availableLocales.find((a) => a.code === l.code)
+    return {
+      ...l,
+      available: !!available || l.code === activeLocale,
+      translationId: available?.translationId,
+    }
+  })
+  const existingLocales = mergedLocales.filter((l) => l.available)
+  const creatableLocales = mergedLocales.filter((l) => !l.available)
+  const handleExport = (format: 'markdown' | 'html' | 'pdf' | 'docx', theme?: 'light' | 'dark') => {
+    const params = new URLSearchParams({
+      documentId: doc.id,
+      format,
+      ...(theme && { theme }),
+    })
+    window.open(`/api/export?${params}`, '_blank')
+  }
   const editorWorkspace = (
     <div
       className={cn(
@@ -1269,27 +1318,6 @@ export function DocEditorPageClient() {
                 placeholder="Untitled document…"
                 className="min-w-0 flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
               />
-              {isReadOnly || !doc.canManagePermissions ? (
-                <VisibilityBadge visibility={visibility} className="shrink-0" />
-              ) : (
-                <VisibilitySelector
-                  value={visibility}
-                  onChange={handleVisibilityChange}
-                  className="shrink-0"
-                />
-              )}
-              <DocumentPermissionsDialog
-                document={doc}
-                className="shrink-0"
-                onPermissionsChanged={refresh}
-              />
-              <ExportMenu documentId={doc.id} documentTitle={title} />
-              <LocaleSwitcher
-                currentLocale={activeLocale}
-                availableLocales={availableLocales}
-                pendingLocale={pendingLocale}
-                onLocaleChange={handleLocaleChange}
-              />
               <PresenceAvatars documentId={doc.id} currentUserId={currentUserId} />
               <Button
                 variant={referencePanelOpen ? 'secondary' : 'ghost'}
@@ -1311,50 +1339,182 @@ export function DocEditorPageClient() {
               >
                 <MessageSquare className="size-4" />
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    aria-label="More options"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  {isReadOnly || !doc.canManagePermissions ? (
+                    <DropdownMenuLabel className="flex items-center gap-2 text-sm font-normal">
+                      <currentVisibility.Icon className={cn('size-4', currentVisibility.iconClass)} />
+                      {currentVisibility.label}
+                    </DropdownMenuLabel>
+                  ) : (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <currentVisibility.Icon className={cn('size-4', currentVisibility.iconClass)} />
+                        {currentVisibility.label}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuRadioGroup
+                          value={visibility}
+                          onValueChange={(v) =>
+                            handleVisibilityChange(v as 'public' | 'partner' | 'private')
+                          }
+                        >
+                          {VISIBILITY_OPTIONS.map((opt) => (
+                            <DropdownMenuRadioItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  {doc.canManagePermissions ? (
+                    <DropdownMenuItem onSelect={() => setPermissionsDialogOpen(true)}>
+                      <ShieldCheck className="size-4" />
+                      Permissions
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Download className="size-4" />
+                      Export
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem onSelect={() => handleExport('markdown')}>
+                        Markdown (.md)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => handleExport('html', 'light')}>
+                        HTML (Light)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => handleExport('html', 'dark')}>
+                        HTML (Dark)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => handleExport('pdf')}>
+                        PDF (.pdf)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => handleExport('docx')}>
+                        Word (.docx)
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Globe className="size-4" />
+                      {currentLocaleLabel}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-44">
+                      <DropdownMenuRadioGroup
+                        value={activeLocale}
+                        onValueChange={(code) => {
+                          const locale = existingLocales.find((l) => l.code === code)
+                          if (locale && locale.code !== activeLocale) {
+                            handleLocaleChange(locale.code, locale.translationId, locale.label)
+                          }
+                        }}
+                      >
+                        {existingLocales.map((locale) => (
+                          <DropdownMenuRadioItem
+                            key={locale.code}
+                            value={locale.code}
+                            disabled={!!pendingLocale}
+                          >
+                            {locale.label}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                      {creatableLocales.length > 0 ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuLabel>Add translation</DropdownMenuLabel>
+                          {creatableLocales.map((locale) => (
+                            <DropdownMenuItem
+                              key={locale.code}
+                              disabled={!!pendingLocale}
+                              onSelect={() =>
+                                handleLocaleChange(locale.code, locale.translationId, locale.label)
+                              }
+                            >
+                              {locale.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </>
+                      ) : null}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setMetadataExpanded((v) => !v)}>
+                    <ChevronDown
+                      className={cn(
+                        'size-4 transition-transform',
+                        metadataExpanded && 'rotate-180',
+                      )}
+                    />
+                    {metadataExpanded ? 'Hide details' : 'Show details'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DocumentPermissionsDialog
+                document={doc}
+                open={permissionsDialogOpen}
+                onOpenChange={setPermissionsDialogOpen}
+                onPermissionsChanged={refresh}
+              />
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2.5">
-              {isReadOnly ? (
-                category ? (
-                  <div className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
-                    <Tag className="size-3.5" />
-                    <span className="max-w-[160px] truncate">{category}</span>
+            {metadataExpanded ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                {isReadOnly ? (
+                  category ? (
+                    <div className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
+                      <Tag className="size-3.5" />
+                      <span className="max-w-[160px] truncate">{category}</span>
+                    </div>
+                  ) : null
+                ) : (
+                  <div className="flex h-8 w-[170px] items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5">
+                    <Tag className="size-3.5 text-muted-foreground" />
+                    <Input
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      onBlur={() => void handleCategorySave(category)}
+                      onKeyDown={handleCategoryKeyDown}
+                      aria-label="Document category"
+                      placeholder="Category"
+                      className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                    />
                   </div>
-                ) : null
-              ) : (
-                <div className="flex h-8 w-[170px] items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5">
-                  <Tag className="size-3.5 text-muted-foreground" />
-                  <Input
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    onBlur={() => void handleCategorySave(category)}
-                    onKeyDown={handleCategoryKeyDown}
-                    aria-label="Document category"
-                    placeholder="Category"
-                    className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
-                  />
-                </div>
-              )}
-              {isReadOnly ? (
-                <div className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
-                  <Link2 className="size-3.5" />
-                  <span className="truncate">/docs/editor/{doc.slug ?? getDocumentIdentifier(doc)}</span>
-                </div>
-              ) : (
-                <div className="flex h-8 min-w-[240px] max-w-full items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5 sm:w-[320px]">
-                  <Link2 className="size-3.5 text-muted-foreground" />
-                  <span className="shrink-0 text-[11px] text-muted-foreground">/docs/editor/</span>
-                  <Input
-                    value={slugInput}
-                    onChange={(e) => setSlugInput(e.target.value)}
-                    onBlur={() => void handleSlugSave(slugInput)}
-                    onKeyDown={handleSlugKeyDown}
-                    aria-label="Document URL slug"
-                    placeholder={normalizeDocumentSlug(title || doc.title)}
-                    className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
-                  />
-                </div>
-              )}
-            </div>
+                )}
+                {isReadOnly ? (
+                  <div className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
+                    <Link2 className="size-3.5" />
+                    <span className="truncate">/docs/editor/{doc.slug ?? getDocumentIdentifier(doc)}</span>
+                  </div>
+                ) : (
+                  <div className="flex h-8 min-w-[240px] max-w-full items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5 sm:w-[320px]">
+                    <Link2 className="size-3.5 text-muted-foreground" />
+                    <span className="shrink-0 text-[11px] text-muted-foreground">/docs/editor/</span>
+                    <Input
+                      value={slugInput}
+                      onChange={(e) => setSlugInput(e.target.value)}
+                      onBlur={() => void handleSlugSave(slugInput)}
+                      onKeyDown={handleSlugKeyDown}
+                      aria-label="Document URL slug"
+                      placeholder={normalizeDocumentSlug(title || doc.title)}
+                      className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

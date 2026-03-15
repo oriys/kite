@@ -85,12 +85,19 @@ export function DocumentPermissionsDialog({
   document,
   className,
   onPermissionsChanged,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
   document: Doc
   className?: string
   onPermissionsChanged?: () => void | Promise<void>
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : internalOpen
+  const setOpen = isControlled ? (controlledOnOpenChange ?? (() => {})) : setInternalOpen
   const [loading, setLoading] = React.useState(false)
   const [search, setSearch] = React.useState('')
   const [members, setMembers] = React.useState<WorkspaceMember[]>([])
@@ -221,6 +228,7 @@ export function DocumentPermissionsDialog({
   )
 
   if (!document.canManagePermissions) {
+    if (isControlled) return null
     return document.hasCustomPermissions ? (
       <Badge
         variant="outline"
@@ -237,21 +245,23 @@ export function DocumentPermissionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn('h-7 gap-1.5 text-xs', className)}
-        >
-          <ShieldCheck className="size-3.5" />
-          Permissions
-          {explicitPermissionCount > 0 ? (
-            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
-              {explicitPermissionCount}
-            </Badge>
-          ) : null}
-        </Button>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn('h-7 gap-1.5 text-xs', className)}
+          >
+            <ShieldCheck className="size-3.5" />
+            Permissions
+            {explicitPermissionCount > 0 ? (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+                {explicitPermissionCount}
+              </Badge>
+            ) : null}
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Document permissions</DialogTitle>
