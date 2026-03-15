@@ -84,6 +84,10 @@ const ROLE_META: Record<MemberRole, { label: string; icon: React.ElementType; co
   guest: { label: 'Guest', icon: User, color: 'text-muted-foreground' },
 }
 
+function getInviteUrl(token: string, origin: string) {
+  return `${origin || ''}/invite/${token}`
+}
+
 function useWorkspaceId() {
   const [workspaceId, setWorkspaceId] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -129,7 +133,13 @@ export default function MembersPage() {
   const [invitesLoading, setInvitesLoading] = React.useState(true)
   const [search, setSearch] = React.useState('')
   const [debouncedSearch, setDebouncedSearch] = React.useState('')
+  const [origin, setOrigin] = React.useState('')
+  const [copiedInviteId, setCopiedInviteId] = React.useState<string | null>(null)
   const hasLoadedMembersRef = React.useRef(false)
+
+  React.useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -225,6 +235,19 @@ export default function MembersPage() {
       fetchInvites()
     } else {
       toast.error('Failed to revoke invite')
+    }
+  }
+
+  const handleCopyInviteLink = async (inviteId: string, token: string) => {
+    try {
+      await navigator.clipboard.writeText(getInviteUrl(token, origin))
+      setCopiedInviteId(inviteId)
+      window.setTimeout(() => {
+        setCopiedInviteId((current) => (current === inviteId ? null : current))
+      }, 2000)
+      toast.success('Invite link copied')
+    } catch {
+      toast.error('Failed to copy invite link')
     }
   }
 
@@ -395,7 +418,7 @@ export default function MembersPage() {
             {invites.map((invite) => (
               <div
                 key={invite.id}
-                className="flex items-center justify-between border-b border-border/50 px-4 py-3 last:border-0"
+                className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3 last:border-0"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
@@ -405,9 +428,11 @@ export default function MembersPage() {
                       <Link2 className="h-4 w-4 text-muted-foreground" />
                     )}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium">
-                      {invite.email ?? 'Invite link'}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {invite.type === 'link'
+                        ? getInviteUrl(invite.token, origin)
+                        : invite.email ?? 'Invite email'}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {ROLE_META[invite.role].label} · Expires{' '}
@@ -415,14 +440,31 @@ export default function MembersPage() {
                     </p>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => handleRevokeInvite(invite.id)}
-                >
-                  Revoke
-                </Button>
+                <div className="flex items-center gap-1">
+                  {invite.type === 'link' && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => handleCopyInviteLink(invite.id, invite.token)}
+                      aria-label="Copy invite link"
+                    >
+                      {copiedInviteId === invite.id ? (
+                        <Check className="h-4 w-4 text-emerald-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => handleRevokeInvite(invite.id)}
+                  >
+                    Revoke
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

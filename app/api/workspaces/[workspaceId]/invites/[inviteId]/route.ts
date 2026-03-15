@@ -21,7 +21,7 @@ export async function DELETE(
   }
 
   try {
-    await revokeInvite(workspaceId, inviteId, result.ctx.userId)
+    await revokeInvite(workspaceId, inviteId)
     return NextResponse.json({ success: true })
   } catch (e) {
     return badRequest((e as Error).message)
