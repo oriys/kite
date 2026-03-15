@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { VersionSwitcher } from '@/components/version-switcher'
 import { TemplatePicker } from '@/components/template-picker'
 import { usePersonalSettings } from '@/components/personal-settings-provider'
+import { useMounted } from '@/hooks/use-mounted'
 import {
   Select,
   SelectContent,
@@ -49,6 +50,7 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
 const ALL_CATEGORIES_VALUE = '__all_categories__'
 
 export default function DocsPage() {
+  const mounted = useMounted()
   const router = useRouter()
   const { featureVisibility } = usePersonalSettings()
   const [filter, setFilter] = React.useState<DocStatus | 'all'>('all')
@@ -155,6 +157,9 @@ export default function DocsPage() {
     router.push(getDocEditorHref(doc.id))
   }
 
+  const controlPlaceholderClassName =
+    'h-8 rounded-md border border-input/80 bg-background/80 px-3 text-xs text-muted-foreground'
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
       {/* Header */}
@@ -244,68 +249,86 @@ export default function DocsPage() {
                 <ListFilter className="size-3.5" />
                 Category
               </span>
-              <Select
-                value={categoryFilter || ALL_CATEGORIES_VALUE}
-                onValueChange={(value) =>
-                  setCategoryFilter(
-                    value === ALL_CATEGORIES_VALUE ? '' : value,
-                  )
-                }
-              >
-                <SelectTrigger size="sm" className="h-8 min-w-[150px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  <SelectItem value={ALL_CATEGORIES_VALUE}>All categories</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {mounted ? (
+                <Select
+                  value={categoryFilter || ALL_CATEGORIES_VALUE}
+                  onValueChange={(value) =>
+                    setCategoryFilter(
+                      value === ALL_CATEGORIES_VALUE ? '' : value,
+                    )
+                  }
+                >
+                  <SelectTrigger size="sm" className="h-8 min-w-[150px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value={ALL_CATEGORIES_VALUE}>All categories</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className={cn(controlPlaceholderClassName, 'min-w-[150px]')}>
+                  {categoryFilter || 'All categories'}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
                 <ArrowUpDown className="size-3.5" />
                 Sort
               </span>
-              <Select
-                value={sort}
-                onValueChange={(value) => setSort(value as DocumentSort)}
-              >
-                <SelectTrigger size="sm" className="h-8 min-w-[170px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {DOCUMENT_SORT_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {mounted ? (
+                <Select
+                  value={sort}
+                  onValueChange={(value) => setSort(value as DocumentSort)}
+                >
+                  <SelectTrigger size="sm" className="h-8 min-w-[170px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    {DOCUMENT_SORT_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className={cn(controlPlaceholderClassName, 'min-w-[170px]')}>
+                  {DOCUMENT_SORT_OPTIONS.find((option) => option.value === sort)?.label}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
                 <ListFilter className="size-3.5" />
                 Page size
               </span>
-              <Select
-                value={String(pageSize)}
-                onValueChange={(value) => setPageSize(Number(value))}
-              >
-                <SelectTrigger size="sm" className="h-8 min-w-[112px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {PAGE_SIZE_OPTIONS.map((size) => (
-                    <SelectItem key={size} value={String(size)}>
-                      {size} per page
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {mounted ? (
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(value) => setPageSize(Number(value))}
+                >
+                  <SelectTrigger size="sm" className="h-8 min-w-[112px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <SelectItem key={size} value={String(size)}>
+                        {size} per page
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className={cn(controlPlaceholderClassName, 'min-w-[112px]')}>
+                  {pageSize} per page
+                </div>
+              )}
             </div>
           </div>
         </div>
