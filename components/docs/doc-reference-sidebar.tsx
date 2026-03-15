@@ -5,7 +5,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { BookOpenText, Search, X } from 'lucide-react'
 
 import { useDocument, useDocuments } from '@/hooks/use-documents'
-import { type Doc, STATUS_CONFIG } from '@/lib/documents'
+import { getDocumentIdentifier, type Doc, STATUS_CONFIG } from '@/lib/documents'
 import { cn } from '@/lib/utils'
 import { MarkdownPreview } from '@/components/docs/markdown-preview'
 import { Badge } from '@/components/ui/badge'
@@ -87,8 +87,8 @@ export function DocReferenceSidebar({
   )
 
   const handleSelectDocument = React.useCallback(
-    (documentId: string) => {
-      onReferenceDocumentChange(documentId)
+    (documentIdentifier: string) => {
+      onReferenceDocumentChange(documentIdentifier)
       setPickerOpen(false)
       setSearchQuery('')
       setDebouncedSearchQuery('')
@@ -240,7 +240,7 @@ export function DocReferenceSidebar({
               <CommandItem
                 key={document.id}
                 value={`${document.title} ${document.summary ?? ''} ${document.locale ?? ''}`}
-                onSelect={() => handleSelectDocument(document.id)}
+                onSelect={() => handleSelectDocument(getDocumentIdentifier(document))}
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-foreground">

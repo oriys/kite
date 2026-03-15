@@ -7,7 +7,7 @@ import {
   forbidden,
 } from '@/lib/api-utils'
 import {
-  getDocument,
+  getDocumentByIdentifier,
   updateDocument,
   deleteDocument,
 } from '@/lib/queries/documents'
@@ -30,7 +30,7 @@ export async function GET(
   if ('error' in result) return result.error
 
   const { id } = await context.params
-  const doc = await getDocument(id, result.ctx.workspaceId)
+  const doc = await getDocumentByIdentifier(id, result.ctx.workspaceId)
   if (!doc) return notFound()
 
   const access = (
@@ -54,11 +54,13 @@ export async function PATCH(
 
   const patch: {
     title?: string
+    slug?: string
     category?: string
     content?: string
     visibility?: (typeof visibilityEnum.enumValues)[number]
   } = {}
   if (typeof body.title === 'string') patch.title = body.title
+  if (typeof body.slug === 'string') patch.slug = body.slug
   if (typeof body.category === 'string') patch.category = body.category.trim()
   if (typeof body.content === 'string') patch.content = body.content
   if (body.visibility !== undefined) {
@@ -79,7 +81,7 @@ export async function PATCH(
   }
   if (patch.content !== undefined && patch.content.length > MAX_CONTENT_SIZE) return badRequest('Content too large')
 
-  const existing = await getDocument(id, result.ctx.workspaceId)
+  const existing = await getDocumentByIdentifier(id, result.ctx.workspaceId)
   if (!existing) return notFound()
 
   const access = (
@@ -88,13 +90,16 @@ export async function PATCH(
   if (!access?.canView) return forbidden()
 
   const includesContentChange =
-    patch.title !== undefined || patch.category !== undefined || patch.content !== undefined
+    patch.title !== undefined ||
+    patch.slug !== undefined ||
+    patch.category !== undefined ||
+    patch.content !== undefined
   if (includesContentChange && !access.canEdit) return forbidden()
   if (patch.visibility !== undefined && !access.canManagePermissions) {
     return forbidden()
   }
 
-  const doc = await updateDocument(id, result.ctx.workspaceId, patch)
+  const doc = await updateDocument(existing.id, result.ctx.workspaceId, patch)
   if (!doc) return notFound()
 
   const updatedAccess = (
@@ -112,7 +117,7 @@ export async function DELETE(
   if ('error' in result) return result.error
 
   const { id } = await context.params
-  const doc = await getDocument(id, result.ctx.workspaceId)
+  const doc = await getDocumentByIdentifier(id, result.ctx.workspaceId)
   if (!doc) return notFound()
 
   const access = (
@@ -120,7 +125,7 @@ export async function DELETE(
   ).get(doc.id)
   if (!access?.canDelete) return forbidden()
 
-  const deleted = await deleteDocument(id, result.ctx.workspaceId)
+  const deleted = await deleteDocument(doc.id, result.ctx.workspaceId)
   if (!deleted) return notFound()
 
   return NextResponse.json({ ok: true })

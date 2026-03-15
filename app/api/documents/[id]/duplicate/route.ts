@@ -5,7 +5,10 @@ import {
   notFound,
   forbidden,
 } from '@/lib/api-utils'
-import { duplicateDocument, getDocument } from '@/lib/queries/documents'
+import {
+  duplicateDocument,
+  getDocumentByIdentifier,
+} from '@/lib/queries/documents'
 import {
   attachDocumentAccess,
   buildDocumentAccessMap,
@@ -19,7 +22,7 @@ export async function POST(
   if ('error' in result) return result.error
 
   const { id } = await context.params
-  const existing = await getDocument(id, result.ctx.workspaceId)
+  const existing = await getDocumentByIdentifier(id, result.ctx.workspaceId)
   if (!existing) return notFound()
 
   const access = (
@@ -27,7 +30,7 @@ export async function POST(
   ).get(existing.id)
   if (!access?.canDuplicate) return forbidden()
 
-  const doc = await duplicateDocument(id, result.ctx.workspaceId, result.ctx.userId)
+  const doc = await duplicateDocument(existing.id, result.ctx.workspaceId, result.ctx.userId)
   if (!doc) return notFound()
 
   const newDocAccess = (

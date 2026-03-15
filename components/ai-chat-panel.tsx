@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Bot, Send, Square, Plus, FileText, Sparkles, Loader2, X } from 'lucide-react'
 
 import { MarkdownPreview } from '@/components/docs/markdown-preview'
@@ -13,6 +14,11 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  getDocEditorHref,
+  getDocIdentifierFromEditorLocation,
+  isDocEditorPath,
+} from '@/lib/documents'
 import { cn } from '@/lib/utils'
 import { useAiChat, type ChatMessage } from '@/hooks/use-ai-chat'
 
@@ -104,6 +110,9 @@ function normalizeAssistantContent(content: string) {
 }
 
 export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const {
     messages,
     isStreaming,
@@ -152,6 +161,46 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
     [handleSubmit],
   )
 
+  const currentEditorDocumentIdentifier = React.useMemo(
+    () => getDocIdentifierFromEditorLocation(pathname, searchParams),
+    [pathname, searchParams],
+  )
+
+  const handleSourceSelect = React.useCallback(
+    (source: NonNullable<ChatMessage['sources']>[number]) => {
+      const targetDocumentIdentifier = source.documentSlug || source.documentId
+      if (!targetDocumentIdentifier) {
+        return
+      }
+
+      if (isDocEditorPath(pathname) && currentEditorDocumentIdentifier) {
+        const translation = searchParams.get('translation')
+
+        if (targetDocumentIdentifier === currentEditorDocumentIdentifier) {
+          router.push(
+            getDocEditorHref(currentEditorDocumentIdentifier, {
+              translation,
+            }),
+            { scroll: false },
+          )
+          return
+        }
+
+        router.push(
+          getDocEditorHref(currentEditorDocumentIdentifier, {
+            translation,
+            reference: targetDocumentIdentifier,
+          }),
+          { scroll: false },
+        )
+        return
+      }
+
+      router.push(getDocEditorHref(targetDocumentIdentifier))
+    },
+    [currentEditorDocumentIdentifier, pathname, router, searchParams],
+  )
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -195,7 +244,11 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
           ) : (
             <div className="flex flex-col gap-3 p-4">
               {messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  onSourceSelect={handleSourceSelect}
+                />
               ))}
               {isStreaming && messages[messages.length - 1]?.content === '' && (
                 <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
@@ -275,7 +328,13 @@ function EmptyState() {
   )
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  onSourceSelect,
+}: {
+  message: ChatMessage
+  onSourceSelect: (source: NonNullable<ChatMessage['sources']>[number]) => void
+}) {
   const isUser = message.role === 'user'
   const renderedAssistantContent = React.useMemo(
     () => normalizeAssistantContent(message.content),
@@ -312,14 +371,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       {message.sources && message.sources.length > 0 && (
         <div className="flex max-w-[92%] flex-wrap gap-1 px-1">
           {message.sources.map((source, i) => (
-            <span
-              key={source.chunkId}
-              className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/90 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            <button
+              key={`${source.chunkId}:${source.documentId}:${i}`}
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/90 px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground"
               title={source.preview}
+              onClick={() => onSourceSelect(source)}
             >
               <FileText className="size-2.5" />
               [{i + 1}] {source.title}
-            </span>
+            </button>
           ))}
         </div>
       )}

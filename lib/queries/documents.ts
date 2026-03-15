@@ -4,14 +4,22 @@ import {
   desc,
   eq,
   ilike,
+  isNotNull,
   isNull,
+  ne,
   notInArray,
   or,
   sql,
   type SQL,
 } from 'drizzle-orm'
+
 import { db } from '../db'
 import { rebuildWorkspaceDocumentRelations } from '../document-relations'
+import {
+  MAX_DOCUMENT_SLUG_LENGTH,
+  normalizeDocumentSlug,
+  type DocumentSort,
+} from '../documents'
 import {
   documents,
   documentVersions,
@@ -19,9 +27,8 @@ import {
   type visibilityEnum,
 } from '../schema'
 import { logServerError } from '../server-errors'
-import { verifyWorkspaceMembership } from './workspaces'
 import { wordCount } from '../utils'
-import type { DocumentSort } from '../documents'
+import { verifyWorkspaceMembership } from './workspaces'
 
 type DocStatusValue = (typeof docStatusEnum.enumValues)[number]
 type VisibilityValue = (typeof visibilityEnum.enumValues)[number]
@@ -34,6 +41,7 @@ interface ImportDocumentVersionInput {
 
 interface ImportDocumentInput {
   title: string
+  slug?: string
   content: string
   summary?: string
   status?: DocStatusValue
@@ -53,6 +61,59 @@ async function refreshWorkspaceRelationsAfterMutation(
       workspaceId,
       mutation,
     })
+  }
+}
+
+function buildDocumentSlugCandidate(baseSlug: string, suffix: number) {
+  if (suffix <= 1) {
+    return baseSlug
+  }
+
+  const suffixToken = `-${suffix}`
+  const maxBaseLength = Math.max(1, MAX_DOCUMENT_SLUG_LENGTH - suffixToken.length)
+  const trimmedBase = baseSlug.slice(0, maxBaseLength).replace(/-+$/g, '') || 'document'
+  return `${trimmedBase}${suffixToken}`
+}
+
+export async function createDocumentSlugAllocator(
+  workspaceId: string,
+  options: {
+    excludeDocumentId?: string
+  } = {},
+) {
+  const filters: SQL<unknown>[] = [
+    eq(documents.workspaceId, workspaceId),
+    isNull(documents.deletedAt),
+    isNotNull(documents.slug),
+  ]
+
+  if (options.excludeDocumentId) {
+    filters.push(ne(documents.id, options.excludeDocumentId))
+  }
+
+  const rows = await db
+    .select({ slug: documents.slug })
+    .from(documents)
+    .where(and(...filters))
+
+  const usedSlugs = new Set(
+    rows
+      .map((row) => row.slug)
+      .filter((slug): slug is string => Boolean(slug)),
+  )
+
+  return (value: string) => {
+    const baseSlug = normalizeDocumentSlug(value)
+    let suffix = 1
+    let candidate = baseSlug
+
+    while (usedSlugs.has(candidate)) {
+      suffix += 1
+      candidate = buildDocumentSlugCandidate(baseSlug, suffix)
+    }
+
+    usedSlugs.add(candidate)
+    return candidate
   }
 }
 
@@ -102,6 +163,7 @@ export async function listDocuments(
     .select({
       id: documents.id,
       title: documents.title,
+      slug: documents.slug,
       category: documents.category,
       content: sql<string>`''`,
       summary: documents.summary,
@@ -121,13 +183,9 @@ export async function listDocuments(
     .orderBy(...orderBy)
 }
 
-export async function getDocument(id: string, workspaceId: string) {
+async function loadDocument(where: SQL<unknown>) {
   const doc = await db.query.documents.findFirst({
-    where: and(
-      eq(documents.id, id),
-      eq(documents.workspaceId, workspaceId),
-      isNull(documents.deletedAt),
-    ),
+    where,
     with: {
       versions: {
         orderBy: [desc(documentVersions.savedAt)],
@@ -141,12 +199,37 @@ export async function getDocument(id: string, workspaceId: string) {
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)` })
     .from(documentVersions)
-    .where(eq(documentVersions.documentId, id))
+    .where(eq(documentVersions.documentId, doc.id))
 
   return {
     ...doc,
     versionCount: Number(count),
   }
+}
+
+export async function getDocument(id: string, workspaceId: string) {
+  return loadDocument(
+    and(
+      eq(documents.id, id),
+      eq(documents.workspaceId, workspaceId),
+      isNull(documents.deletedAt),
+    )!,
+  )
+}
+
+export async function getDocumentBySlug(slug: string, workspaceId: string) {
+  return loadDocument(
+    and(
+      eq(documents.slug, slug),
+      eq(documents.workspaceId, workspaceId),
+      isNull(documents.deletedAt),
+    )!,
+  )
+}
+
+export async function getDocumentByIdentifier(identifier: string, workspaceId: string) {
+  return (await getDocument(identifier, workspaceId))
+    ?? (await getDocumentBySlug(identifier, workspaceId))
 }
 
 export async function createDocument(
@@ -157,9 +240,18 @@ export async function createDocument(
   summary = '',
   category = '',
 ) {
+  const allocateSlug = await createDocumentSlugAllocator(workspaceId)
   const [doc] = await db
     .insert(documents)
-    .values({ workspaceId, title, category, content, summary, createdBy })
+    .values({
+      workspaceId,
+      title,
+      slug: allocateSlug(title),
+      category,
+      content,
+      summary,
+      createdBy,
+    })
     .returning()
 
   await refreshWorkspaceRelationsAfterMutation(workspaceId, 'createDocument')
@@ -174,6 +266,7 @@ export async function importDocuments(
 ) {
   if (sourceDocs.length === 0) return []
 
+  const allocateSlug = await createDocumentSlugAllocator(workspaceId)
   const inserted = await db.transaction(async (tx) => {
     const docValues = sourceDocs.map((sourceDoc) => {
       const createdAt = sourceDoc.createdAt ? new Date(sourceDoc.createdAt) : new Date()
@@ -182,6 +275,7 @@ export async function importDocuments(
       return {
         workspaceId,
         title: sourceDoc.title,
+        slug: allocateSlug(sourceDoc.slug?.trim() || sourceDoc.title),
         content: sourceDoc.content,
         summary: sourceDoc.summary ?? '',
         status: (sourceDoc.status ?? 'draft') as DocStatusValue,
@@ -193,7 +287,6 @@ export async function importDocuments(
 
     const inserted = await tx.insert(documents).values(docValues).returning()
 
-    // Collect all versions across all documents into a single batch
     const allVersionValues: {
       documentId: string
       content: string
@@ -201,8 +294,8 @@ export async function importDocuments(
       savedAt: Date
     }[] = []
 
-    for (let i = 0; i < inserted.length; i++) {
-      const versions = Array.isArray(sourceDocs[i].versions) ? sourceDocs[i].versions! : []
+    for (let i = 0; i < inserted.length; i += 1) {
+      const versions = sourceDocs[i].versions ?? []
       for (const version of versions) {
         const savedAt = version.savedAt ? new Date(version.savedAt) : new Date()
         allVersionValues.push({
@@ -234,14 +327,18 @@ export async function updateDocument(
   workspaceId: string,
   patch: {
     title?: string
+    slug?: string
     category?: string
     content?: string
     visibility?: VisibilityValue
   },
 ) {
-  // Light read: only fetch the content needed for version diffing
   const [existing] = await db
-    .select({ content: documents.content })
+    .select({
+      content: documents.content,
+      title: documents.title,
+      slug: documents.slug,
+    })
     .from(documents)
     .where(
       and(
@@ -254,7 +351,15 @@ export async function updateDocument(
 
   if (!existing) return null
 
-  // Version the old content when content changes
+  const nextSlug =
+    patch.slug !== undefined || !existing.slug
+      ? (
+          await createDocumentSlugAllocator(workspaceId, {
+            excludeDocumentId: id,
+          })
+        )(patch.slug?.trim() || patch.title || existing.title)
+      : undefined
+
   if (patch.content !== undefined && patch.content !== existing.content) {
     await db.insert(documentVersions).values({
       documentId: id,
@@ -262,7 +367,6 @@ export async function updateDocument(
       wordCount: wordCount(existing.content),
     })
 
-    // Keep last 50 versions — single SQL delete
     const keepIds = db
       .select({ id: documentVersions.id })
       .from(documentVersions)
@@ -275,15 +379,18 @@ export async function updateDocument(
       .where(
         and(
           eq(documentVersions.documentId, id),
-          notInArray(documentVersions.id, sql`(${keepIds})`)
-        )
+          notInArray(documentVersions.id, sql`(${keepIds})`),
+        ),
       )
   }
 
+  const documentPatch = { ...patch }
+  delete documentPatch.slug
   const [updated] = await db
     .update(documents)
     .set({
-      ...patch,
+      ...documentPatch,
+      ...(nextSlug ? { slug: nextSlug } : {}),
       ...(patch.content !== undefined && patch.content !== existing.content
         ? { summary: '' }
         : {}),
@@ -300,10 +407,7 @@ export async function updateDocument(
 
   if (!updated) return null
 
-  if (
-    patch.content !== undefined ||
-    patch.title !== undefined
-  ) {
+  if (patch.content !== undefined || patch.title !== undefined) {
     await refreshWorkspaceRelationsAfterMutation(workspaceId, 'updateDocument')
   }
 
@@ -386,6 +490,61 @@ export async function updateDocumentSummary(
     .returning()
 
   return updated ? await getDocument(id, workspaceId) : null
+}
+
+export async function backfillMissingDocumentSlugs(input: {
+  workspaceId?: string
+} = {}) {
+  const filters: SQL<unknown>[] = [
+    isNull(documents.deletedAt),
+    or(isNull(documents.slug), eq(documents.slug, ''))!,
+  ]
+
+  if (input.workspaceId) {
+    filters.push(eq(documents.workspaceId, input.workspaceId))
+  }
+
+  const pendingDocuments = await db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      workspaceId: documents.workspaceId,
+    })
+    .from(documents)
+    .where(and(...filters))
+    .orderBy(asc(documents.workspaceId), asc(documents.createdAt), asc(documents.id))
+
+  if (pendingDocuments.length === 0) {
+    return []
+  }
+
+  const allocators = new Map<
+    string,
+    Awaited<ReturnType<typeof createDocumentSlugAllocator>>
+  >()
+  const updates: Array<{ id: string; slug: string }> = []
+
+  for (const document of pendingDocuments) {
+    let allocateSlug = allocators.get(document.workspaceId)
+    if (!allocateSlug) {
+      allocateSlug = await createDocumentSlugAllocator(document.workspaceId)
+      allocators.set(document.workspaceId, allocateSlug)
+    }
+
+    updates.push({
+      id: document.id,
+      slug: allocateSlug(document.title),
+    })
+  }
+
+  for (const update of updates) {
+    await db
+      .update(documents)
+      .set({ slug: update.slug })
+      .where(eq(documents.id, update.id))
+  }
+
+  return updates
 }
 
 export async function updateDocumentSummaryIfUnchanged(

@@ -119,6 +119,7 @@ export function useDocument(id?: string | null) {
       setLoading(false)
       return
     }
+
     setLoading(true)
     const res = await fetch(`/api/documents/${id}`)
     if (res.ok) {
@@ -130,11 +131,11 @@ export function useDocument(id?: string | null) {
   }, [id])
 
   React.useEffect(() => {
-    refresh()
+    void refresh()
   }, [refresh])
 
   const update = React.useCallback(
-    async (patch: Partial<Pick<Doc, 'title' | 'category' | 'content'>>) => {
+    async (patch: Partial<Pick<Doc, 'title' | 'slug' | 'category' | 'content'>>) => {
       if (!id) return undefined
       const res = await fetch(`/api/documents/${id}`, {
         method: 'PATCH',
@@ -189,27 +190,30 @@ export function useDocument(id?: string | null) {
   return { doc, loading, update, transition, remove, duplicate, refresh }
 }
 
-// Normalize API response dates to ISO strings for consistency
 function normalizeDoc(raw: Record<string, unknown>): Doc {
-    const status = isDocStatus(raw.status) ? raw.status : 'draft'
+  const status = isDocStatus(raw.status) ? raw.status : 'draft'
 
-    return {
-      id: raw.id as string,
-      title: raw.title as string,
-      category: String(raw.category ?? ''),
-      content: String(raw.content ?? ''),
-      summary: String(raw.summary ?? ''),
-      preview:
-        raw.preview === undefined || raw.preview === null
-          ? undefined
-          : String(raw.preview),
-      wordCount:
-        raw.wordCount === undefined || raw.wordCount === null
-          ? undefined
-          : Number(raw.wordCount),
-      status,
-      visibility: (raw.visibility as Doc['visibility']) ?? 'public',
-      locale: (raw.locale as string) ?? null,
+  return {
+    id: raw.id as string,
+    title: raw.title as string,
+    slug:
+      raw.slug === undefined || raw.slug === null
+        ? null
+        : String(raw.slug),
+    category: String(raw.category ?? ''),
+    content: String(raw.content ?? ''),
+    summary: String(raw.summary ?? ''),
+    preview:
+      raw.preview === undefined || raw.preview === null
+        ? undefined
+        : String(raw.preview),
+    wordCount:
+      raw.wordCount === undefined || raw.wordCount === null
+        ? undefined
+        : Number(raw.wordCount),
+    status,
+    visibility: (raw.visibility as Doc['visibility']) ?? 'public',
+    locale: (raw.locale as string) ?? null,
     apiVersionId: (raw.apiVersionId as string) ?? null,
     createdAt: String(raw.createdAt),
     updatedAt: String(raw.updatedAt),
@@ -267,35 +271,31 @@ function normalizeDocCollection(
     }
   }
 
-  const record = raw as Record<string, unknown>
-  const items = Array.isArray(record.items)
-    ? normalizeDocList(record.items as unknown[])
-    : []
-  const rawCounts = (record.counts ?? {}) as Record<string, unknown>
-  const counts: DocumentListCounts = {
-    all: Number(rawCounts.all ?? items.length),
-    draft: Number(rawCounts.draft ?? 0),
-    review: Number(rawCounts.review ?? 0),
-    published: Number(rawCounts.published ?? 0),
-    archived: Number(rawCounts.archived ?? 0),
+  const payload = raw as {
+    items?: unknown[]
+    counts?: Partial<DocumentListCounts>
+    categories?: unknown[]
+    pagination?: Partial<DocumentListPagination>
   }
-  const rawPagination = (record.pagination ?? {}) as Record<string, unknown>
-  const categories = Array.isArray(record.categories)
-    ? record.categories
-        .filter((value): value is string => typeof value === 'string')
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-    : []
+  const items = Array.isArray(payload.items) ? normalizeDocList(payload.items) : []
+  const counts = {
+    ...createEmptyDocumentCounts(),
+    ...(payload.counts ?? {}),
+  }
+  const pagination = {
+    page: payload.pagination?.page ?? fallbackPage,
+    pageSize: payload.pagination?.pageSize ?? fallbackPageSize,
+    total: payload.pagination?.total ?? items.length,
+    totalPages:
+      payload.pagination?.totalPages ?? Math.max(1, Math.ceil(items.length / fallbackPageSize)),
+  }
 
   return {
     items,
     counts,
-    categories,
-    pagination: {
-      page: Number(rawPagination.page ?? fallbackPage),
-      pageSize: Number(rawPagination.pageSize ?? fallbackPageSize),
-      total: Number(rawPagination.total ?? items.length),
-      totalPages: Number(rawPagination.totalPages ?? 1),
-    },
+    categories: Array.isArray(payload.categories)
+      ? payload.categories.map((value) => String(value))
+      : [],
+    pagination,
   }
 }

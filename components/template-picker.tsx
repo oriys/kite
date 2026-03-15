@@ -117,7 +117,7 @@ export function TemplatePicker({ trigger, onCreated }: TemplatePickerProps) {
         const doc = await res.json()
         setOpen(false)
         if (onCreated) onCreated(doc.id)
-        else router.push(getDocEditorHref(doc.id))
+        else router.push(getDocEditorHref(doc))
       }
     } finally {
       setCreating(null)

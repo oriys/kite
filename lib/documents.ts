@@ -14,6 +14,11 @@ export const UNTITLED_DOCUMENT_TITLE = 'Untitled'
 export const DOC_ANNOTATION_QUOTE_MAX_LENGTH = 480
 export const DOC_ANNOTATION_BODY_MAX_LENGTH = 4000
 export const DOC_EVALUATION_BODY_MAX_LENGTH = 2000
+export const MAX_DOCUMENT_SLUG_LENGTH = 80
+
+const DOCUMENT_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/
+const DOCUMENT_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export interface DocActor {
   id: string | null
@@ -66,6 +71,7 @@ export interface DocEvaluation {
 export interface Doc {
   id: string
   title: string
+  slug: string | null
   category: string
   content: string
   summary: string
@@ -89,6 +95,13 @@ export interface Doc {
   versionCount?: number
   versions: DocVersion[]
 }
+
+export type DocRouteTarget =
+  | string
+  | {
+      id: string
+      slug?: string | null
+    }
 
 export interface DocumentListCounts {
   all: number
@@ -117,6 +130,79 @@ export function isDocumentTitleMissing(title: string | null | undefined) {
   return !normalized || normalized === UNTITLED_DOCUMENT_TITLE
 }
 
+function clampDocumentSlugLength(value: string) {
+  return value.slice(0, MAX_DOCUMENT_SLUG_LENGTH).replace(/-+$/g, '') || 'document'
+}
+
+export function isDocumentIdLike(value: string | null | undefined) {
+  return value ? DOCUMENT_ID_RE.test(value) : false
+}
+
+export function normalizeDocumentSlug(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+
+  const baseSlug = normalized ? clampDocumentSlugLength(normalized) : 'document'
+  if (!isDocumentIdLike(baseSlug)) {
+    return baseSlug
+  }
+
+  return clampDocumentSlugLength(`doc-${baseSlug}`)
+}
+
+export function isDocumentSlug(value: string | null | undefined) {
+  if (!value) return false
+
+  return (
+    value.length <= MAX_DOCUMENT_SLUG_LENGTH &&
+    DOCUMENT_SLUG_RE.test(value) &&
+    !isDocumentIdLike(value)
+  )
+}
+
+export function getDocumentIdentifier(target: DocRouteTarget) {
+  if (typeof target === 'string') {
+    return target
+  }
+
+  return target.slug?.trim() || target.id
+}
+
+export function isDocEditorPath(pathname: string | null | undefined) {
+  return pathname === '/docs/editor' || pathname?.startsWith('/docs/editor/') || false
+}
+
+export function getDocIdentifierFromEditorLocation(
+  pathname: string | null | undefined,
+  searchParams?: { get(name: string): string | null } | null,
+) {
+  if (!isDocEditorPath(pathname)) {
+    return null
+  }
+
+  const editorPathPrefix = '/docs/editor/'
+  if (pathname?.startsWith(editorPathPrefix)) {
+    const pathIdentifier = pathname.slice(editorPathPrefix.length)
+    if (!pathIdentifier) {
+      return null
+    }
+
+    try {
+      return decodeURIComponent(pathIdentifier)
+    } catch {
+      return pathIdentifier
+    }
+  }
+
+  return searchParams?.get('doc') ?? null
+}
+
 export function isDocEvaluationScore(value: number): value is DocEvaluationScore {
   return Number.isInteger(value) && value >= 1 && value <= 5
 }
@@ -128,11 +214,31 @@ export function normalizeAnnotationQuote(text: string): string {
   return `${normalized.slice(0, DOC_ANNOTATION_QUOTE_MAX_LENGTH - 1).trimEnd()}…`
 }
 
-export function getDocEditorHref(id: string): string {
-  return `/docs/editor?doc=${encodeURIComponent(id)}`
+export function getDocEditorHref(
+  target: DocRouteTarget,
+  options: {
+    translation?: string | null
+    reference?: DocRouteTarget | null
+  } = {},
+): string {
+  const params = new URLSearchParams()
+
+  if (options.translation) {
+    params.set('translation', options.translation)
+  }
+
+  if (options.reference) {
+    params.set('reference', getDocumentIdentifier(options.reference))
+  }
+
+  const query = params.toString()
+  return `/docs/editor/${encodeURIComponent(getDocumentIdentifier(target))}${query ? `?${query}` : ''}`
 }
 
-export const STATUS_CONFIG: Record<DocStatus, { label: string; tone: string; next: DocStatus | null; nextLabel: string | null }> = {
+export const STATUS_CONFIG: Record<
+  DocStatus,
+  { label: string; tone: string; next: DocStatus | null; nextLabel: string | null }
+> = {
   draft: { label: 'Draft', tone: 'draft', next: 'review', nextLabel: 'Submit for Review' },
   review: { label: 'In Review', tone: 'live', next: 'published', nextLabel: 'Publish' },
   published: { label: 'Published', tone: 'ready', next: 'archived', nextLabel: 'Archive' },

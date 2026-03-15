@@ -108,7 +108,7 @@ export function DocList({
                 className="group grid gap-3 px-3 py-3 transition-colors hover:bg-muted/25 lg:grid-cols-[minmax(0,1.9fr)_160px_120px_84px] lg:items-center lg:px-4"
               >
                 <Link
-                  href={getDocEditorHref(doc.id)}
+                  href={getDocEditorHref(doc)}
                   className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   <p className="truncate text-sm font-medium leading-5 text-foreground transition-colors group-hover:text-accent-foreground">

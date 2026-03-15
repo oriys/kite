@@ -6,7 +6,8 @@ import { generateEndpointDocs } from '@/lib/ai-doc-generator'
 import { AiCompletionError } from '@/lib/ai-server'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import { db } from '@/lib/db'
-import { apiEndpoints, openapiSources, documents } from '@/lib/schema'
+import { createDocument } from '@/lib/queries/documents'
+import { apiEndpoints, openapiSources } from '@/lib/schema'
 import { logServerError } from '@/lib/server-errors'
 
 const MAX_ENDPOINTS_PER_REQUEST = 50
@@ -81,25 +82,20 @@ export async function POST(request: NextRequest) {
     })
 
     // Create or update documents for each generated doc
-    const generatedDocs = []
-    for (const gen of batchResult.results) {
-      if (gen.status !== 'success' || !gen.content) continue
+      const generatedDocs = []
+      for (const gen of batchResult.results) {
+        if (gen.status !== 'success' || !gen.content) continue
 
-      const title = gen.title || `${gen.method} ${gen.path}`
-
-      const [doc] = await db
-        .insert(documents)
-        .values({
-          workspaceId: result.ctx.workspaceId,
+        const title = gen.title || `${gen.method} ${gen.path}`
+        const doc = await createDocument(
+          result.ctx.workspaceId,
           title,
-          content: gen.content,
-          status: 'draft',
-          createdBy: result.ctx.userId,
-        })
-        .returning({ id: documents.id })
+          gen.content,
+          result.ctx.userId,
+        )
 
-      generatedDocs.push({
-        endpointMethod: gen.method,
+        generatedDocs.push({
+          endpointMethod: gen.method,
         endpointPath: gen.path,
         documentId: doc.id,
         title,

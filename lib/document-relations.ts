@@ -12,6 +12,7 @@ const INSERT_BATCH_SIZE = 500
 type WorkspaceDocumentRecord = {
   id: string
   title: string
+  slug: string | null
   content: string
 }
 
@@ -38,6 +39,7 @@ export type StoredDocumentRelation = {
   sourceTitle: string
   targetDocumentId: string
   targetTitle: string
+  targetSlug: string | null
   targetContent: string
   relationType: 'reference'
   relationLabel: string
@@ -393,6 +395,7 @@ async function loadWorkspaceDocuments(workspaceId: string) {
     .select({
       id: documents.id,
       title: documents.title,
+      slug: documents.slug,
       content: documents.content,
     })
     .from(documents)
@@ -487,6 +490,7 @@ export async function listStoredDocumentRelations(input: {
       source_doc.title AS source_title,
       dr.target_document_id,
       target_doc.title AS target_title,
+      target_doc.slug AS target_slug,
       target_doc.content AS target_content,
       dr.relation_type,
       dr.relation_label,
@@ -517,6 +521,10 @@ export async function listStoredDocumentRelations(input: {
       sourceTitle: row.source_title as string,
       targetDocumentId: row.target_document_id as string,
       targetTitle: row.target_title as string,
+      targetSlug:
+        row.target_slug === undefined || row.target_slug === null
+          ? null
+          : String(row.target_slug),
       targetContent: row.target_content as string,
       relationType: row.relation_type as 'reference',
       relationLabel: (row.relation_label as string) || '',

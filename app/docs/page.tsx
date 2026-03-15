@@ -154,7 +154,7 @@ export default function DocsPage() {
     const doc = await create(title, '')
     setNewTitle('')
     setDialogOpen(false)
-    router.push(getDocEditorHref(doc.id))
+    router.push(getDocEditorHref(doc))
   }
 
   const controlPlaceholderClassName =

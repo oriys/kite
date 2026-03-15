@@ -8,6 +8,7 @@ export interface ChatMessage {
   content: string
   sources?: Array<{
     documentId: string
+    documentSlug?: string | null
     chunkId: string
     title: string
     preview: string

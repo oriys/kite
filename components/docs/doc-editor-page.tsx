@@ -1,13 +1,16 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 
 import { REVIEW_READ_ONLY_AI_ACTIONS } from '@/lib/ai'
 import {
+  getDocEditorHref,
+  getDocumentIdentifier,
   isDocumentTitleMissing,
+  normalizeDocumentSlug,
   type Doc,
   type DocStatus,
   STATUS_CONFIG,
@@ -17,8 +20,7 @@ import {
   queuePendingDocumentSummary,
 } from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
-import { BookOpenText, MessageSquare, Tag } from 'lucide-react'
-import { getDocEditorHref } from '@/lib/documents'
+import { BookOpenText, Link2, MessageSquare, Tag } from 'lucide-react'
 import type { CommentSelection } from '@/lib/editor/editor-helpers'
 import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
@@ -125,12 +127,15 @@ interface EditorSnapshot {
 }
 
 export function DocEditorPageClient() {
+  const params = useParams<{ doc?: string }>()
   const searchParams = useSearchParams()
   const router = useRouter()
   const { data: session } = useSession()
   const currentUserId = session?.user?.id ?? ''
-  const docId = searchParams.get('doc')
+  const routeDocParam = Array.isArray(params.doc) ? params.doc[0] : params.doc ?? null
+  const docId = routeDocParam ?? searchParams.get('doc')
   const translationParam = searchParams.get('translation')
+  const referenceParam = searchParams.get('reference')
   const { doc, loading, update, transition, remove, duplicate, refresh } = useDocument(docId)
   const [availableLocales, setAvailableLocales] = React.useState<
     { code: string; translationId?: string }[]
@@ -139,6 +144,7 @@ export function DocEditorPageClient() {
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
   const [category, setCategory] = React.useState('')
+  const [slugInput, setSlugInput] = React.useState('')
   const [activeLocale, setActiveLocale] = React.useState('en')
   const [activeTranslationId, setActiveTranslationId] = React.useState<string | null>(
     null,
@@ -151,7 +157,7 @@ export function DocEditorPageClient() {
   const [referencePanelOpen, setReferencePanelOpen] = React.useState(false)
   const [isEditorFullscreen, setIsEditorFullscreen] = React.useState(false)
   const [pendingComment, setPendingComment] = React.useState<CommentSelection | null>(null)
-  const [referenceDocId, setReferenceDocId] = React.useState<string | null>(null)
+  const [referenceDocIdentifier, setReferenceDocIdentifier] = React.useState<string | null>(null)
   const [visibility, setVisibility] = React.useState<'public' | 'partner' | 'private'>(
     doc?.visibility ?? 'private',
   )
@@ -180,23 +186,60 @@ export function DocEditorPageClient() {
   const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
   const sourceLocale = doc?.locale ?? 'en'
 
-  const replaceEditorQuery = React.useCallback(
-    (translationId: string | null) => {
-      if (!docId) return
+  const replaceEditorLocation = React.useCallback(
+    (overrides: {
+      docIdentifier?: string | null
+      translationId?: string | null
+      referenceIdentifier?: string | null
+    }) => {
+      const nextDocIdentifier =
+        overrides.docIdentifier === undefined ? docId : overrides.docIdentifier
 
-      const nextParams = new URLSearchParams(searchParams.toString())
-      nextParams.set('doc', docId)
+      if (!nextDocIdentifier) return
 
-      if (translationId) {
-        nextParams.set('translation', translationId)
-      } else {
-        nextParams.delete('translation')
-      }
+      const nextTranslationId =
+        overrides.translationId === undefined
+          ? translationParam
+          : overrides.translationId
+      const nextReferenceIdentifier =
+        overrides.referenceIdentifier === undefined
+          ? referenceParam
+          : overrides.referenceIdentifier
 
-      router.replace(`/docs/editor?${nextParams.toString()}`, { scroll: false })
+      router.replace(
+        getDocEditorHref(nextDocIdentifier, {
+          translation: nextTranslationId,
+          reference: nextReferenceIdentifier,
+        }),
+        { scroll: false },
+      )
     },
-    [docId, router, searchParams],
+    [docId, referenceParam, router, translationParam],
   )
+
+  const handleReferenceDocumentChange = React.useCallback(
+    (nextReferenceIdentifier: string | null) => {
+      setReferencePanelOpen(true)
+      setReferenceDocIdentifier(nextReferenceIdentifier)
+      replaceEditorLocation({ referenceIdentifier: nextReferenceIdentifier })
+    },
+    [replaceEditorLocation],
+  )
+
+  const handleReferencePanelClose = React.useCallback(() => {
+    setReferencePanelOpen(false)
+    setReferenceDocIdentifier(null)
+    replaceEditorLocation({ referenceIdentifier: null })
+  }, [replaceEditorLocation])
+
+  const handleReferencePanelToggle = React.useCallback(() => {
+    if (referencePanelOpen) {
+      handleReferencePanelClose()
+      return
+    }
+
+    setReferencePanelOpen(true)
+  }, [handleReferencePanelClose, referencePanelOpen])
 
   const buildSnapshot = React.useCallback(
     (overrides: Partial<EditorSnapshot> = {}): EditorSnapshot => ({
@@ -327,6 +370,7 @@ export function DocEditorPageClient() {
         translationId: null,
       })
       setCategory(doc.category ?? '')
+      setSlugInput(doc.slug ?? '')
       setVisibility(doc.visibility)
       setInitializedDocId(doc.id)
     }
@@ -338,13 +382,14 @@ export function DocEditorPageClient() {
       setTitle('')
       setContent('')
       setCategory('')
+      setSlugInput('')
       setActiveLocale('en')
       setActiveTranslationId(null)
       setAvailableLocales([])
       setPendingLocale(null)
       setCommentSidebarOpen(false)
       setReferencePanelOpen(false)
-      setReferenceDocId(null)
+      setReferenceDocIdentifier(null)
       pendingSaveRef.current = null
       savedSnapshotRef.current = null
       return
@@ -355,12 +400,32 @@ export function DocEditorPageClient() {
   }, [docId, initializedDocId])
 
   React.useEffect(() => {
-    if (!referenceDocId || referenceDocId !== docId) {
+    if (!referenceParam) {
+      setReferenceDocIdentifier(null)
       return
     }
 
-    setReferenceDocId(null)
-  }, [docId, referenceDocId])
+    if (referenceParam === docId) {
+      setReferenceDocIdentifier(null)
+      return
+    }
+
+    setReferencePanelOpen(true)
+    setReferenceDocIdentifier(referenceParam)
+  }, [docId, referenceParam])
+
+  React.useEffect(() => {
+    if (!docId || !doc) {
+      return
+    }
+
+    const preferredDocIdentifier = getDocumentIdentifier(doc)
+    if (docId === preferredDocIdentifier) {
+      return
+    }
+
+    replaceEditorLocation({ docIdentifier: preferredDocIdentifier })
+  }, [doc, docId, replaceEditorLocation])
 
   React.useEffect(() => {
     const currentDocId = doc?.id
@@ -468,9 +533,11 @@ export function DocEditorPageClient() {
 
         if (switchRequest) {
           localeSwitchRequestRef.current = null
-          replaceEditorQuery(switchRequest.previousSelection.translationId)
+          replaceEditorLocation({
+            translationId: switchRequest.previousSelection.translationId,
+          })
         } else if (translationParam) {
-          replaceEditorQuery(activeTranslationId)
+          replaceEditorLocation({ translationId: activeTranslationId })
         }
       } finally {
         if (switchRequest) {
@@ -492,7 +559,7 @@ export function DocEditorPageClient() {
     clearLocaleTransientState,
     doc,
     loadLocaleSnapshotFromDatabase,
-    replaceEditorQuery,
+    replaceEditorLocation,
     translationParam,
   ])
 
@@ -728,6 +795,48 @@ export function DocEditorPageClient() {
     [category, handleCategorySave],
   )
 
+  const handleSlugSave = React.useCallback(
+    async (nextSlug: string) => {
+      if (!doc) return
+
+      const normalizedSlug = nextSlug.trim() ? normalizeDocumentSlug(nextSlug) : ''
+      if (normalizedSlug === (doc.slug ?? '')) {
+        setSlugInput(doc.slug ?? normalizedSlug)
+        return
+      }
+
+      setSlugInput(normalizedSlug)
+
+      try {
+        const updatedDocument = await update({ slug: normalizedSlug })
+        if (!updatedDocument) {
+          throw new Error('Failed to update URL')
+        }
+
+        setSlugInput(updatedDocument.slug ?? '')
+        replaceEditorLocation({
+          docIdentifier: getDocumentIdentifier(updatedDocument),
+        })
+        toast.success('Document URL updated')
+      } catch {
+        setSlugInput(doc.slug ?? '')
+        toast.error('Failed to update document URL')
+      }
+    },
+    [doc, replaceEditorLocation, update],
+  )
+
+  const handleSlugKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        void handleSlugSave(slugInput)
+        editorFocusRef.current?.focus()
+      }
+    },
+    [handleSlugSave, slugInput],
+  )
+
   const syncLatestEditorContent = React.useCallback(() => {
     const latestContent = editorFocusRef.current?.flushPendingContent?.()
     if (typeof latestContent !== 'string') {
@@ -788,7 +897,7 @@ export function DocEditorPageClient() {
   const handleDuplicate = async () => {
     const newDoc = await duplicate()
     if (newDoc) {
-      router.push(getDocEditorHref(newDoc.id))
+      router.push(getDocEditorHref(newDoc))
       toast.success('Document duplicated', {
         description: `Created "${newDoc.title}".`,
       })
@@ -1013,7 +1122,7 @@ export function DocEditorPageClient() {
           created,
           createdWithOriginalContent,
         }
-        replaceEditorQuery(nextTranslationId)
+        replaceEditorLocation({ translationId: nextTranslationId })
         handedOffToQueryLoader = true
       } catch (error) {
         localeSwitchRequestRef.current = null
@@ -1036,7 +1145,7 @@ export function DocEditorPageClient() {
       content,
       doc,
       flushPendingSave,
-      replaceEditorQuery,
+      replaceEditorLocation,
       sourceLocale,
       syncLatestEditorContent,
       title,
@@ -1158,29 +1267,8 @@ export function DocEditorPageClient() {
                 readOnly={isReadOnly}
                 aria-label="Document title"
                 placeholder="Untitled document…"
-                className="flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
+                className="min-w-0 flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
               />
-              {isReadOnly ? (
-                category ? (
-                  <div className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
-                    <Tag className="size-3.5" />
-                    <span className="max-w-[140px] truncate">{category}</span>
-                  </div>
-                ) : null
-              ) : (
-                <div className="flex h-8 w-[150px] shrink-0 items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5">
-                  <Tag className="size-3.5 text-muted-foreground" />
-                  <Input
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    onBlur={() => void handleCategorySave(category)}
-                    onKeyDown={handleCategoryKeyDown}
-                    aria-label="Document category"
-                    placeholder="Category"
-                    className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
-                  />
-                </div>
-              )}
               {isReadOnly || !doc.canManagePermissions ? (
                 <VisibilityBadge visibility={visibility} className="shrink-0" />
               ) : (
@@ -1209,7 +1297,7 @@ export function DocEditorPageClient() {
                 className="h-8 w-8 shrink-0"
                 aria-label="Toggle reference document panel"
                 aria-pressed={referencePanelOpen}
-                onClick={() => setReferencePanelOpen((current) => !current)}
+                onClick={handleReferencePanelToggle}
               >
                 <BookOpenText className="size-4" />
               </Button>
@@ -1223,6 +1311,49 @@ export function DocEditorPageClient() {
               >
                 <MessageSquare className="size-4" />
               </Button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2.5">
+              {isReadOnly ? (
+                category ? (
+                  <div className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
+                    <Tag className="size-3.5" />
+                    <span className="max-w-[160px] truncate">{category}</span>
+                  </div>
+                ) : null
+              ) : (
+                <div className="flex h-8 w-[170px] items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5">
+                  <Tag className="size-3.5 text-muted-foreground" />
+                  <Input
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    onBlur={() => void handleCategorySave(category)}
+                    onKeyDown={handleCategoryKeyDown}
+                    aria-label="Document category"
+                    placeholder="Category"
+                    className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                  />
+                </div>
+              )}
+              {isReadOnly ? (
+                <div className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
+                  <Link2 className="size-3.5" />
+                  <span className="truncate">/docs/editor/{doc.slug ?? getDocumentIdentifier(doc)}</span>
+                </div>
+              ) : (
+                <div className="flex h-8 min-w-[240px] max-w-full items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5 sm:w-[320px]">
+                  <Link2 className="size-3.5 text-muted-foreground" />
+                  <span className="shrink-0 text-[11px] text-muted-foreground">/docs/editor/</span>
+                  <Input
+                    value={slugInput}
+                    onChange={(e) => setSlugInput(e.target.value)}
+                    onBlur={() => void handleSlugSave(slugInput)}
+                    onKeyDown={handleSlugKeyDown}
+                    aria-label="Document URL slug"
+                    placeholder={normalizeDocumentSlug(title || doc.title)}
+                    className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1262,10 +1393,10 @@ export function DocEditorPageClient() {
             <ResizablePanel defaultSize={40} minSize={24} className="min-h-0">
               <DocReferenceSidebar
                 activeDocumentId={doc.id}
-                referenceDocumentId={referenceDocId}
+                referenceDocumentId={referenceDocIdentifier}
                 className="h-full border-l border-border/50"
-                onReferenceDocumentChange={setReferenceDocId}
-                onClose={() => setReferencePanelOpen(false)}
+                onReferenceDocumentChange={handleReferenceDocumentChange}
+                onClose={handleReferencePanelClose}
               />
             </ResizablePanel>
           </ResizablePanelGroup>

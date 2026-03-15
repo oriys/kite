@@ -1,6 +1,7 @@
 import { desc, eq, and, sql, isNull } from 'drizzle-orm'
 import { db } from '../db'
-import { documentTemplates, documents } from '../schema'
+import { documentTemplates } from '../schema'
+import { createDocument } from './documents'
 
 type TemplateCategory = (typeof documentTemplates.$inferInsert)['category']
 
@@ -145,17 +146,12 @@ export async function createDocumentFromTemplate(
     .set({ usageCount: sql`${documentTemplates.usageCount} + 1` })
     .where(and(eq(documentTemplates.id, templateId), isNull(documentTemplates.deletedAt)))
 
-  const [doc] = await db
-    .insert(documents)
-    .values({
-      workspaceId,
-      title: title ?? tpl.name,
-      content: tpl.content,
-      createdBy,
-    })
-    .returning()
-
-  return doc
+  return createDocument(
+    workspaceId,
+    title ?? tpl.name,
+    tpl.content,
+    createdBy,
+  )
 }
 
 /** Built-in templates seeded per workspace */

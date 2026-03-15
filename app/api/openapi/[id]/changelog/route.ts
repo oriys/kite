@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server'
 import { eq, desc, and, isNull } from 'drizzle-orm'
 import { withWorkspaceAuth, notFound, badRequest } from '@/lib/api-utils'
 import { db } from '@/lib/db'
-import { openapiSources, openapiSnapshots, documents } from '@/lib/schema'
+import { createDocument } from '@/lib/queries/documents'
+import { openapiSources, openapiSnapshots } from '@/lib/schema'
 import { parseOpenAPISpec } from '@/lib/openapi/parser'
 import { diffEndpoints } from '@/lib/openapi/differ'
 import {
@@ -76,15 +77,12 @@ export async function POST(
 
   if (searchParams.get('createDoc') === 'true') {
     const title = `Changelog — ${changelogInput.version} (${new Date().toISOString().split('T')[0]})`
-    const [doc] = await db
-      .insert(documents)
-      .values({
-        workspaceId: result.ctx.workspaceId,
-        title,
-        content: markdown,
-        createdBy: result.ctx.userId,
-      })
-      .returning()
+    const doc = await createDocument(
+      result.ctx.workspaceId,
+      title,
+      markdown,
+      result.ctx.userId,
+    )
     documentId = doc.id
   }
 

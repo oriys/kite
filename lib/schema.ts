@@ -219,6 +219,7 @@ export const documents = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     title: text('title').notNull().default('Untitled'),
+    slug: text('slug'),
     category: text('category').notNull().default(''),
     content: text('content').notNull().default(''),
     summary: text('summary').notNull().default(''),
@@ -234,6 +235,9 @@ export const documents = pgTable(
     }),
   },
   (t) => [
+    uniqueIndex('documents_workspace_slug_idx')
+      .on(t.workspaceId, t.slug)
+      .where(sql`${t.deletedAt} is null and ${t.slug} is not null`),
     index('documents_workspace_active_updated_idx')
       .on(t.workspaceId, t.updatedAt)
       .where(sql`${t.deletedAt} is null`),

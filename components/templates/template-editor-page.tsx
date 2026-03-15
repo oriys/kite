@@ -363,7 +363,7 @@ export function TemplateEditorPageClient() {
       toast.success('Document created', {
         description: `Created "${doc.title}".`,
       })
-      router.push(getDocEditorHref(doc.id))
+      router.push(getDocEditorHref(doc))
     } finally {
       setCreateDocumentBusy(false)
     }

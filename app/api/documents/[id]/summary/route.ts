@@ -4,7 +4,7 @@ import { NextResponse, after } from 'next/server'
 import { forbidden, notFound, withWorkspaceAuth } from '@/lib/api-utils'
 import { generateDocumentMetadata } from '@/lib/document-summary'
 import {
-  getDocument,
+  getDocumentByIdentifier,
   updateDocumentSummaryIfUnchanged,
 } from '@/lib/queries/documents'
 import { buildDocumentAccessMap } from '@/lib/queries/document-permissions'
@@ -18,7 +18,7 @@ export async function POST(
   if ('error' in result) return result.error
 
   const { id } = await context.params
-  const doc = await getDocument(id, result.ctx.workspaceId)
+  const doc = await getDocumentByIdentifier(id, result.ctx.workspaceId)
   if (!doc) return notFound()
 
   const access = (
@@ -35,14 +35,14 @@ export async function POST(
       })
 
       await updateDocumentSummaryIfUnchanged(
-        id,
+        doc.id,
         result.ctx.workspaceId,
         metadata,
         doc.updatedAt,
       )
     } catch (error) {
       logServerError('Failed to refresh summary for document.', error, {
-        documentId: id,
+        documentId: doc.id,
         workspaceId: result.ctx.workspaceId,
         userId: result.ctx.userId,
       })

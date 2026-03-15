@@ -1,6 +1,7 @@
 import { eq, and, asc, ne, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { apiVersions, documents } from '../schema'
+import { createDocumentSlugAllocator } from './documents'
 
 export async function listApiVersions(workspaceId: string) {
   return db
@@ -112,6 +113,7 @@ export async function cloneVersionDocuments(
   targetVersionId: string,
   workspaceId: string,
 ) {
+  const allocateSlug = await createDocumentSlugAllocator(workspaceId)
   const sourceDocs = await db
     .select({
       workspaceId: documents.workspaceId,
@@ -139,6 +141,7 @@ export async function cloneVersionDocuments(
       sourceDocs.map((doc) => ({
         workspaceId: doc.workspaceId,
         title: doc.title,
+        slug: allocateSlug(doc.title),
         content: doc.content,
         summary: doc.summary,
         status: doc.status,

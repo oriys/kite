@@ -6,7 +6,10 @@ import {
   badRequest,
   forbidden,
 } from '@/lib/api-utils'
-import { getDocument, transitionDocument } from '@/lib/queries/documents'
+import {
+  getDocumentByIdentifier,
+  transitionDocument,
+} from '@/lib/queries/documents'
 import {
   attachDocumentAccess,
   buildDocumentAccessMap,
@@ -27,7 +30,7 @@ export async function POST(
   }
 
   const { id } = await context.params
-  const existing = await getDocument(id, result.ctx.workspaceId)
+  const existing = await getDocumentByIdentifier(id, result.ctx.workspaceId)
   if (!existing) return notFound()
 
   const access = (
@@ -43,7 +46,7 @@ export async function POST(
     )
   }
 
-  const doc = await transitionDocument(id, result.ctx.workspaceId, newStatus)
+  const doc = await transitionDocument(existing.id, result.ctx.workspaceId, newStatus)
   if (!doc) return notFound()
 
   const updatedAccess = (

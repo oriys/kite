@@ -43,6 +43,7 @@ type ChatSourceRelationType = 'primary' | 'reference'
 
 export interface ChatSource {
   documentId: string
+  documentSlug?: string | null
   chunkId: string
   title: string
   preview: string
@@ -58,6 +59,7 @@ interface RetrievedContextSection {
 interface StoredDocumentRecord {
   id: string
   title: string
+  slug: string | null
   content: string
 }
 
@@ -175,6 +177,7 @@ export async function searchSimilarChunks(input: {
       dc.chunk_text,
       dc.chunk_index,
       d.title AS document_title,
+      d.slug AS document_slug,
       1 - (dc.embedding <=> ${queryVector}::vector) AS similarity
     FROM document_chunks dc
     JOIN documents d ON d.id = dc.document_id AND d.deleted_at IS NULL
@@ -191,6 +194,10 @@ export async function searchSimilarChunks(input: {
     chunkText: row.chunk_text as string,
     chunkIndex: row.chunk_index as number,
     documentTitle: row.document_title as string,
+    documentSlug:
+      row.document_slug === undefined || row.document_slug === null
+        ? null
+        : String(row.document_slug),
     similarity: Number(row.similarity ?? 0),
   }))
 }
@@ -841,6 +848,7 @@ async function searchReferenceCandidateDocuments(input: {
     SELECT
       d.id,
       d.title,
+      d.slug,
       d.content,
       d.updated_at,
       ${keywordRank} AS keyword_rank
@@ -859,6 +867,10 @@ async function searchReferenceCandidateDocuments(input: {
       const document = {
         id: row.id as string,
         title: (row.title as string) || 'Untitled',
+        slug:
+          row.slug === undefined || row.slug === null
+            ? null
+            : String(row.slug),
         content: String(row.content ?? ''),
       } satisfies StoredDocumentRecord
 
@@ -927,6 +939,7 @@ async function loadDocumentsByIds(workspaceId: string, ids: string[]) {
     .select({
       id: documents.id,
       title: documents.title,
+      slug: documents.slug,
       content: documents.content,
     })
     .from(documents)
@@ -1038,6 +1051,7 @@ function buildSemanticSections(input: {
     sections.push({
       source: {
         documentId: chunk.documentId,
+        documentSlug: chunk.documentSlug,
         chunkId: chunk.chunkId,
         title: chunk.documentTitle,
         preview: chunk.chunkText.slice(0, 150),
@@ -1095,6 +1109,7 @@ async function expandStoredReferencedDocuments(input: {
     sections.push({
       source: {
         documentId: relation.targetDocumentId,
+        documentSlug: relation.targetSlug,
         chunkId: `document:${relation.targetDocumentId}:reference`,
         title: relation.targetTitle,
         preview: snippet.slice(0, 150),
@@ -1188,6 +1203,7 @@ async function expandReferencedDocuments(input: {
     sections.push({
       source: {
         documentId: document.id,
+        documentSlug: document.slug,
         chunkId: `document:${document.id}:reference`,
         title: document.title,
         preview: snippet.slice(0, 150),
@@ -1261,6 +1277,10 @@ async function searchKeywordDocuments(input: {
     sections.push({
       source: {
         documentId,
+        documentSlug:
+          row.slug === undefined || row.slug === null
+            ? null
+            : String(row.slug),
         chunkId: `document:${documentId}:keyword`,
         title,
         preview: snippet.slice(0, 150),

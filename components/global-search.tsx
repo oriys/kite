@@ -129,13 +129,11 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
       <DialogContent
         className="overflow-hidden p-0 sm:max-w-[560px]"
         showCloseButton={false}
-        aria-labelledby="global-search-title"
-        aria-describedby="global-search-description"
       >
-        <DialogTitle id="global-search-title" className="sr-only">
+        <DialogTitle className="sr-only">
           Search documents
         </DialogTitle>
-        <DialogDescription id="global-search-description" className="sr-only">
+        <DialogDescription className="sr-only">
           Full-text search across all workspace documents
         </DialogDescription>
         <CommandPrimitive
