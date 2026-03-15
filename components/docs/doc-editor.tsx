@@ -2,26 +2,10 @@
 
 import * as React from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { createPortal } from 'react-dom'
-import StarterKit from '@tiptap/starter-kit'
-import { Table as TiptapTable } from '@tiptap/extension-table'
-import TableRow from '@tiptap/extension-table-row'
-import TableCell from '@tiptap/extension-table-cell'
-import TableHeader from '@tiptap/extension-table-header'
-import TiptapLink from '@tiptap/extension-link'
-import Placeholder from '@tiptap/extension-placeholder'
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
-import CharacterCount from '@tiptap/extension-character-count'
 import { TextSelection } from '@tiptap/pm/state'
-import { common, createLowlight } from 'lowlight'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
 import {
-  Sparkles,
-} from 'lucide-react'
-import {
-  AI_ACTION_LABELS,
-  MAX_AI_CUSTOM_PROMPT_LENGTH,
   MAX_AI_TRANSFORM_TEXT_LENGTH,
   isAiAppendResultAction,
   isAiPreviewOnlyAction,
@@ -40,14 +24,9 @@ import {
 import { cn } from '@/lib/utils'
 import { htmlToMd } from '@/lib/html-to-markdown'
 import { type DocSnippet } from '@/lib/doc-snippets'
-import { JsonViewerNode, SchemaViewerNode, HeatmapNode } from '@/lib/editor/custom-nodes'
-import { CommentMark } from '@/lib/editor/comment-marks'
-import { createImagePasteDropExtension } from '@/lib/editor/image-paste-drop'
-import { SearchReplace } from '@/lib/editor/search-replace'
 import { DocFindReplace } from '@/components/docs/doc-find-replace'
 import {
   type AiPreviewRequest,
-  type AiPreviewState,
   type DocEditorProps,
   type EditorMode,
   DEFAULT_HEATMAP_SNIPPET,
@@ -63,24 +42,6 @@ import { useEditorResize } from '@/hooks/use-editor-resize'
 import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from '@/components/ui/field'
-import { Textarea } from '@/components/ui/textarea'
 import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
 import { DocAiResultPanel } from '@/components/docs/doc-ai-result-panel'
 import { DocHeatmapEditorDialog } from '@/components/docs/doc-heatmap-editor-dialog'
@@ -88,12 +49,11 @@ import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
 import { wordCount } from '@/lib/utils'
+import { createEditorExtensions } from '@/components/docs/doc-editor-extensions'
+import { useAiState } from '@/components/docs/doc-editor-hooks'
+import { CustomAiPromptDialog, LinkInputDialog, FloatingStatsPill } from '@/components/docs/doc-editor-panes'
 
 export type { DocEditorHandle } from '@/lib/editor/editor-helpers'
-
-// ── Lowlight setup ─────────────────────────────────────────────────────────
-
-const lowlight = createLowlight(common)
 
 // ── Main Editor Component ──────────────────────────────────────────────────
 
@@ -138,45 +98,7 @@ export function DocEditor({
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
 
   // ── AI state (consolidated reducer to minimize re-renders) ───────────────
-  type AiState = {
-    pendingAction: AiTransformAction | null
-    pendingScope: 'selection' | 'document' | null
-    preview: AiPreviewState | null
-    customPromptOpen: boolean
-    customPromptValue: string
-    customPromptSelectionText: string
-  }
-  type AiAction =
-    | { type: 'SET_PENDING'; action: AiTransformAction | null; scope: 'selection' | 'document' | null }
-    | { type: 'SET_PREVIEW'; preview: AiPreviewState | null }
-    | { type: 'SET_PREVIEW_RESULT'; resultText: string }
-    | { type: 'OPEN_CUSTOM_PROMPT'; selectionText: string }
-    | { type: 'CLOSE_CUSTOM_PROMPT' }
-    | { type: 'SET_CUSTOM_PROMPT_VALUE'; value: string }
-    | { type: 'RESET' }
-  const [ai, dispatchAi] = React.useReducer(
-    (state: AiState, action: AiAction): AiState => {
-      switch (action.type) {
-        case 'SET_PENDING':
-          return { ...state, pendingAction: action.action, pendingScope: action.scope }
-        case 'SET_PREVIEW':
-          return { ...state, preview: action.preview }
-        case 'SET_PREVIEW_RESULT':
-          return state.preview ? { ...state, preview: { ...state.preview, resultText: action.resultText } } : state
-        case 'OPEN_CUSTOM_PROMPT':
-          return { ...state, customPromptOpen: true, customPromptValue: '', customPromptSelectionText: action.selectionText }
-        case 'CLOSE_CUSTOM_PROMPT':
-          return { ...state, customPromptOpen: false }
-        case 'SET_CUSTOM_PROMPT_VALUE':
-          return { ...state, customPromptValue: action.value }
-        case 'RESET':
-          return { pendingAction: null, pendingScope: null, preview: null, customPromptOpen: false, customPromptValue: '', customPromptSelectionText: '' }
-        default:
-          return state
-      }
-    },
-    { pendingAction: null, pendingScope: null, preview: null, customPromptOpen: false, customPromptValue: '', customPromptSelectionText: '' },
-  )
+  const [ai, dispatchAi] = useAiState()
 
   // ── UI state ─────────────────────────────────────────────────────────────
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)
@@ -251,41 +173,7 @@ export function DocEditor({
   const editor = useEditor({
     immediatelyRender: false,
     content: mdToHtml(content),
-    extensions: [
-      StarterKit.configure({
-        codeBlock: false,
-        dropcursor: { color: 'oklch(0.63 0.16 244)', width: 2 },
-      }),
-      TiptapTable.configure({
-        resizable: true,
-        HTMLAttributes: { class: '' },
-      }),
-      TableRow,
-      TableCell,
-      TableHeader,
-      TiptapLink.configure({
-        openOnClick: false,
-        HTMLAttributes: { class: '' },
-      }),
-      createImagePasteDropExtension().configure({
-        HTMLAttributes: { class: '' },
-        allowBase64: true,
-      }),
-      Placeholder.configure({
-        placeholder: 'Start writing, or type / for commands…',
-      }),
-      CodeBlockLowlight.configure({
-        lowlight,
-        defaultLanguage: 'text',
-        HTMLAttributes: {},
-      }),
-      CharacterCount,
-      SearchReplace,
-      CommentMark,
-      JsonViewerNode,
-      SchemaViewerNode,
-      HeatmapNode,
-    ],
+    extensions: createEditorExtensions(),
     editable: !readOnly,
     editorProps: {
       attributes: {
@@ -1017,10 +905,6 @@ export function DocEditor({
     }
   }, [])
 
-  // ── Custom AI model selection ────────────────────────────────────────────
-
-  const customActionModelSelection = resolveActionModelSelection('custom')
-
   // ── Toolbar callback stability ──────────────────────────────────────────
 
   const handleRichChange = React.useCallback(() => {
@@ -1037,43 +921,6 @@ export function DocEditor({
     },
     [handleAiDocumentAction],
   )
-
-  const floatingStatsPillContent =
-    !readOnly && editor ? (
-      <div
-        className={cn(
-          'pointer-events-none absolute right-4 bottom-4 z-30 flex items-center gap-2 rounded-full border border-border/60 px-3 py-1 text-[10px] font-medium shadow-sm backdrop-blur-sm sm:right-5 sm:bottom-5',
-          selectionInfo
-            ? 'bg-background/90 text-muted-foreground animate-in fade-in slide-in-from-bottom-2'
-            : 'bg-background/80 text-muted-foreground/60',
-        )}
-      >
-        {selectionInfo ? (
-          <>
-            <span>
-              {selectionInfo.words}{' '}
-              {selectionInfo.words === 1 ? 'word' : 'words'}
-            </span>
-            <span className="opacity-40">/</span>
-            <span>
-              {selectionInfo.chars}{' '}
-              {selectionInfo.chars === 1 ? 'char' : 'chars'}
-            </span>
-          </>
-        ) : (
-          <>
-            <span>{editor.storage.characterCount?.characters() ?? 0} chars</span>
-            <span className="opacity-40">/</span>
-            <span>{editor.storage.characterCount?.words() ?? 0} words</span>
-          </>
-        )}
-      </div>
-    ) : null
-
-  const floatingStatsPill =
-    floatingStatsPillContent && statsOverlayContainerRef?.current
-      ? createPortal(floatingStatsPillContent, statsOverlayContainerRef.current)
-      : floatingStatsPillContent
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -1396,103 +1243,29 @@ export function DocEditor({
         ) : null}
 
         {/* Custom AI Prompt Dialog */}
-        <Dialog
+        <CustomAiPromptDialog
           open={ai.customPromptOpen}
-          onOpenChange={(open) => {
-            if (!open) {
-              customPromptSelectionRef.current = null
-              dispatchAi({ type: 'CLOSE_CUSTOM_PROMPT' })
-            }
+          selectionText={ai.customPromptSelectionText}
+          promptValue={ai.customPromptValue}
+          modelLabel={resolveActionModelSelection('custom')?.modelLabel ?? null}
+          onPromptChange={(value) => dispatchAi({ type: 'SET_CUSTOM_PROMPT_VALUE', value })}
+          onClose={() => {
+            customPromptSelectionRef.current = null
+            dispatchAi({ type: 'CLOSE_CUSTOM_PROMPT' })
           }}
-        >
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{AI_ACTION_LABELS.custom}</DialogTitle>
-              <DialogDescription>
-                Describe exactly how the selected text should be transformed. The result still opens in preview first.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">
-                {customActionModelSelection?.modelLabel ?? 'No AI enabled'}
-              </Badge>
-              <Badge variant="outline">{ai.customPromptSelectionText.length} selected characters</Badge>
-            </div>
-
-            <div className="rounded-lg border border-border/75 bg-muted/35 px-4 py-3">
-              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Selected text
-              </p>
-              <p className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-sm leading-6 text-foreground">
-                {ai.customPromptSelectionText}
-              </p>
-            </div>
-
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="custom-ai-prompt">Prompt</FieldLabel>
-                <FieldContent>
-                  <Textarea
-                    id="custom-ai-prompt"
-                    value={ai.customPromptValue}
-                    onChange={(event) => dispatchAi({ type: 'SET_CUSTOM_PROMPT_VALUE', value: event.target.value })}
-                    className="min-h-36 leading-6"
-                    placeholder="Example: Rewrite this into a concise changelog for release notes, keep all technical terms and bullet structure."
-                    maxLength={MAX_AI_CUSTOM_PROMPT_LENGTH}
-                    autoFocus
-                  />
-                  <FieldDescription>
-                    Be explicit about tone, format, constraints, or what should stay unchanged.
-                    {` ${ai.customPromptValue.length} / ${MAX_AI_CUSTOM_PROMPT_LENGTH}`}
-                  </FieldDescription>
-                </FieldContent>
-              </Field>
-            </FieldGroup>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => dispatchAi({ type: 'CLOSE_CUSTOM_PROMPT' })}>
-                Cancel
-              </Button>
-              <Button onClick={() => void handleSubmitCustomPrompt()} disabled={!ai.customPromptValue.trim()}>
-                <Sparkles data-icon="inline-start" />
-                Run prompt
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          onSubmit={() => void handleSubmitCustomPrompt()}
+        />
 
         <KeyboardShortcutsDialog open={showShortcuts} onOpenChange={setShowShortcuts} />
 
         {/* Inline link input dialog */}
-        <Dialog open={linkInputOpen} onOpenChange={(open) => {
-          if (!open) { setLinkInputOpen(false); setLinkInputUrl('') }
-        }}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Insert Link</DialogTitle>
-              <DialogDescription>Enter the URL for this link.</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); submitLinkInput() }}>
-              <input
-                type="url"
-                value={linkInputUrl}
-                onChange={(e) => setLinkInputUrl(e.target.value)}
-                placeholder="https://example.com"
-                autoFocus
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <DialogFooter className="mt-4">
-                <Button type="button" variant="ghost" size="sm" onClick={() => { setLinkInputOpen(false); setLinkInputUrl('') }}>
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={!linkInputUrl.trim()}>
-                  Insert
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <LinkInputDialog
+          open={linkInputOpen}
+          url={linkInputUrl}
+          onUrlChange={setLinkInputUrl}
+          onClose={() => { setLinkInputOpen(false); setLinkInputUrl('') }}
+          onSubmit={submitLinkInput}
+        />
 
         <DocHeatmapEditorDialog
           open={heatmapEditorOpen}
@@ -1503,7 +1276,13 @@ export function DocEditor({
           onSave={handleHeatmapSave}
         />
 
-        {floatingStatsPill}
+        {!readOnly && editor && (
+          <FloatingStatsPill
+            editor={editor}
+            selectionInfo={selectionInfo}
+            statsOverlayContainerRef={statsOverlayContainerRef}
+          />
+        )}
       </div>
     </div>
   )
