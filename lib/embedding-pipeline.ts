@@ -8,9 +8,7 @@ import {
 } from '@/lib/ai-server'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
-
-const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
-const EMBEDDING_BATCH_SIZE = 20
+import { DEFAULT_EMBEDDING_MODEL, EMBEDDING_BATCH_SIZE } from '@/lib/ai-config'
 
 async function resolveEmbeddingProvider(workspaceId: string) {
   const [providers, settings] = await Promise.all([

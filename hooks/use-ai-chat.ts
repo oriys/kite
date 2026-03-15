@@ -95,7 +95,7 @@ export function useAiChat(options: UseAiChatOptions = {}) {
             )
             sources = JSON.parse(new TextDecoder().decode(bytes))
           } catch {
-            // ignore
+            // Non-critical: sources are supplementary metadata, chat works without them
           }
         }
 
@@ -163,7 +163,7 @@ export function useAiChat(options: UseAiChatOptions = {}) {
         })),
       )
     } catch {
-      // ignore
+      // Non-critical: loading previous session is optional, user starts with empty chat
     }
   }, [])
 

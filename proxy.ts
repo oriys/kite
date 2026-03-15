@@ -19,15 +19,43 @@ function isSafeCallbackUrl(url: string) {
   return url.startsWith('/') && !url.startsWith('//')
 }
 
+function generateRequestId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
+}
+
 export default auth((req) => {
+  const start = Date.now()
   const { pathname } = req.nextUrl
+  const method = req.method
   const session = req.auth
 
-  if (isStaticAsset(pathname) || isPublicPath(pathname)) {
+  if (isStaticAsset(pathname)) {
     return NextResponse.next()
   }
 
+  const requestId = generateRequestId()
+  const log = () => {
+    const duration = Date.now() - start
+    if (process.env.NODE_ENV === 'development') {
+      console.log(
+        `[req] ${method.padEnd(7)} ${pathname} ${duration}ms  (${requestId})`,
+      )
+    } else {
+      console.log(
+        JSON.stringify({ requestId, method, path: pathname, duration, ts: new Date().toISOString() }),
+      )
+    }
+  }
+
+  if (isPublicPath(pathname)) {
+    log()
+    const res = NextResponse.next()
+    res.headers.set('x-request-id', requestId)
+    return res
+  }
+
   if (!session) {
+    log()
     const signInUrl = new URL('/auth/signin', req.url)
     if (isSafeCallbackUrl(pathname)) {
       signInUrl.searchParams.set('callbackUrl', pathname)
@@ -35,7 +63,10 @@ export default auth((req) => {
     return NextResponse.redirect(signInUrl)
   }
 
-  return NextResponse.next()
+  log()
+  const res = NextResponse.next()
+  res.headers.set('x-request-id', requestId)
+  return res
 })
 
 export const config = {

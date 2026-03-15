@@ -1,4 +1,5 @@
 import { createHash } from 'crypto'
+import { TARGET_CHUNK_TOKENS, OVERLAP_TOKENS } from '@/lib/ai-config'
 
 export interface DocumentChunk {
   chunkIndex: number
@@ -7,8 +8,6 @@ export interface DocumentChunk {
   tokenCount: number
 }
 
-const TARGET_CHUNK_TOKENS = 500
-const OVERLAP_TOKENS = 50
 const CHARS_PER_TOKEN_EN = 4
 const CHARS_PER_TOKEN_CJK = 2
 

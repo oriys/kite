@@ -50,8 +50,8 @@ export function DocComparePageClient() {
         if (!cancelled) {
           setAllDocs(data.map((d) => ({ id: d.id, title: d.title })))
         }
-      } catch {
-        // silent
+      } catch (error) {
+        console.warn('[doc-compare] Failed to load documents:', error)
       }
     }
     void load()

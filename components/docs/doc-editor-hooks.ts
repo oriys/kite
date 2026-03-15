@@ -20,7 +20,7 @@ export type AiAction =
   | { type: 'SET_CUSTOM_PROMPT_VALUE'; value: string }
   | { type: 'RESET' }
 
-const AI_INITIAL_STATE: AiState = {
+export const AI_INITIAL_STATE: AiState = {
   pendingAction: null,
   pendingScope: null,
   preview: null,
@@ -29,7 +29,7 @@ const AI_INITIAL_STATE: AiState = {
   customPromptSelectionText: '',
 }
 
-function aiReducer(state: AiState, action: AiAction): AiState {
+export function aiReducer(state: AiState, action: AiAction): AiState {
   switch (action.type) {
     case 'SET_PENDING':
       return { ...state, pendingAction: action.action, pendingScope: action.scope }

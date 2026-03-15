@@ -6,6 +6,7 @@ import {
 } from '@/lib/ai-server'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
+import { TEMPERATURE_DOC_GEN } from '@/lib/ai-config'
 
 const MAX_SCHEMA_JSON_LENGTH = 3_000
 
@@ -151,7 +152,7 @@ export async function generateEndpointDoc(input: {
     model: selection.modelId,
     systemPrompt: SYSTEM_PROMPT,
     userPrompt: buildUserPrompt(input.endpoint, input.apiTitle),
-    temperature: 0.2,
+    temperature: TEMPERATURE_DOC_GEN,
   })
 
   const title = input.endpoint.summary

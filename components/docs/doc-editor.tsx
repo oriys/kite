@@ -50,7 +50,7 @@ import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
 import { wordCount } from '@/lib/utils'
 import { createEditorExtensions } from '@/components/docs/doc-editor-extensions'
-import { useAiState } from '@/components/docs/doc-editor-hooks'
+import { aiReducer, AI_INITIAL_STATE } from '@/components/docs/doc-editor-hooks'
 import { CustomAiPromptDialog, LinkInputDialog, FloatingStatsPill } from '@/components/docs/doc-editor-panes'
 
 export type { DocEditorHandle } from '@/lib/editor/editor-helpers'
@@ -98,7 +98,7 @@ export function DocEditor({
   const [activePane, setActivePane] = React.useState<ToolbarMode>('wysiwyg')
 
   // ── AI state (consolidated reducer to minimize re-renders) ───────────────
-  const [ai, dispatchAi] = useAiState()
+  const [ai, dispatchAi] = React.useReducer(aiReducer, AI_INITIAL_STATE)
 
   // ── UI state ─────────────────────────────────────────────────────────────
   const [selectionInfo, setSelectionInfo] = React.useState<{ words: number; chars: number } | null>(null)

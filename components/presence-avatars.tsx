@@ -79,7 +79,9 @@ export function PresenceAvatars({
       fetch(
         `/api/presence?documentId=${encodeURIComponent(documentId)}`,
         { method: 'DELETE' },
-      ).catch(() => {})
+      ).catch((err) => {
+        console.warn('[presence] Failed to clear presence on unmount:', err)
+      })
     }
   }, [documentId, currentUserId])
 

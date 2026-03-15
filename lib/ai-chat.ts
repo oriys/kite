@@ -15,29 +15,31 @@ import {
 import { listStoredDocumentRelations } from '@/lib/document-relations'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
-
-const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
-const TOP_K_CHUNKS = 8
-const TOP_K_KEYWORD_DOCUMENTS = 4
-const MAX_QUERY_VARIANTS = 4
-const MAX_SEMANTIC_CHUNKS = 6
-const MAX_SEMANTIC_CHUNKS_PER_DOCUMENT = 2
-const ADJACENT_CHUNK_RADIUS = 1
-const MAX_CONTEXT_CHARS = 12_000
-const MAX_CONTEXT_SECTIONS = 8
-const MAX_SECTION_CHARS = 1_700
-const MAX_COMPRESSED_BLOCKS = 4
-const MAX_HISTORY_MESSAGES = 10
-const MAX_KEYWORD_SNIPPET_CHARS = 1_600
-const MIN_VECTOR_SIMILARITY = 0.15
-const VECTOR_SIMILARITY_WINDOW = 0.18
-const MAX_PRIMARY_DOCUMENTS = 4
-const MAX_REFERENCE_LINKS_PER_DOCUMENT = 4
-const MAX_REFERENCE_SEARCH_RESULTS = 5
-const MAX_RELATED_DOCUMENTS = 4
-const SHOPLINE_DOCS_BASE_URL = 'https://developer.shopline.com'
-const DEFAULT_RERANKER_MODEL = 'BAAI/bge-reranker-v2-m3'
-const MAX_RERANK_DOCUMENT_CHARS = 2_200
+import {
+  DEFAULT_EMBEDDING_MODEL,
+  DEFAULT_RERANKER_MODEL,
+  TOP_K_CHUNKS,
+  TOP_K_KEYWORD_DOCUMENTS,
+  MAX_QUERY_VARIANTS,
+  MAX_SEMANTIC_CHUNKS,
+  MAX_SEMANTIC_CHUNKS_PER_DOCUMENT,
+  ADJACENT_CHUNK_RADIUS,
+  MAX_CONTEXT_CHARS,
+  MAX_CONTEXT_SECTIONS,
+  MAX_SECTION_CHARS,
+  MAX_COMPRESSED_BLOCKS,
+  MAX_HISTORY_MESSAGES,
+  MAX_KEYWORD_SNIPPET_CHARS,
+  MIN_VECTOR_SIMILARITY,
+  VECTOR_SIMILARITY_WINDOW,
+  MAX_PRIMARY_DOCUMENTS,
+  MAX_REFERENCE_LINKS_PER_DOCUMENT,
+  MAX_REFERENCE_SEARCH_RESULTS,
+  MAX_RELATED_DOCUMENTS,
+  MAX_RERANK_DOCUMENT_CHARS,
+  SHOPLINE_DOCS_BASE_URL,
+  TEMPERATURE_CHAT,
+} from '@/lib/ai-config'
 
 type ChatSourceRelationType = 'primary' | 'reference'
 
@@ -1627,7 +1629,7 @@ export async function streamChatResponse(input: {
     model: selection.modelId,
     systemPrompt,
     messages,
-    temperature: 0.3,
+    temperature: TEMPERATURE_CHAT,
   })
 
   return {

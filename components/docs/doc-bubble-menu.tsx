@@ -42,6 +42,32 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  AutoFixActionIcon,
+  DiagramActionIcon,
+  ExplainActionIcon,
+  ExpandActionIcon,
+  ManageActionIcon,
+  ShortenActionIcon,
+} from '@/components/docs/doc-bubble-menu-icons'
+import {
+  AI_MENU_CLOSE_DELAY,
+  AI_MENU_FLYOUT_GAP,
+  AI_MENU_OPEN_DELAY,
+  DEFAULT_SELECTION_AI_ACTIONS,
+  MENU_FALLBACK_HEIGHT,
+  MENU_FALLBACK_WIDTH,
+  MENU_HORIZONTAL_PADDING,
+  MENU_SELECTION_GAP,
+  MENU_VIEWPORT_PADDING,
+  clamp,
+  getAiFlyoutWidth,
+  getSelectionAnchorRect,
+  type AiFlyoutDirection,
+  type AiFlyoutPanel,
+  type BubbleMenuPosition,
+} from '@/components/docs/doc-bubble-menu-helpers'
+import { AiMenuCard, AiMenuItemContent } from '@/components/docs/doc-bubble-menu-cards'
 
 interface BubbleMenuProps {
   editorRef: React.RefObject<HTMLDivElement | null>
@@ -58,253 +84,6 @@ interface BubbleMenuProps {
   activeModelId: string | null
   onActiveModelChange: (modelId: string) => void
   aiModelsLoading?: boolean
-}
-
-interface BubbleMenuPosition {
-  top: number
-  left: number
-}
-
-type AiFlyoutPanel = 'models' | 'languages' | 'prompts' | null
-
-const MENU_VIEWPORT_PADDING = 8
-const MENU_SELECTION_GAP = 12
-const MENU_FALLBACK_HEIGHT = 44
-const MENU_FALLBACK_WIDTH = 220
-const MENU_HORIZONTAL_PADDING = 24
-const AI_MENU_FLYOUT_GAP = 8
-const AI_MENU_MODELS_WIDTH = 288
-const AI_MENU_LANGUAGES_WIDTH = 224
-const AI_MENU_PROMPTS_WIDTH = 416
-const AI_MENU_OPEN_DELAY = 140
-const AI_MENU_CLOSE_DELAY = 110
-
-const DEFAULT_SELECTION_AI_ACTIONS = [
-  'polish',
-  'autofix',
-  'shorten',
-  'expand',
-  'translate',
-  'explain',
-  'diagram',
-] as const satisfies readonly AiTransformAction[]
-
-type AiFlyoutDirection = 'right' | 'left' | 'bottom'
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
-}
-
-function isRectVisibleInViewport(rect: DOMRect, viewportRect: DOMRect) {
-  return (
-    rect.width > 0 &&
-    rect.height > 0 &&
-    rect.bottom >= viewportRect.top &&
-    rect.top <= viewportRect.bottom &&
-    rect.right >= viewportRect.left &&
-    rect.left <= viewportRect.right
-  )
-}
-
-function getSelectionAnchorRect(range: Range, viewportRect: DOMRect) {
-  const clientRects = Array.from(range.getClientRects()).filter(
-    (rect) => rect.width > 0 && rect.height > 0,
-  )
-
-  if (clientRects.length === 0) {
-    return range.getBoundingClientRect()
-  }
-
-  const visibleRects = clientRects.filter((rect) =>
-    isRectVisibleInViewport(rect, viewportRect),
-  )
-  const candidateRects = visibleRects.length > 0 ? visibleRects : clientRects
-
-  return candidateRects.reduce((bestRect, rect) => {
-    if (rect.top < bestRect.top - 1) return rect
-    if (Math.abs(rect.top - bestRect.top) <= 1 && rect.left < bestRect.left) return rect
-    return bestRect
-  })
-}
-
-function ShortenActionIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M2.5 5h3m8 0H10.5M6 3.5 4.5 5 6 6.5M10 9.5 11.5 11 10 12.5M2.5 11h3m8 0H10.5"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function ExpandActionIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M5 3.5 3.5 5 5 6.5M11 9.5 12.5 11 11 12.5M2.5 5h3m8 0H10.5M2.5 11h3m8 0H10.5"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function ExplainActionIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M4.5 4.25h7a1.75 1.75 0 0 1 1.75 1.75v4a1.75 1.75 0 0 1-1.75 1.75H8l-2.75 2v-2H4.5A1.75 1.75 0 0 1 2.75 10V6A1.75 1.75 0 0 1 4.5 4.25Z"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M6.5 6.75h3M6.5 9.25h2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-function AutoFixActionIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M3.5 4.5h5M3.5 8h3M3.5 11.5h4.5M10.5 3.75l.9 1.8 2 .28-1.45 1.4.34 1.97-1.79-.93-1.79.93.34-1.97-1.45-1.4 2-.28.9-1.8Z"
-        stroke="currentColor"
-        strokeWidth="1.35"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function DiagramActionIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
-      <rect
-        x="2.5"
-        y="3"
-        width="4"
-        height="3"
-        rx="0.75"
-        stroke="currentColor"
-        strokeWidth="1.4"
-      />
-      <rect
-        x="9.5"
-        y="3"
-        width="4"
-        height="3"
-        rx="0.75"
-        stroke="currentColor"
-        strokeWidth="1.4"
-      />
-      <rect
-        x="6"
-        y="10"
-        width="4"
-        height="3"
-        rx="0.75"
-        stroke="currentColor"
-        strokeWidth="1.4"
-      />
-      <path
-        d="M6.5 4.5h3M8 6v4"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-function ManageActionIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M3 4.25h6M10.5 4.25h2.5M3 8h2.5M7 8h6M3 11.75h6M10.5 11.75H13"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-      <circle cx="9.5" cy="4.25" r="1.25" fill="currentColor" />
-      <circle cx="5.5" cy="8" r="1.25" fill="currentColor" />
-      <circle cx="9.5" cy="11.75" r="1.25" fill="currentColor" />
-    </svg>
-  )
-}
-
-function AiMenuCard({
-  children,
-  className,
-  style,
-}: {
-  children: React.ReactNode
-  className?: string
-  style?: React.CSSProperties
-}) {
-  return (
-    <div
-      style={style}
-      className={cn(
-        'rounded-xl border border-border/80 bg-background/96 p-1 shadow-[0_20px_40px_-28px_rgba(15,23,42,0.32)] backdrop-blur-md',
-        className,
-      )}
-    >
-      {children}
-    </div>
-  )
-}
-
-function AiMenuItemContent({
-  icon,
-  title,
-  description,
-  trailing,
-}: {
-  icon: React.ReactNode
-  title: string
-  description?: string
-  trailing?: React.ReactNode
-}) {
-  return (
-    <>
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-muted/25 text-muted-foreground">
-        {icon}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-foreground">{title}</div>
-        {description ? (
-          <div className="truncate text-[10px] leading-4 text-muted-foreground">
-            {description}
-          </div>
-        ) : null}
-      </div>
-      {trailing}
-    </>
-  )
-}
-
-function getAiFlyoutWidth(panel: Exclude<AiFlyoutPanel, null>) {
-  switch (panel) {
-    case 'models':
-      return AI_MENU_MODELS_WIDTH
-    case 'languages':
-      return AI_MENU_LANGUAGES_WIDTH
-    case 'prompts':
-      return AI_MENU_PROMPTS_WIDTH
-  }
 }
 
 export function DocBubbleMenu({

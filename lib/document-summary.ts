@@ -9,12 +9,14 @@ import {
 } from '@/lib/documents'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
-
-const MAX_SUMMARY_SOURCE_LENGTH = 6000
-const MAX_SUMMARY_RESULT_LENGTH = 120
-const MAX_SUMMARY_RESULT_CJK_LENGTH = 48
-const MAX_TITLE_RESULT_LENGTH = 72
-const MAX_TITLE_RESULT_CJK_LENGTH = 24
+import {
+  MAX_SUMMARY_SOURCE_LENGTH,
+  MAX_SUMMARY_RESULT_LENGTH,
+  MAX_SUMMARY_RESULT_CJK_LENGTH,
+  MAX_TITLE_RESULT_LENGTH,
+  MAX_TITLE_RESULT_CJK_LENGTH,
+  TEMPERATURE_SUMMARY,
+} from '@/lib/ai-config'
 
 function stripMarkdown(content: string) {
   return content
@@ -194,7 +196,7 @@ export async function generateDocumentMetadata(input: {
         sourceText,
         '</content>',
       ].join('\n'),
-      temperature: 0.1,
+      temperature: TEMPERATURE_SUMMARY,
     })
 
     const structured = extractStructuredMetadata(completion.result)

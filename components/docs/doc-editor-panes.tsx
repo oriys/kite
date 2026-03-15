@@ -168,6 +168,12 @@ export function FloatingStatsPill({
   selectionInfo,
   statsOverlayContainerRef,
 }: FloatingStatsPillProps) {
+  const [portalTarget, setPortalTarget] = React.useState<HTMLDivElement | null>(null)
+
+  React.useEffect(() => {
+    setPortalTarget(statsOverlayContainerRef?.current ?? null)
+  }, [statsOverlayContainerRef])
+
   const content = (
     <div
       className={cn(
@@ -199,8 +205,8 @@ export function FloatingStatsPill({
     </div>
   )
 
-  if (statsOverlayContainerRef?.current) {
-    return createPortal(content, statsOverlayContainerRef.current)
+  if (portalTarget) {
+    return createPortal(content, portalTarget)
   }
   return content
 }
