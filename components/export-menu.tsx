@@ -1,6 +1,6 @@
 'use client'
 
-import { Download, FileText, Code2, Globe } from 'lucide-react'
+import { Download, FileText, Code2, Globe, FileType, FileIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -15,7 +15,7 @@ interface ExportMenuProps {
 }
 
 export function ExportMenu({ documentId }: ExportMenuProps) {
-  const handleExport = (format: 'markdown' | 'html', theme?: 'light' | 'dark') => {
+  const handleExport = (format: 'markdown' | 'html' | 'pdf' | 'docx', theme?: 'light' | 'dark') => {
     const params = new URLSearchParams({
       documentId,
       format,
@@ -44,6 +44,14 @@ export function ExportMenu({ documentId }: ExportMenuProps) {
         <DropdownMenuItem onClick={() => handleExport('html', 'dark')}>
           <Globe className="size-4" />
           HTML (Dark)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleExport('pdf')}>
+          <FileType className="size-4" />
+          PDF (.pdf)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleExport('docx')}>
+          <FileIcon className="size-4" />
+          Word (.docx)
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

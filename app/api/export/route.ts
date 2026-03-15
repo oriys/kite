@@ -9,6 +9,7 @@ import {
 import { getDocument } from '@/lib/queries/documents'
 import { buildDocumentAccessMap } from '@/lib/queries/document-permissions'
 import { exportToMarkdown, exportToHtml } from '@/lib/export'
+import { getWorkspaceBranding } from '@/lib/queries/branding'
 
 export async function GET(request: NextRequest) {
   const result = await withWorkspaceAuth('guest')
@@ -20,8 +21,8 @@ export async function GET(request: NextRequest) {
   const theme = (searchParams.get('theme') ?? 'light') as 'light' | 'dark'
 
   if (!documentId) return badRequest('documentId is required')
-  if (!['markdown', 'html'].includes(format))
-    return badRequest('Format must be markdown or html')
+  if (!['markdown', 'html', 'pdf', 'docx'].includes(format))
+    return badRequest('Format must be markdown, html, pdf, or docx')
 
   const doc = await getDocument(documentId, result.ctx.workspaceId)
   if (!doc) return notFound()
@@ -41,14 +42,55 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  const html = exportToHtml(doc.title, doc.content, {
-    standalone: true,
-    theme,
+  if (format === 'html') {
+    const html = exportToHtml(doc.title, doc.content, {
+      standalone: true,
+      theme,
+    })
+    return new NextResponse(html, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Disposition': createContentDisposition(doc.title, 'html'),
+      },
+    })
+  }
+
+  const branding = await getWorkspaceBranding(result.ctx.workspaceId)
+  const brandingOptions = branding
+    ? {
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+        accentColor: branding.accentColor,
+      }
+    : undefined
+
+  if (format === 'pdf') {
+    const { exportToPdf } = await import('@/lib/export-pdf')
+    const buffer = await exportToPdf({
+      title: doc.title,
+      content: doc.content,
+      branding: brandingOptions,
+    })
+    return new NextResponse(buffer, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': createContentDisposition(doc.title, 'pdf'),
+      },
+    })
+  }
+
+  // docx
+  const { exportToDocx } = await import('@/lib/export-docx')
+  const buffer = await exportToDocx({
+    title: doc.title,
+    content: doc.content,
+    branding: brandingOptions,
   })
-  return new NextResponse(html, {
+  return new NextResponse(buffer, {
     headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Content-Disposition': createContentDisposition(doc.title, 'html'),
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': createContentDisposition(doc.title, 'docx'),
     },
   })
 }
@@ -77,7 +119,7 @@ function encodeRFC5987Value(value: string) {
   )
 }
 
-function createContentDisposition(title: string, extension: 'md' | 'html') {
+function createContentDisposition(title: string, extension: 'md' | 'html' | 'pdf' | 'docx') {
   const normalizedTitle = normalizeDownloadName(title)
   const asciiFallback = `${encodeSlug(normalizedTitle)}.${extension}`
   const utf8Filename = `${normalizedTitle}.${extension}`
