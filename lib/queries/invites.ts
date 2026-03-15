@@ -101,6 +101,7 @@ export async function listPendingInvites(
       workspaceId: workspaceInvites.workspaceId,
       email: workspaceInvites.email,
       role: workspaceInvites.role,
+      token: workspaceInvites.token,
 
       type: workspaceInvites.type,
       invitedBy: workspaceInvites.invitedBy,
@@ -125,7 +126,6 @@ export async function listPendingInvites(
 export async function revokeInvite(
   workspaceId: string,
   inviteId: string,
-  _actorId: string,
 ) {
   const [deleted] = await db
     .delete(workspaceInvites)
