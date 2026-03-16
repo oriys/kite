@@ -1,0 +1,5 @@
+ignoredBuiltDependencies:
+  - core-js
+
+onlyBuiltDependencies:
+  - node-pty

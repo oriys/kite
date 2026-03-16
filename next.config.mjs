@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  serverExternalPackages: ['postgres', 'yaml'],
+  serverExternalPackages: ['postgres', 'yaml', 'node-pty'],
   images: {
     unoptimized: true,
   },
