@@ -1,4 +1,5 @@
 import { type AiTransformAction } from '@/lib/ai'
+import { type AiActionOptions } from '@/lib/ai'
 import { type DocEditorAiPanelSide } from '@/lib/doc-editor-layout'
 import { type DocSnippet } from '@/lib/doc-snippets'
 import { createHeatmapSnippetTemplate } from '@/lib/heatmap'
@@ -19,7 +20,8 @@ export interface AiPreviewRequest {
   loadingActionLabel?: string
   originalText: string
   selectionRange: { from: number; to: number } | null
-  targetLanguage?: string
+  targetLanguage?: AiActionOptions['targetLanguage']
+  targetTone?: AiActionOptions['targetTone']
   customPrompt?: string
 }
 

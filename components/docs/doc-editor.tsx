@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { type Editor as TiptapEditor } from '@tiptap/core'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -8,6 +9,7 @@ import { toast } from 'sonner'
 import {
   AI_ACTION_LABELS,
   MAX_AI_TRANSFORM_TEXT_LENGTH,
+  type AiActionOptions,
   buildAiResultAutoFixPrompt,
   canAutoFixAiResult,
   isAiAppendResultAction,
@@ -48,16 +50,19 @@ import {
   sourceWrap,
 } from '@/lib/editor/editor-helpers'
 import { useEditorResize } from '@/hooks/use-editor-resize'
+import { useAiAutocomplete } from '@/hooks/use-ai-autocomplete'
 import { useAiModels } from '@/hooks/use-ai-models'
 import { useAiPrompts } from '@/hooks/use-ai-prompts'
 import { useAiPreferences } from '@/hooks/use-ai-preferences'
 import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
 import { DocAiResultPanel } from '@/components/docs/doc-ai-result-panel'
+import { DocSourceAutocompleteOverlay } from '@/components/docs/doc-source-autocomplete-overlay'
 import { DocHeatmapEditorDialog } from '@/components/docs/doc-heatmap-editor-dialog'
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
 import { DocSuggestionToolbar } from '@/components/docs/doc-suggestion-toolbar'
+import { updateAutocompleteDecorations } from '@/lib/editor/autocomplete-plugin'
 import { wordCount } from '@/lib/utils'
 import { createEditorExtensions } from '@/components/docs/doc-editor-extensions'
 import { aiReducer, AI_INITIAL_STATE } from '@/components/docs/doc-editor-hooks'
@@ -66,6 +71,8 @@ import { useSuggestionReview } from '@/hooks/use-suggestion-review'
 import { useDocOutline } from '@/hooks/use-doc-outline'
 
 export type { DocEditorHandle } from '@/lib/editor/editor-helpers'
+
+type AutocompleteScheduleReason = 'input' | 'passive'
 
 // ── Main Editor Component ──────────────────────────────────────────────────
 
@@ -123,6 +130,8 @@ export function DocEditor({
   const [linkInputUrl, setLinkInputUrl] = React.useState('')
   const [findReplaceOpen, setFindReplaceOpen] = React.useState(false)
   const [a11yAnnouncement, setA11yAnnouncement] = React.useState('')
+  const [richAutocompleteFrom, setRichAutocompleteFrom] = React.useState<number | null>(null)
+  const [sourceCursorOffset, setSourceCursorOffset] = React.useState(content.length)
 
   const announce = React.useCallback((message: string) => {
     setA11yAnnouncement('')
@@ -143,6 +152,7 @@ export function DocEditor({
   const editorViewportRef = React.useRef<HTMLDivElement>(null)
   const statsPillContainerRef = React.useRef<HTMLDivElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const editorInstanceRef = React.useRef<TiptapEditor | null>(null)
   const latestMdRef = React.useRef(content)
   const switchingRef = React.useRef(false)
   const htmlToMdTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -159,6 +169,7 @@ export function DocEditor({
     () => new Set<AiTransformAction>(readOnlyAiActions),
     [readOnlyAiActions],
   )
+  const autocompleteModelId = activeModel?.id ?? activeModelId
   const availableSelectionAiActions = React.useMemo(
     () =>
       readOnly
@@ -184,6 +195,62 @@ export function DocEditor({
     : null
   const aiSplitDividerPosition = aiPreviewOnLeft ? resize.aiSplitRatio : 1 - resize.aiSplitRatio
 
+  const autocomplete = useAiAutocomplete({
+    enabled: !readOnly && !Boolean(ai.pendingAction) && Boolean(autocompleteModelId),
+    modelId: autocompleteModelId,
+    systemPrompt: aiPrompts.systemPrompt,
+    onError: () => announce('AI autocomplete unavailable'),
+  })
+  const richAutocompleteActive =
+    autocomplete.surface === 'rich' &&
+    (Boolean(autocomplete.suggestion) || autocomplete.pending || autocomplete.queued)
+  const sourceAutocompleteActive =
+    autocomplete.surface === 'source' &&
+    (Boolean(autocomplete.suggestion) || autocomplete.pending || autocomplete.queued)
+
+  const scheduleRichAutocomplete = React.useCallback(
+    (ed: TiptapEditor, reason: AutocompleteScheduleReason = 'passive') => {
+      if (readOnly || ai.pendingAction || !autocompleteModelId || mode === 'source' || !ed.isFocused) {
+        autocomplete.clear()
+        setRichAutocompleteFrom(null)
+        return
+      }
+
+      const { from, to } = ed.state.selection
+      if (from !== to) {
+        autocomplete.clear()
+        setRichAutocompleteFrom(null)
+        return
+      }
+
+      setRichAutocompleteFrom(from)
+      autocomplete.schedule({
+        prefix: ed.state.doc.textBetween(0, from, '\n', '\n'),
+        suffix: ed.state.doc.textBetween(from, ed.state.doc.content.size, '\n', '\n'),
+        surface: 'rich',
+        language: 'markdown',
+      }, { reason })
+    },
+    [ai.pendingAction, autocomplete, autocompleteModelId, mode, readOnly],
+  )
+
+  const acceptRichAutocomplete = React.useCallback(
+    (ed: TiptapEditor) => {
+      const nextText = autocomplete.accept()
+      if (!nextText) return false
+
+      setRichAutocompleteFrom(null)
+      ed.chain().focus().insertContent(nextText).run()
+
+      const md = htmlToMd(ed.getHTML())
+      latestMdRef.current = md
+      onChange(md)
+      announce('AI autocomplete accepted')
+      return true
+    },
+    [announce, autocomplete, onChange],
+  )
+
   // ── Tiptap Editor ────────────────────────────────────────────────────────
 
   const editor = useEditor({
@@ -191,6 +258,12 @@ export function DocEditor({
     content: mdToHtml(content),
     extensions: createEditorExtensions(),
     editable: !readOnly,
+    onCreate: ({ editor: ed }) => {
+      editorInstanceRef.current = ed
+    },
+    onDestroy: () => {
+      editorInstanceRef.current = null
+    },
     editorProps: {
       attributes: {
         class: cn(
@@ -207,11 +280,35 @@ export function DocEditor({
         'aria-multiline': 'true',
         ...(readOnly ? { 'aria-readonly': 'true' } : {}),
       },
-      handleKeyDown: (_view, event) => {
+      handleKeyDown: (_view, event): boolean => {
+        const currentEditor = editorInstanceRef.current
+        if (!currentEditor) return false
+
+        if (
+          event.key === 'Tab' &&
+          !event.shiftKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          autocomplete.surface === 'rich' &&
+          autocomplete.suggestion
+        ) {
+          event.preventDefault()
+          return acceptRichAutocomplete(currentEditor)
+        }
+
+        if (event.key === 'Escape' && richAutocompleteActive) {
+          event.preventDefault()
+          autocomplete.stop()
+          setRichAutocompleteFrom(null)
+          announce('AI autocomplete stopped')
+          return true
+        }
+
         // Slash menu trigger
         if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          const { from } = editor!.state.selection
-          const textBefore = editor!.state.doc.textBetween(
+          const { from } = currentEditor.state.selection
+          const textBefore = currentEditor.state.doc.textBetween(
             Math.max(0, from - 1),
             from,
             '\n',
@@ -231,7 +328,7 @@ export function DocEditor({
         // Keyboard shortcut for inline code
         if ((event.metaKey || event.ctrlKey) && event.key === 'e') {
           event.preventDefault()
-          editor!.chain().focus().toggleCode().run()
+          currentEditor.chain().focus().toggleCode().run()
           return true
         }
 
@@ -245,7 +342,7 @@ export function DocEditor({
         // Strikethrough shortcut
         if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'x') {
           event.preventDefault()
-          editor!.chain().focus().toggleStrike().run()
+          currentEditor.chain().focus().toggleStrike().run()
           return true
         }
 
@@ -268,6 +365,8 @@ export function DocEditor({
         latestMdRef.current = md
         onChange(md)
       }, 150)
+
+      scheduleRichAutocomplete(ed, 'input')
     },
     onSelectionUpdate: ({ editor: ed }) => {
       const { from, to } = ed.state.selection
@@ -277,15 +376,62 @@ export function DocEditor({
           words: wordCount(text),
           chars: text.length,
         })
+        autocomplete.clear()
+        setRichAutocompleteFrom(null)
       } else {
         setSelectionInfo(null)
+        scheduleRichAutocomplete(ed, 'passive')
       }
     },
-    onFocus: () => setActivePane('wysiwyg'),
+    onFocus: ({ editor: ed }) => {
+      setActivePane('wysiwyg')
+      scheduleRichAutocomplete(ed, 'passive')
+    },
+    onBlur: () => {
+      autocomplete.clear()
+      setRichAutocompleteFrom(null)
+    },
   })
 
   // ── Suggestion review ───────────────────────────────────────────────────
   const suggestionReview = useSuggestionReview(editor)
+
+  React.useEffect(() => {
+    if (readOnly || suggestionReview.state.active || suggestionReview.state.aiLoading) {
+      autocomplete.clear()
+      setRichAutocompleteFrom(null)
+    }
+  }, [
+    autocomplete,
+    readOnly,
+    suggestionReview.state.active,
+    suggestionReview.state.aiLoading,
+  ])
+
+  React.useEffect(() => {
+    if (!editor) return
+
+    const ghostText =
+      autocomplete.surface === 'rich' &&
+      autocomplete.suggestion &&
+      !suggestionReview.state.active &&
+      hasRichEditor(mode)
+        ? autocomplete.suggestion
+        : ''
+
+    updateAutocompleteDecorations(editor, {
+      text: ghostText,
+      from: richAutocompleteFrom ?? editor.state.selection.from,
+      active: Boolean(ghostText),
+    })
+  }, [
+    autocomplete.suggestion,
+    autocomplete.surface,
+    editor,
+    mode,
+    richAutocompleteFrom,
+    suggestionReview.state.active,
+  ])
 
   // ── Document outline ────────────────────────────────────────────────────
   const outline = useDocOutline(editor)
@@ -395,6 +541,8 @@ export function DocEditor({
 
   const handleModeChange = React.useCallback((newMode: EditorViewMode) => {
     flushHtmlToMd()
+    autocomplete.clear()
+    setRichAutocompleteFrom(null)
     switchingRef.current = true
     setMode(newMode)
 
@@ -421,7 +569,7 @@ export function DocEditor({
     requestAnimationFrame(() => {
       switchingRef.current = false
     })
-  }, [editor, announce, flushHtmlToMd])
+  }, [announce, autocomplete, editor, flushHtmlToMd])
 
   const handleSourceChange = React.useCallback((newContent: string) => {
     latestMdRef.current = newContent
@@ -432,6 +580,60 @@ export function DocEditor({
       editor.commands.setContent(html, { emitUpdate: false })
     }
   }, [editor, mode, onChange])
+
+  const scheduleSourceAutocomplete = React.useCallback(
+    (
+      value: string,
+      selectionStart: number,
+      selectionEnd: number,
+      reason: AutocompleteScheduleReason = 'passive',
+    ) => {
+      setSourceCursorOffset(selectionEnd)
+
+      if (
+        readOnly ||
+        ai.pendingAction ||
+        suggestionReview.state.active ||
+        suggestionReview.state.aiLoading ||
+        !autocompleteModelId ||
+        !hasSourceEditor(mode) ||
+        selectionStart !== selectionEnd ||
+        selectionEnd !== value.length
+      ) {
+        autocomplete.clear()
+        return
+      }
+
+      autocomplete.schedule({
+        prefix: value.slice(0, selectionEnd),
+        suffix: '',
+        surface: 'source',
+        language: 'markdown',
+      }, { reason })
+    },
+    [
+      ai.pendingAction,
+      autocomplete,
+      autocompleteModelId,
+      mode,
+      readOnly,
+      suggestionReview.state.active,
+      suggestionReview.state.aiLoading,
+    ],
+  )
+
+  const handleSourceInputChange = React.useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      handleSourceChange(event.target.value)
+      scheduleSourceAutocomplete(
+        event.target.value,
+        event.target.selectionStart,
+        event.target.selectionEnd,
+        'input',
+      )
+    },
+    [handleSourceChange, scheduleSourceAutocomplete],
+  )
 
   // ── AI integration ───────────────────────────────────────────────────────
 
@@ -483,8 +685,12 @@ export function DocEditor({
         const actionPrompt = resolveAiActionPrompt(
           request.action,
           aiPrompts,
-          request.targetLanguage,
+          {
+            targetLanguage: request.targetLanguage,
+            targetTone: request.targetTone,
+          },
         )
+        const shouldStreamResult = isDiagram || showResultPanel
 
         const response = await fetch('/api/ai/transform', {
           method: 'POST',
@@ -495,9 +701,11 @@ export function DocEditor({
             text: request.originalText.slice(0, MAX_AI_TRANSFORM_TEXT_LENGTH),
             model: request.modelId,
             targetLanguage: request.targetLanguage,
+            targetTone: request.targetTone,
             systemPrompt: aiPrompts.systemPrompt,
             actionPrompt,
             customPrompt: request.customPrompt,
+            stream: shouldStreamResult,
           }),
         })
 
@@ -508,17 +716,21 @@ export function DocEditor({
           throw new Error(payload?.error ?? `Transform failed (${response.status})`)
         }
 
-        // Diagram actions: stream result into side panel
-        if (isDiagram) {
+        // Preview/result-panel actions stream progressively into the side panel.
+        if (shouldStreamResult) {
           if (!response.body) {
-            throw new Error('The AI provider did not return a diagram stream.')
+            throw new Error(
+              isDiagram
+                ? 'The AI provider did not return a diagram stream.'
+                : 'The AI provider did not return a text stream.',
+            )
           }
 
           const reader = response.body.getReader()
           const decoder = new TextDecoder()
           let streamedText = ''
 
-          announce('AI diagram is streaming')
+          announce(isDiagram ? 'AI diagram is streaming' : 'AI result is streaming')
 
           while (true) {
             const { done, value } = await reader.read()
@@ -540,17 +752,13 @@ export function DocEditor({
 
           if (requestId !== aiRequestIdRef.current) return
 
-          dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: streamedText })
-          announce('AI diagram ready for review')
-          return
-        }
+          const finalText = isDiagram ? streamedText : streamedText.trim()
+          if (!finalText.trim()) {
+            throw new Error('The AI provider returned an empty response.')
+          }
 
-        // Non-mutating document actions: show result in the side panel
-        if (showResultPanel) {
-          const data = (await response.json()) as { result: string }
-          if (requestId !== aiRequestIdRef.current) return
-          dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: data.result })
-          announce('AI result ready for review')
+          dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: finalText })
+          announce(isDiagram ? 'AI diagram ready for review' : 'AI result ready for review')
           return
         }
 
@@ -594,9 +802,10 @@ export function DocEditor({
           : sel?.to ?? editor.state.doc.content.size
 
         const shouldUseDiffReview =
-          request.scope === 'document'
+          !isAiAppendResultAction(request.action) &&
+          (request.scope === 'document'
             ? modifiesOriginal
-            : isAiInlineDiffAction(request.action)
+            : isAiInlineDiffAction(request.action))
 
         let reviewStarted = false
 
@@ -667,7 +876,7 @@ export function DocEditor({
   )
 
   const handleAiAction = React.useCallback(
-    (action: AiTransformAction, options?: { targetLanguage?: string }) => {
+    (action: AiTransformAction, options?: AiActionOptions) => {
       if (!editor) return
       if (readOnly && !readOnlyAiActionSet.has(action)) return
       const { from, to } = editor.state.selection
@@ -691,13 +900,14 @@ export function DocEditor({
         originalText: text,
         selectionRange: { from, to },
         targetLanguage: options?.targetLanguage,
+        targetTone: options?.targetTone,
       })
     },
     [editor, readOnly, readOnlyAiActionSet, resolveActionModelSelection, runAiPreviewRequest],
   )
 
   const handleAiDocumentAction = React.useCallback(
-    (action: AiTransformAction, options?: { targetLanguage?: string }) => {
+    (action: AiTransformAction, options?: AiActionOptions) => {
       if (readOnly && !readOnlyAiActionSet.has(action)) return
       const text = latestMdRef.current
       if (!text.trim()) {
@@ -723,6 +933,7 @@ export function DocEditor({
         originalText: text,
         selectionRange: null,
         targetLanguage: options?.targetLanguage,
+        targetTone: options?.targetTone,
       })
     },
     [readOnly, readOnlyAiActionSet, resolveActionModelSelection, runAiPreviewRequest],
@@ -749,6 +960,7 @@ export function DocEditor({
       originalText: ai.preview.originalText,
       selectionRange: ai.preview.selectionRange,
       targetLanguage: ai.preview.targetLanguage,
+      targetTone: ai.preview.targetTone,
       customPrompt: ai.preview.customPrompt,
     }
     void runAiPreviewRequest(request)
@@ -1048,33 +1260,71 @@ export function DocEditor({
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const ta = textareaRef.current
       if (!ta) return
+      const sourceAutocompleteSuggestion =
+        autocomplete.surface === 'source' ? autocomplete.suggestion : ''
+
+      if (
+        e.key === 'Tab' &&
+        !e.shiftKey &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        sourceAutocompleteSuggestion
+      ) {
+        e.preventDefault()
+        const acceptedText = autocomplete.accept()
+        if (!acceptedText) return
+        document.execCommand('insertText', false, acceptedText)
+        handleSourceChange(ta.value)
+        scheduleSourceAutocomplete(ta.value, ta.selectionStart, ta.selectionEnd, 'input')
+        announce('AI autocomplete accepted')
+        return
+      }
+
+      if (e.key === 'Escape' && sourceAutocompleteActive) {
+        e.preventDefault()
+        autocomplete.stop()
+        announce('AI autocomplete stopped')
+        return
+      }
 
       if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
         e.preventDefault()
         sourceWrap(ta, '**', '**')
         handleSourceChange(ta.value)
+        scheduleSourceAutocomplete(ta.value, ta.selectionStart, ta.selectionEnd, 'input')
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
         e.preventDefault()
         sourceWrap(ta, '_', '_')
         handleSourceChange(ta.value)
+        scheduleSourceAutocomplete(ta.value, ta.selectionStart, ta.selectionEnd, 'input')
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
         e.preventDefault()
         sourceWrap(ta, '`', '`')
         handleSourceChange(ta.value)
+        scheduleSourceAutocomplete(ta.value, ta.selectionStart, ta.selectionEnd, 'input')
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         sourceWrap(ta, '[', '](url)')
         handleSourceChange(ta.value)
+        scheduleSourceAutocomplete(ta.value, ta.selectionStart, ta.selectionEnd, 'input')
       } else if (e.key === 'Tab') {
         e.preventDefault()
         document.execCommand('insertText', false, '  ')
         handleSourceChange(ta.value)
+        scheduleSourceAutocomplete(ta.value, ta.selectionStart, ta.selectionEnd, 'input')
       } else if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault()
         setShowShortcuts((v) => !v)
       }
     },
-    [handleSourceChange],
+    [
+      announce,
+      autocomplete,
+      handleSourceChange,
+      scheduleSourceAutocomplete,
+      sourceAutocompleteActive,
+    ],
   )
 
   // ── Capture selection for source mode ────────────────────────────────────
@@ -1083,13 +1333,15 @@ export function DocEditor({
     const ta = textareaRef.current
     if (!ta) return
     const { selectionStart, selectionEnd } = ta
+    setSourceCursorOffset(selectionEnd)
     if (selectionStart !== selectionEnd) {
       const text = ta.value.substring(selectionStart, selectionEnd)
       setSelectionInfo({ words: wordCount(text), chars: text.length })
     } else {
       setSelectionInfo(null)
     }
-  }, [])
+    scheduleSourceAutocomplete(ta.value, selectionStart, selectionEnd, 'passive')
+  }, [scheduleSourceAutocomplete])
 
   // ── Toolbar callback stability ──────────────────────────────────────────
 
@@ -1102,7 +1354,7 @@ export function DocEditor({
   }, [editor, onChange])
 
   const handleAiDocumentActionWrapper = React.useCallback(
-    (action: AiTransformAction, options?: { targetLanguage?: string }) => {
+    (action: AiTransformAction, options?: AiActionOptions) => {
       void handleAiDocumentAction(action, options)
     },
     [handleAiDocumentAction],
@@ -1303,34 +1555,57 @@ export function DocEditor({
                           : 'shadow-[inset_0_-2px_0_0_var(--accent)] md:shadow-[inset_-2px_0_0_0_var(--accent)]'),
                     )}
                   >
-                    <textarea
-                      ref={textareaRef}
-                      value={content}
-                      onChange={(e) => handleSourceChange(e.target.value)}
-                      onKeyDown={handleSourceKeyDown}
-                      onFocus={() => setActivePane('source')}
-                      onSelect={captureSourceSelection}
-                      onClick={captureSourceSelection}
-                      onKeyUp={captureSourceSelection}
-                      readOnly={readOnly}
-                      spellCheck={false}
-                      aria-label="Markdown source editor"
-                      className={cn(
-                        'block w-full resize-none bg-transparent',
-                        'font-mono text-[13px] leading-7 text-foreground',
-                        'placeholder:text-muted-foreground/60',
-                        'outline-none',
-                        mode === 'split'
-                          ? fullscreen
-                            ? 'h-full min-h-full p-5 md:p-6'
-                            : 'h-full min-h-[600px] p-5 md:p-6'
-                          : fullscreen
-                            ? 'h-full min-h-full p-4'
-                            : 'h-full min-h-[600px] p-4',
-                        readOnly && 'cursor-default opacity-70',
-                      )}
-                      placeholder="Start writing in Markdown…"
-                    />
+                    <div className="relative h-full min-h-full">
+                      <DocSourceAutocompleteOverlay
+                        textareaRef={textareaRef}
+                        value={content}
+                        cursorOffset={sourceCursorOffset}
+                        suggestion={
+                          autocomplete.surface === 'source' ? autocomplete.suggestion : ''
+                        }
+                        contentClassName={cn(
+                          mode === 'split'
+                            ? fullscreen
+                              ? 'p-5 md:p-6'
+                              : 'p-5 md:p-6'
+                            : fullscreen
+                              ? 'p-4'
+                              : 'p-4',
+                        )}
+                      />
+                      <textarea
+                        ref={textareaRef}
+                        value={content}
+                        onChange={handleSourceInputChange}
+                        onKeyDown={handleSourceKeyDown}
+                        onFocus={() => {
+                          setActivePane('source')
+                          requestAnimationFrame(captureSourceSelection)
+                        }}
+                        onBlur={() => autocomplete.clear()}
+                        onSelect={captureSourceSelection}
+                        onClick={captureSourceSelection}
+                        onKeyUp={captureSourceSelection}
+                        readOnly={readOnly}
+                        spellCheck={false}
+                        aria-label="Markdown source editor"
+                        className={cn(
+                          'block w-full resize-none bg-transparent',
+                          'font-mono text-[13px] leading-7 text-foreground',
+                          'placeholder:text-muted-foreground/60',
+                          'outline-none',
+                          mode === 'split'
+                            ? fullscreen
+                              ? 'h-full min-h-full p-5 md:p-6'
+                              : 'h-full min-h-[600px] p-5 md:p-6'
+                            : fullscreen
+                              ? 'h-full min-h-full p-4'
+                              : 'h-full min-h-[600px] p-4',
+                          readOnly && 'cursor-default opacity-70',
+                        )}
+                        placeholder="Start writing in Markdown…"
+                      />
+                    </div>
                   </motion.div>
                 ) : null}
               </AnimatePresence>
@@ -1402,6 +1677,7 @@ export function DocEditor({
                 modelLabel={ai.preview.modelLabel}
                 modelId={ai.preview.modelId}
                 targetLanguage={ai.preview.targetLanguage}
+                targetTone={ai.preview.targetTone}
                 customPrompt={ai.preview.customPrompt}
                 pending={ai.pendingAction === ai.preview.action}
                 previewOnly={

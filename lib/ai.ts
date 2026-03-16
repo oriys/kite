@@ -1,9 +1,11 @@
 export const AI_ACTIONS = {
   polish: { label: 'Polish', mode: 'rewrite' },
+  tone: { label: 'Change Tone', mode: 'rewrite' },
   autofix: { label: 'Auto Fix', mode: 'rewrite' },
   format: { label: 'Markdown Format', mode: 'rewrite' },
   shorten: { label: 'Shorten', mode: 'rewrite' },
   expand: { label: 'Expand', mode: 'rewrite' },
+  continueWriting: { label: 'Continue Writing', mode: 'append' },
   translate: { label: 'Translate', mode: 'rewrite' },
   explain: { label: 'Explain', mode: 'append' },
   diagram: { label: 'Diagram', mode: 'preview' },
@@ -52,17 +54,25 @@ export const AI_ACTION_LABELS = Object.fromEntries(
   Object.entries(AI_ACTIONS).map(([key, { label }]) => [key, label]),
 ) as Record<AiTransformAction, string>
 
+export const AI_TONE_OPTIONS = [
+  { label: 'Academic', value: 'Academic' },
+  { label: 'Casual', value: 'Casual' },
+  { label: 'Formal', value: 'Formal' },
+  { label: 'Friendly', value: 'Friendly' },
+  { label: 'Professional', value: 'Professional' },
+] as const
+
 export function isAiRewriteAction(action: AiTransformAction) {
   return AI_ACTIONS[action].mode === 'rewrite'
 }
 
 export function isAiModifyingAction(action: AiTransformAction) {
-  return isAiRewriteAction(action) || action === 'custom'
+  return isAiRewriteAction(action) || action === 'custom' || action === 'continueWriting'
 }
 
 /** Actions where the result is close enough to the original for inline word-level diff. */
 export function isAiInlineDiffAction(action: AiTransformAction) {
-  return action === 'polish' || action === 'autofix' || action === 'custom'
+  return action === 'polish' || action === 'tone' || action === 'autofix' || action === 'custom'
 }
 
 export function isAiAppendResultAction(action: AiTransformAction) {
@@ -166,6 +176,12 @@ export const MAX_AI_PROVIDER_URL_LENGTH = 500
 export const MAX_AI_PROVIDER_API_KEY_LENGTH = 2_000
 export const MAX_AI_CUSTOM_PROMPT_LENGTH = 2_000
 export const MAX_AI_TRANSFORM_TEXT_LENGTH = 8_000
+export const MAX_AI_TARGET_TONE_LENGTH = 80
+
+export interface AiActionOptions {
+  targetLanguage?: string
+  targetTone?: string
+}
 
 export interface AiCatalogModel {
   id: string
@@ -212,9 +228,11 @@ export interface AiTransformRequest {
   text: string
   model?: string
   targetLanguage?: string
+  targetTone?: string
   systemPrompt?: string
   actionPrompt?: string
   customPrompt?: string
+  stream?: boolean
 }
 
 export interface AiTransformResponse {

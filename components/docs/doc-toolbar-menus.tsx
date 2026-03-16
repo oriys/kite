@@ -18,7 +18,12 @@ import {
   Plus,
   Sparkles,
 } from 'lucide-react'
-import { AI_ACTION_LABELS, type AiTransformAction } from '@/lib/ai'
+import {
+  AI_TONE_OPTIONS,
+  AI_ACTION_LABELS,
+  type AiActionOptions,
+  type AiTransformAction,
+} from '@/lib/ai'
 import { CODE_LANGUAGE_OPTIONS, type CodeLanguageOption } from '@/lib/code-highlighting'
 import { cn } from '@/lib/utils'
 import {
@@ -199,7 +204,7 @@ export interface DocumentAiMenuProps {
   aiDocumentPendingAction?: AiTransformAction | null
   onAiDocumentAction?: (
     action: AiTransformAction,
-    options?: { targetLanguage?: string },
+    options?: AiActionOptions,
   ) => void
 }
 
@@ -297,6 +302,34 @@ export function DocumentAiMenu({
                   />
                 </DropdownMenuItem>
               ) : null}
+              {availableDocumentAiActionSet.has('tone') ? (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="items-start gap-2.5 rounded-lg px-2 py-1.5 [&>svg:last-child]:hidden">
+                    <DocumentAiMenuItemContent
+                      icon={PenLine}
+                      label={AI_ACTION_LABELS.tone}
+                      description="Rewrite in a selected voice."
+                      shortcut="Replace"
+                    />
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-44 rounded-xl p-1.5 data-[side=right]:[translate:calc(-100%-0.625rem)_0]">
+                    <DropdownMenuLabel>Change tone to</DropdownMenuLabel>
+                    {AI_TONE_OPTIONS.map((tone) => (
+                      <DropdownMenuItem
+                        key={tone.value}
+                        className="rounded-lg"
+                        onSelect={() =>
+                          onAiDocumentAction?.('tone', {
+                            targetTone: tone.value,
+                          })
+                        }
+                      >
+                        {tone.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              ) : null}
               {availableDocumentAiActionSet.has('autofix') ? (
                 <DropdownMenuItem
                   className="items-start gap-2.5 rounded-lg px-2 py-1.5"
@@ -346,6 +379,19 @@ export function DocumentAiMenu({
                     label={AI_ACTION_LABELS.expand}
                     description="Add context and detail."
                     shortcut="Replace"
+                  />
+                </DropdownMenuItem>
+              ) : null}
+              {availableDocumentAiActionSet.has('continueWriting') ? (
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('continueWriting')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={Plus}
+                    label={AI_ACTION_LABELS.continueWriting}
+                    description="Draft the next logical section."
+                    shortcut="Append"
                   />
                 </DropdownMenuItem>
               ) : null}

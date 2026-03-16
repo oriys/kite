@@ -43,6 +43,8 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { description: 'Link', keys: ['⌘', 'K'] },
       { description: 'Inline Code', keys: ['⌘', 'E'] },
       { description: 'Code Block', keys: ['⌘', 'Shift', 'C'] },
+      { description: 'Accept AI autocomplete', keys: ['Tab'] },
+      { description: 'Dismiss AI autocomplete', keys: ['Esc'] },
     ],
   },
   {

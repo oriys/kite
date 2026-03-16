@@ -5,7 +5,7 @@ export interface BubbleMenuPosition {
   left: number
 }
 
-export type AiFlyoutPanel = 'models' | 'languages' | 'prompts' | null
+export type AiFlyoutPanel = 'models' | 'languages' | 'tones' | 'prompts' | null
 
 export type AiFlyoutDirection = 'right' | 'left' | 'bottom'
 
@@ -17,18 +17,21 @@ export const MENU_HORIZONTAL_PADDING = 24
 export const AI_MENU_FLYOUT_GAP = 8
 export const AI_MENU_MODELS_WIDTH = 288
 export const AI_MENU_LANGUAGES_WIDTH = 224
+export const AI_MENU_TONES_WIDTH = 224
 export const AI_MENU_PROMPTS_WIDTH = 416
 export const AI_MENU_OPEN_DELAY = 140
 export const AI_MENU_CLOSE_DELAY = 110
 
 export const DEFAULT_SELECTION_AI_ACTIONS = [
   'polish',
+  'tone',
   'autofix',
   'format',
   'shorten',
   'expand',
   'translate',
   'explain',
+  'summarize',
   'diagram',
 ] as const satisfies readonly AiTransformAction[]
 
@@ -74,6 +77,8 @@ export function getAiFlyoutWidth(panel: Exclude<AiFlyoutPanel, null>) {
       return AI_MENU_MODELS_WIDTH
     case 'languages':
       return AI_MENU_LANGUAGES_WIDTH
+    case 'tones':
+      return AI_MENU_TONES_WIDTH
     case 'prompts':
       return AI_MENU_PROMPTS_WIDTH
   }

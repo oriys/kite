@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   Code,
+  FileText,
   Italic,
   Languages,
   Link2,
@@ -17,7 +18,9 @@ import {
   Strikethrough,
 } from 'lucide-react'
 import {
+  AI_TONE_OPTIONS,
   AI_ACTION_LABELS,
+  type AiActionOptions,
   formatAiContextWindow,
   type AiCatalogModel,
   type AiTransformAction,
@@ -76,7 +79,7 @@ interface BubbleMenuProps {
   onLinkAction: () => void
   formattingEnabled?: boolean
   commentsEnabled?: boolean
-  onAiAction: (action: AiTransformAction, options?: { targetLanguage?: string }) => void
+  onAiAction: (action: AiTransformAction, options?: AiActionOptions) => void
   onOpenAiCustomPrompt: () => void
   availableAiActions?: readonly AiTransformAction[]
   allowCustomPrompt?: boolean
@@ -125,12 +128,14 @@ export function DocBubbleMenu({
   )
   const showRewriteActions =
     availableAiActionSet.has('polish') ||
+    availableAiActionSet.has('tone') ||
     availableAiActionSet.has('autofix') ||
     availableAiActionSet.has('format') ||
     availableAiActionSet.has('shorten') ||
     availableAiActionSet.has('expand') ||
     availableAiActionSet.has('translate')
   const showAnalysisActions =
+    availableAiActionSet.has('summarize') ||
     availableAiActionSet.has('explain') ||
     availableAiActionSet.has('diagram') ||
     allowCustomPrompt
@@ -577,6 +582,29 @@ export function DocBubbleMenu({
                         </DropdownMenuItem>
                       ) : null}
 
+                      {availableAiActionSet.has('tone') ? (
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          disabled={aiActionsDisabled}
+                          onMouseEnter={(event) =>
+                            openAiFlyoutDelayed('tones', event.currentTarget as HTMLElement)
+                          }
+                          onFocus={(event) =>
+                            openAiFlyoutImmediate('tones', event.currentTarget as HTMLElement)
+                          }
+                          onSelect={(event) => {
+                            event.preventDefault()
+                            openAiFlyoutImmediate('tones', event.currentTarget as HTMLElement)
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<Sparkles className="size-4" />}
+                            title={AI_ACTION_LABELS.tone}
+                            trailing={<ChevronRight className="size-4 text-muted-foreground" />}
+                          />
+                        </DropdownMenuItem>
+                      ) : null}
+
                       {availableAiActionSet.has('format') ? (
                         <DropdownMenuItem
                           className="rounded-lg px-2 py-2"
@@ -673,6 +701,25 @@ export function DocBubbleMenu({
                       <AiMenuItemContent
                         icon={<ExplainActionIcon className="size-4" />}
                         title={AI_ACTION_LABELS.explain}
+                      />
+                    </DropdownMenuItem>
+                  ) : null}
+
+                  {availableAiActionSet.has('summarize') ? (
+                    <DropdownMenuItem
+                      className="rounded-lg px-2 py-2"
+                      disabled={aiActionsDisabled}
+                      onMouseEnter={closeAiFlyoutDelayed}
+                      onFocus={() => openAiFlyoutImmediate(null)}
+                      onSelect={() => {
+                        onAiAction('summarize')
+                        closeAiMenu()
+                      }}
+                    >
+                      <AiMenuItemContent
+                        icon={<FileText className="size-4" />}
+                        title={AI_ACTION_LABELS.summarize}
+                        description="Capture the key points."
                       />
                     </DropdownMenuItem>
                   ) : null}
@@ -863,6 +910,46 @@ export function DocBubbleMenu({
                           icon={<Languages className="size-4" />}
                           title={language.label}
                           description={language.value}
+                        />
+                      </DropdownMenuItem>
+                    ))}
+                  </AiMenuCard>
+                ) : null}
+
+                {aiFlyoutPanel === 'tones' ? (
+                  <AiMenuCard
+                    style={
+                      aiFlyoutDirection === 'bottom'
+                        ? undefined
+                        : { top: `${aiFlyoutOffsetTop}px` }
+                    }
+                    className={cn(
+                      'absolute top-0 z-10 w-56 max-w-[calc(100vw-16px)] animate-in fade-in duration-180',
+                      aiFlyoutDirection === 'right' &&
+                        'left-[calc(100%+8px)] slide-in-from-left-1',
+                      aiFlyoutDirection === 'left' &&
+                        'right-[calc(100%+8px)] slide-in-from-right-1',
+                      aiFlyoutDirection === 'bottom' &&
+                        'left-0 top-[calc(100%+8px)] slide-in-from-top-1',
+                    )}
+                  >
+                    <DropdownMenuLabel className="px-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Change tone to
+                    </DropdownMenuLabel>
+
+                    {AI_TONE_OPTIONS.map((tone) => (
+                      <DropdownMenuItem
+                        key={tone.value}
+                        className="rounded-lg px-2 py-2"
+                        onSelect={() => {
+                          onAiAction('tone', { targetTone: tone.value })
+                          closeAiMenu()
+                        }}
+                      >
+                        <AiMenuItemContent
+                          icon={<Sparkles className="size-4" />}
+                          title={tone.label}
+                          description={tone.value}
                         />
                       </DropdownMenuItem>
                     ))}

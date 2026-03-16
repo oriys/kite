@@ -190,10 +190,12 @@ export const actions: (ToolbarAction | 'separator')[] = [
 
 export const AI_PENDING_LABELS: Record<AiTransformAction, string> = {
   polish: 'Polishing',
+  tone: 'Changing tone',
   autofix: 'Fixing',
   format: 'Fixing Markdown',
   shorten: 'Shortening',
   expand: 'Expanding',
+  continueWriting: 'Continuing draft',
   translate: 'Translating',
   explain: 'Explaining',
   diagram: 'Drawing diagram',
@@ -216,10 +218,12 @@ export const DOCUMENT_TRANSLATE_LANGUAGES = [
 
 export const DEFAULT_DOCUMENT_AI_ACTIONS = [
   'polish',
+  'tone',
   'autofix',
   'format',
   'shorten',
   'expand',
+  'continueWriting',
   'translate',
   'diagram',
   'review',
@@ -231,10 +235,12 @@ export const DEFAULT_DOCUMENT_AI_ACTIONS = [
 
 export const DOCUMENT_REWRITE_ACTIONS = [
   'polish',
+  'tone',
   'autofix',
   'format',
   'shorten',
   'expand',
+  'continueWriting',
   'translate',
 ] as const satisfies readonly AiTransformAction[]
 

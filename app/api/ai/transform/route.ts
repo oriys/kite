@@ -5,6 +5,7 @@ import {
   AI_TRANSFORM_ACTIONS,
   MAX_AI_CUSTOM_PROMPT_LENGTH,
   MAX_AI_MODEL_ID_LENGTH,
+  MAX_AI_TARGET_TONE_LENGTH,
   MAX_AI_TRANSFORM_TEXT_LENGTH,
   type AiTransformAction,
 } from '@/lib/ai'
@@ -40,12 +41,14 @@ export async function POST(request: NextRequest) {
   const requestedModel = typeof body.model === 'string' ? body.model.trim() : ''
   const targetLanguage =
     typeof body.targetLanguage === 'string' ? body.targetLanguage.trim() : ''
+  const targetTone = typeof body.targetTone === 'string' ? body.targetTone.trim() : ''
   const requestedSystemPrompt =
     typeof body.systemPrompt === 'string' ? body.systemPrompt.trim() : ''
   const requestedActionPrompt =
     typeof body.actionPrompt === 'string' ? body.actionPrompt.trim() : ''
   const requestedCustomPrompt =
     typeof body.customPrompt === 'string' ? body.customPrompt.trim() : ''
+  const streamRequested = body.stream === true
 
   if (!isAiTransformAction(action)) return badRequest('Invalid AI action')
   if (!text) return badRequest('Text is required')
@@ -56,6 +59,11 @@ export async function POST(request: NextRequest) {
   }
   if (requestedModel.length > MAX_AI_MODEL_ID_LENGTH) {
     return badRequest('Model identifier is too long')
+  }
+  if (targetTone.length > MAX_AI_TARGET_TONE_LENGTH) {
+    return badRequest(
+      `Target tone is too long. Limit is ${MAX_AI_TARGET_TONE_LENGTH} characters.`,
+    )
   }
   if (requestedSystemPrompt.length > MAX_AI_SYSTEM_PROMPT_LENGTH) {
     return badRequest(
@@ -75,6 +83,9 @@ export async function POST(request: NextRequest) {
   if (action === 'translate' && !targetLanguage) {
     return badRequest('Target language is required for translation')
   }
+  if (action === 'tone' && !targetTone) {
+    return badRequest('Target tone is required for tone changes')
+  }
   if (action === 'custom' && !requestedCustomPrompt) {
     return badRequest('Custom prompt is required')
   }
@@ -83,7 +94,10 @@ export async function POST(request: NextRequest) {
   const systemPrompt = requestedSystemPrompt || defaultPrompts.systemPrompt
   const actionPrompt = resolveAiPromptTemplate(
     requestedActionPrompt || defaultPrompts.actionPrompts[action],
-    targetLanguage || undefined,
+    {
+      targetLanguage: targetLanguage || undefined,
+      targetTone: targetTone || undefined,
+    },
   )
 
   try {
@@ -120,6 +134,8 @@ export async function POST(request: NextRequest) {
         `Task: ${actionPrompt}`,
         action === 'translate'
           ? `Target language: ${targetLanguage}`
+          : action === 'tone'
+            ? `Target tone: ${targetTone}`
           : action === 'custom'
             ? `User instruction: ${requestedCustomPrompt}`
             : 'Use the same language as the original text.',
@@ -132,7 +148,7 @@ export async function POST(request: NextRequest) {
       temperature: action === 'diagram' ? 0.1 : 0.2,
     }
 
-    if (action === 'diagram') {
+    if (action === 'diagram' || streamRequested) {
       const completion = await requestAiTextCompletionStream(requestInput)
 
       return new Response(completion.stream, {

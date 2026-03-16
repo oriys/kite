@@ -1,5 +1,6 @@
 import {
   AI_TRANSFORM_ACTIONS,
+  type AiActionOptions,
   MAX_AI_MODEL_ID_LENGTH,
   type AiTransformAction,
 } from '@/lib/ai'
@@ -13,6 +14,7 @@ import {
 export const AI_PROMPTS_STORAGE_KEY = 'editorial-ai-prompt-settings'
 export const AI_PROMPTS_EVENT = 'editorial-ai-prompt-settings:change'
 export const AI_PROMPT_LANGUAGE_TOKEN = '{{targetLanguage}}'
+export const AI_PROMPT_TONE_TOKEN = '{{targetTone}}'
 export const MAX_AI_SYSTEM_PROMPT_LENGTH = 4_000
 export const MAX_AI_ACTION_PROMPT_LENGTH = 2_000
 
@@ -28,6 +30,7 @@ export const DEFAULT_AI_SYSTEM_PROMPT =
 export const DEFAULT_AI_ACTION_PROMPTS: Record<AiTransformAction, string> = {
   polish:
     'Improve clarity, fluency, and tone while preserving the original meaning, structure, and terminology.',
+  tone: `Rewrite the text in a ${AI_PROMPT_TONE_TOKEN} tone while preserving the original meaning, structure, markdown, code, URLs, numbers, and technical terminology.`,
   autofix:
     'Fix spelling, grammar, punctuation, markdown formatting, and obvious formatting inconsistencies only. Do not change meaning, tone, terminology, factual content, or document structure beyond what is required to correct errors.',
   format:
@@ -36,6 +39,8 @@ export const DEFAULT_AI_ACTION_PROMPTS: Record<AiTransformAction, string> = {
     'Make the text materially shorter by removing redundancy while preserving the key meaning, structure, and important details.',
   expand:
     'Expand the text with useful clarification and supporting detail, but do not invent facts or claims that are not grounded in the original.',
+  continueWriting:
+    'Continue the document by writing only the next natural markdown to append. Extend the existing section, list, or argument without repeating prior sentences. Preserve voice, structure, terminology, and factual grounding. If the document already feels complete, add the next most useful concrete section instead of filler. Return only the new markdown to append, not the full document.',
   translate: `Translate the text into ${AI_PROMPT_LANGUAGE_TOKEN} while preserving markdown, code, URLs, numbers, and product names.`,
   explain:
     'Explain the text in plain language. If the text is technical, clarify what it means, what it does, and why it matters.',
@@ -136,20 +141,22 @@ export function sanitizeAiPromptSettings(
 
 export function resolveAiPromptTemplate(
   template: string,
-  targetLanguage?: string,
+  options?: AiActionOptions,
 ) {
-  return template.replaceAll(
-    AI_PROMPT_LANGUAGE_TOKEN,
-    targetLanguage?.trim() || 'the requested language',
-  )
+  return template
+    .replaceAll(
+      AI_PROMPT_LANGUAGE_TOKEN,
+      options?.targetLanguage?.trim() || 'the requested language',
+    )
+    .replaceAll(AI_PROMPT_TONE_TOKEN, options?.targetTone?.trim() || 'the requested tone')
 }
 
 export function resolveAiActionPrompt(
   action: AiTransformAction,
   prompts: AiPromptSettings,
-  targetLanguage?: string,
+  options?: AiActionOptions,
 ) {
-  return resolveAiPromptTemplate(prompts.actionPrompts[action], targetLanguage)
+  return resolveAiPromptTemplate(prompts.actionPrompts[action], options)
 }
 
 export function resolveAiActionModel(

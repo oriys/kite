@@ -37,56 +37,14 @@ interface DocAiPromptInlineManagerProps {
   enabledModels: AiCatalogModel[]
 }
 
-const PROMPT_META: Record<
-  PromptTarget,
-  { title: string }
-> = {
+const PROMPT_META = {
   system: {
     title: 'System prompt',
   },
-  polish: {
-    title: 'Polish',
-  },
-  autofix: {
-    title: 'Auto Fix',
-  },
-  format: {
-    title: 'Format',
-  },
-  shorten: {
-    title: 'Shorten',
-  },
-  expand: {
-    title: 'Expand',
-  },
-  translate: {
-    title: 'Translate',
-  },
-  explain: {
-    title: 'Explain',
-  },
-  diagram: {
-    title: 'Diagram',
-  },
-  review: {
-    title: 'Review',
-  },
-  score: {
-    title: 'Score',
-  },
-  summarize: {
-    title: 'Summarize',
-  },
-  outline: {
-    title: 'Outline',
-  },
-  checklist: {
-    title: 'Checklist',
-  },
-  custom: {
-    title: 'Custom Prompt',
-  },
-}
+  ...Object.fromEntries(
+    Object.entries(AI_ACTION_LABELS).map(([action, title]) => [action, { title }]),
+  ),
+} as Record<PromptTarget, { title: string }>
 
 function arePromptSettingsEqual(
   left: AiPromptSettings,

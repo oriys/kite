@@ -3,7 +3,7 @@
 import * as React from 'react'
 import type { Editor } from '@tiptap/react'
 import { Maximize2, Minimize2, Redo2, Undo2, List } from 'lucide-react'
-import { type AiTransformAction } from '@/lib/ai'
+import { type AiActionOptions, type AiTransformAction } from '@/lib/ai'
 import { type DocSnippet } from '@/lib/doc-snippets'
 import { cn } from '@/lib/utils'
 import {
@@ -56,7 +56,7 @@ interface DocToolbarProps {
   aiDocumentPendingAction?: AiTransformAction | null
   onAiDocumentAction?: (
     action: AiTransformAction,
-    options?: { targetLanguage?: string },
+    options?: AiActionOptions,
   ) => void
   outlineOpen?: boolean
   onOutlineOpenChange?: (open: boolean) => void

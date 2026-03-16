@@ -24,6 +24,7 @@ interface DocAiResultPanelProps {
   modelLabel: string
   modelId: string
   targetLanguage?: string
+  targetTone?: string
   customPrompt?: string
   pending?: boolean
   previewOnly?: boolean
@@ -41,6 +42,7 @@ export function DocAiResultPanel({
   modelLabel,
   modelId,
   targetLanguage,
+  targetTone,
   customPrompt,
   pending,
   previewOnly = false,
@@ -133,13 +135,14 @@ export function DocAiResultPanel({
           <Badge variant="secondary">{AI_ACTION_LABELS[action]}</Badge>
           <Badge variant="outline">{modelLabel}</Badge>
           {targetLanguage ? <Badge variant="outline">{targetLanguage}</Badge> : null}
+          {targetTone ? <Badge variant="outline">{targetTone}</Badge> : null}
           <Badge variant="outline" className="max-w-full truncate" title={modelId}>
             {modelId}
           </Badge>
           {effectivePreviewOnly ? <Badge variant="secondary">Preview only</Badge> : null}
           <Badge variant={pending ? 'secondary' : 'outline'}>
             <DocAiGlyph className={cn('size-[0.8rem]', pending && 'animate-pulse')} />
-            {pending ? (isDiagram ? 'Streaming' : 'Refreshing') : 'Ready'}
+            {pending ? (resultText ? 'Streaming' : 'Generating') : 'Ready'}
           </Badge>
         </div>
         {customPrompt ? (

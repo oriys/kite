@@ -8,12 +8,16 @@ import {
   shouldDirectReplaceAiResult,
   shouldUseAiResultPanel,
 } from '@/lib/ai'
+import { DEFAULT_SELECTION_AI_ACTIONS } from '@/components/docs/doc-bubble-menu-helpers'
+import { DEFAULT_DOCUMENT_AI_ACTIONS } from '@/components/docs/doc-toolbar-helpers'
 
 describe('ai action routing', () => {
   it('treats rewrite-style actions as modifying the source content', () => {
     expect(isAiModifyingAction('polish')).toBe(true)
+    expect(isAiModifyingAction('tone')).toBe(true)
     expect(isAiModifyingAction('format')).toBe(true)
     expect(isAiModifyingAction('translate')).toBe(true)
+    expect(isAiModifyingAction('continueWriting')).toBe(true)
     expect(isAiModifyingAction('custom')).toBe(true)
   })
 
@@ -28,10 +32,12 @@ describe('ai action routing', () => {
 
   it('keeps mutating actions in diff review for full-document edits', () => {
     expect(shouldUseAiResultPanel('document', 'polish')).toBe(false)
+    expect(shouldUseAiResultPanel('document', 'tone')).toBe(false)
     expect(shouldUseAiResultPanel('document', 'autofix')).toBe(false)
     expect(shouldUseAiResultPanel('document', 'format')).toBe(false)
     expect(shouldUseAiResultPanel('document', 'shorten')).toBe(false)
     expect(shouldUseAiResultPanel('document', 'expand')).toBe(false)
+    expect(shouldUseAiResultPanel('document', 'continueWriting')).toBe(false)
     expect(shouldUseAiResultPanel('document', 'translate')).toBe(false)
   })
 
@@ -54,5 +60,14 @@ describe('ai action routing', () => {
     expect(prompt).toContain('<analysis>')
     expect(prompt).toContain('</analysis>')
     expect(prompt.length).toBeLessThanOrEqual(MAX_AI_CUSTOM_PROMPT_LENGTH)
+  })
+
+  it('surfaces the new parity actions in the default menus', () => {
+    expect(DEFAULT_SELECTION_AI_ACTIONS).toContain('tone')
+    expect(DEFAULT_SELECTION_AI_ACTIONS).toContain('summarize')
+    expect(DEFAULT_SELECTION_AI_ACTIONS).not.toContain('continueWriting')
+
+    expect(DEFAULT_DOCUMENT_AI_ACTIONS).toContain('tone')
+    expect(DEFAULT_DOCUMENT_AI_ACTIONS).toContain('continueWriting')
   })
 })
