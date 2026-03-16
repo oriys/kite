@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import type { Editor } from '@tiptap/react'
-import { Maximize2, Minimize2, Redo2, Undo2 } from 'lucide-react'
+import { Maximize2, Minimize2, Redo2, Undo2, List } from 'lucide-react'
 import { type AiTransformAction } from '@/lib/ai'
 import { type DocSnippet } from '@/lib/doc-snippets'
 import { cn } from '@/lib/utils'
@@ -58,6 +58,8 @@ interface DocToolbarProps {
     action: AiTransformAction,
     options?: { targetLanguage?: string },
   ) => void
+  outlineOpen?: boolean
+  onOutlineOpenChange?: (open: boolean) => void
 }
 
 export function DocToolbar({
@@ -83,6 +85,8 @@ export function DocToolbar({
   availableDocumentAiActions,
   aiDocumentPendingAction,
   onAiDocumentAction,
+  outlineOpen = false,
+  onOutlineOpenChange,
 }: DocToolbarProps) {
   const handleClick = (item: ToolbarAction) => {
     if (mode === 'source') {
@@ -256,6 +260,26 @@ export function DocToolbar({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 border-l border-border/50 pl-2">
+          {onOutlineOpenChange ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={outlineOpen ? 'secondary' : 'ghost'}
+                  size="icon-sm"
+                  aria-label={outlineOpen ? 'Hide document outline' : 'Show document outline'}
+                  aria-pressed={outlineOpen}
+                  className={cn(outlineOpen && 'text-foreground')}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onOutlineOpenChange(!outlineOpen)}
+                >
+                  <List className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {outlineOpen ? 'Hide outline' : 'Document outline'}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           {canToggleFullscreen ? (
             <Tooltip>
               <TooltipTrigger asChild>

@@ -12,6 +12,8 @@ import { JsonViewerNode, SchemaViewerNode, HeatmapNode } from '@/lib/editor/cust
 import { CommentMark } from '@/lib/editor/comment-marks'
 import { createImagePasteDropExtension } from '@/lib/editor/image-paste-drop'
 import { SearchReplace } from '@/lib/editor/search-replace'
+import { SuggestionHighlight } from '@/lib/editor/suggestion-plugin'
+import { BlockHandle } from '@/lib/editor/block-handle'
 
 const lowlight = createLowlight(common)
 
@@ -35,6 +37,7 @@ export function createEditorExtensions() {
     createImagePasteDropExtension().configure({
       HTMLAttributes: { class: '' },
       allowBase64: true,
+      resize: false,
     }),
     Placeholder.configure({
       placeholder: 'Start writing, or type / for commands…',
@@ -47,8 +50,10 @@ export function createEditorExtensions() {
     CharacterCount,
     SearchReplace,
     CommentMark,
+    SuggestionHighlight,
     JsonViewerNode,
     SchemaViewerNode,
     HeatmapNode,
+    BlockHandle,
   ]
 }

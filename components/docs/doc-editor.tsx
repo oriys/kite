@@ -6,9 +6,13 @@ import { TextSelection } from '@tiptap/pm/state'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
 import {
+  AI_ACTION_LABELS,
   MAX_AI_TRANSFORM_TEXT_LENGTH,
   isAiAppendResultAction,
+  isAiDiagramAction,
+  isAiInlineDiffAction,
   isAiPreviewOnlyAction,
+  isAiRewriteAction,
   type AiTransformAction,
 } from '@/lib/ai'
 import {
@@ -48,10 +52,14 @@ import { DocHeatmapEditorDialog } from '@/components/docs/doc-heatmap-editor-dia
 import { DocToolbar, type EditorViewMode, type ToolbarMode } from '@/components/docs/doc-toolbar'
 import { DocBubbleMenu } from '@/components/docs/doc-bubble-menu'
 import { DocSlashMenu } from '@/components/docs/doc-slash-menu'
+import { DocSuggestionToolbar } from '@/components/docs/doc-suggestion-toolbar'
 import { wordCount } from '@/lib/utils'
 import { createEditorExtensions } from '@/components/docs/doc-editor-extensions'
 import { aiReducer, AI_INITIAL_STATE } from '@/components/docs/doc-editor-hooks'
 import { CustomAiPromptDialog, LinkInputDialog, FloatingStatsPill } from '@/components/docs/doc-editor-panes'
+import { useSuggestionReview } from '@/hooks/use-suggestion-review'
+import { useDocOutline } from '@/hooks/use-doc-outline'
+import { DocOutline } from '@/components/docs/doc-outline'
 
 export type { DocEditorHandle } from '@/lib/editor/editor-helpers'
 
@@ -109,6 +117,7 @@ export function DocEditor({
   const [linkInputUrl, setLinkInputUrl] = React.useState('')
   const [findReplaceOpen, setFindReplaceOpen] = React.useState(false)
   const [a11yAnnouncement, setA11yAnnouncement] = React.useState('')
+  const [outlineOpen, setOutlineOpen] = React.useState(false)
 
   const announce = React.useCallback((message: string) => {
     setA11yAnnouncement('')
@@ -158,10 +167,11 @@ export function DocEditor({
     [readOnly, readOnlyAiActions],
   )
   const canShowSelectionAi = !readOnly || availableSelectionAiActions.length > 0
+  const showAiSidePanel = Boolean(ai.preview) && isAiPreviewOnlyAction(ai.preview!.action)
   const wysiwygOnLeft = resize.splitPaneLeading === 'wysiwyg'
-  const aiPreviewOnLeft = Boolean(ai.preview) && aiPreviewSide === 'left'
+  const aiPreviewOnLeft = showAiSidePanel && aiPreviewSide === 'left'
   const splitPaneColumns = `minmax(0, ${resize.splitPaneRatio}fr) minmax(0, ${1 - resize.splitPaneRatio}fr)`
-  const aiSplitColumns = ai.preview
+  const aiSplitColumns = showAiSidePanel
     ? aiPreviewOnLeft
       ? `minmax(0, ${resize.aiSplitRatio}fr) minmax(0, ${1 - resize.aiSplitRatio}fr)`
       : `minmax(0, ${1 - resize.aiSplitRatio}fr) minmax(0, ${resize.aiSplitRatio}fr)`
@@ -267,6 +277,12 @@ export function DocEditor({
     },
     onFocus: () => setActivePane('wysiwyg'),
   })
+
+  // ── Suggestion review ───────────────────────────────────────────────────
+  const suggestionReview = useSuggestionReview(editor)
+
+  // ── Document outline ────────────────────────────────────────────────────
+  const outline = useDocOutline(editor)
 
   // ── Link input helpers ──────────────────────────────────────────────────
 
@@ -426,8 +442,21 @@ export function DocEditor({
       aiAbortControllerRef.current?.abort()
       const abortController = new AbortController()
       aiAbortControllerRef.current = abortController
-      dispatchAi({ type: 'SET_PENDING', action: request.action, scope: request.scope })
-      dispatchAi({ type: 'SET_PREVIEW', preview: { ...request, resultText: '' } })
+
+      const isDiagram = isAiDiagramAction(request.action)
+      const isPreviewOnly = isAiPreviewOnlyAction(request.action)
+
+      // Diagram/preview-only → show in side panel (existing behavior)
+      // All others → show loading in suggestion review toolbar
+      if (isDiagram || isPreviewOnly) {
+        dispatchAi({ type: 'SET_PENDING', action: request.action, scope: request.scope })
+        dispatchAi({ type: 'SET_PREVIEW', preview: { ...request, resultText: '' } })
+      } else {
+        suggestionReview.startAiLoading({
+          actionLabel: AI_ACTION_LABELS[request.action],
+          modelLabel: request.modelLabel,
+        })
+      }
 
       try {
         const actionPrompt = resolveAiActionPrompt(
@@ -458,7 +487,8 @@ export function DocEditor({
           throw new Error(payload?.error ?? `Transform failed (${response.status})`)
         }
 
-        if (request.action === 'diagram') {
+        // Diagram actions: stream result into side panel
+        if (isDiagram) {
           if (!response.body) {
             throw new Error('The AI provider did not return a diagram stream.')
           }
@@ -494,12 +524,47 @@ export function DocEditor({
           return
         }
 
-        const data = (await response.json()) as { result: string }
+        // Preview-only (non-diagram): show in side panel
+        if (isPreviewOnly) {
+          const data = (await response.json()) as { result: string }
+          if (requestId !== aiRequestIdRef.current) return
+          dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: data.result })
+          announce('AI result ready for review')
+          return
+        }
 
+        // ── All other actions → decompose into suggestions ──────────
+        const data = (await response.json()) as { result: string }
         if (requestId !== aiRequestIdRef.current) return
 
-        dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: data.result })
-        announce('AI result ready for review')
+        if (!editor) return
+
+        const resultText = data.result
+
+        const sel = request.selectionRange
+        const from = request.scope === 'document' ? 0 : sel?.from ?? 0
+        const to = request.scope === 'document'
+          ? editor.state.doc.content.size
+          : sel?.to ?? editor.state.doc.content.size
+
+        if (isAiInlineDiffAction(request.action)) {
+          // Polish / autofix / custom → word-level inline diff
+          suggestionReview.startReviewFromAiRewrite(resultText, from, to)
+        } else if (isAiRewriteAction(request.action)) {
+          // Expand / shorten / translate → whole-block replacement
+          suggestionReview.startReviewFromBlockReplace(resultText, from, to)
+        } else if (isAiAppendResultAction(request.action)) {
+          // Append: single insertion suggestion
+          const insertPos = request.scope === 'document'
+            ? editor.state.doc.content.size
+            : sel
+              ? Math.min(sel.to, editor.state.doc.content.size)
+              : editor.state.doc.content.size
+
+          suggestionReview.startReviewFromAppend(insertPos, resultText)
+        }
+
+        announce('AI changes ready for review')
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return
@@ -509,7 +574,12 @@ export function DocEditor({
         toast.error('AI transform failed', {
           description: error instanceof Error ? error.message : 'An unexpected error occurred.',
         })
-        dispatchAi({ type: 'SET_PREVIEW', preview: null })
+
+        if (isDiagram || isPreviewOnly) {
+          dispatchAi({ type: 'SET_PREVIEW', preview: null })
+        } else {
+          suggestionReview.cancelAiLoading()
+        }
         announce('AI transform failed')
       } finally {
         if (aiAbortControllerRef.current === abortController) {
@@ -520,7 +590,7 @@ export function DocEditor({
         }
       }
     },
-    [aiPrompts, announce],
+    [aiPrompts, announce, editor, suggestionReview],
   )
 
   const handleAiAction = React.useCallback(
@@ -610,6 +680,7 @@ export function DocEditor({
     void runAiPreviewRequest(request)
   }, [ai.preview, runAiPreviewRequest])
 
+  // Accept for diagram/preview-only actions (side panel path)
   const handleAcceptAiPreview = React.useCallback(() => {
     if (
       !ai.preview ||
@@ -670,6 +741,14 @@ export function DocEditor({
       setSelectionInfo(null)
     })
   }, [ai.preview, editor, handleAiPreviewOpenChange, onChange, readOnly])
+
+  const handleCancelAiLoading = React.useCallback(() => {
+    aiAbortControllerRef.current?.abort()
+    aiAbortControllerRef.current = null
+    aiRequestIdRef.current += 1
+    suggestionReview.cancelAiLoading()
+    dispatchAi({ type: 'SET_PENDING', action: null, scope: null })
+  }, [suggestionReview])
 
   const handleOpenAiCustomPrompt = React.useCallback(() => {
     if (!editor || readOnly) return
@@ -966,6 +1045,8 @@ export function DocEditor({
           availableDocumentAiActions={readOnly ? availableDocumentAiActions : undefined}
           aiDocumentPendingAction={aiDocumentPendingAction}
           onAiDocumentAction={handleAiDocumentActionWrapper}
+          outlineOpen={outlineOpen}
+          onOutlineOpenChange={setOutlineOpen}
         />
 
         {/* Find/Replace bar */}
@@ -981,13 +1062,14 @@ export function DocEditor({
         <div
           ref={resize.aiSplitPaneRef}
           style={
-            ai.preview && aiSplitColumns
+            showAiSidePanel && aiSplitColumns
               ? ({ '--doc-ai-split-columns': aiSplitColumns } as React.CSSProperties)
               : undefined
           }
           className={cn(
             'group/ai-split-pane relative flex-1 min-h-0 grid grid-cols-1 motion-reduce:transition-none xl:transition-[grid-template-columns] xl:duration-300 xl:ease-[cubic-bezier(0.22,1,0.36,1)]',
-            ai.preview              ? 'xl:[grid-template-columns:var(--doc-ai-split-columns)]'
+            showAiSidePanel
+              ? 'xl:[grid-template-columns:var(--doc-ai-split-columns)]'
               : 'xl:[grid-template-columns:minmax(0,1fr)]',
           )}
         >
@@ -1052,6 +1134,25 @@ export function DocEditor({
                       ref={editorWrapperRef}
                       className="relative h-full min-h-full"
                     >
+                      {/* Document outline panel */}
+                      <AnimatePresence>
+                        {outlineOpen ? (
+                          <motion.div
+                            initial={reducedMotion ? false : { opacity: 0, x: -12 }}
+                            animate={reducedMotion ? undefined : { opacity: 1, x: 0 }}
+                            exit={reducedMotion ? undefined : { opacity: 0, x: -12 }}
+                            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                            className="absolute left-2 top-2 z-30 w-56 max-h-[calc(100%-1rem)] overflow-y-auto overscroll-contain rounded-md border border-border/70 bg-card/98 shadow-md backdrop-blur-sm [scrollbar-width:thin]"
+                          >
+                            <DocOutline
+                              headings={outline.headings}
+                              activeId={outline.activeId}
+                              onSelect={(h) => outline.scrollToHeading(h)}
+                              onClose={() => setOutlineOpen(false)}
+                            />
+                          </motion.div>
+                        ) : null}
+                      </AnimatePresence>
                       <EditorContent editor={editor} />
 
                       {hasRichEditor(mode) && editor && canShowSelectionAi && (
@@ -1185,16 +1286,16 @@ export function DocEditor({
           ) : null}
         </motion.div>
 
-        {/* AI Preview Pane */}
+        {/* AI Preview Pane (diagram/preview-only actions only) */}
         <div
           className={cn(
             'h-full min-h-0 min-w-0 overflow-hidden motion-reduce:transition-none',
             aiPreviewOnLeft ? 'xl:order-1' : 'xl:order-2',
-            ai.preview ? 'pointer-events-auto' : 'pointer-events-none',
+            showAiSidePanel ? 'pointer-events-auto' : 'pointer-events-none',
           )}
-          aria-hidden={!ai.preview}
+          aria-hidden={!showAiSidePanel}
         >
-          {ai.preview ? (
+          {showAiSidePanel && ai.preview ? (
             <div
               className={cn(
                 'flex h-full min-h-0 flex-col animate-in fade-in duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none',
@@ -1223,7 +1324,7 @@ export function DocEditor({
         </div>
 
         {/* AI split resize handle */}
-        {ai.preview ? (
+        {showAiSidePanel ? (
           <button
             type="button"
             onMouseDown={resize.handleDocumentResizeStart}
@@ -1283,6 +1384,19 @@ export function DocEditor({
             statsOverlayContainerRef={statsOverlayContainerRef}
           />
         )}
+
+        {/* Suggestion review toolbar */}
+        <DocSuggestionToolbar
+          state={suggestionReview.state}
+          onAcceptCurrent={suggestionReview.acceptCurrent}
+          onRejectCurrent={suggestionReview.rejectCurrent}
+          onAcceptAll={suggestionReview.acceptAll}
+          onRejectAll={suggestionReview.rejectAll}
+          onGoNext={suggestionReview.goNext}
+          onGoPrev={suggestionReview.goPrev}
+          onClose={suggestionReview.closeReview}
+          onCancelAiLoading={handleCancelAiLoading}
+        />
       </div>
     </div>
   )

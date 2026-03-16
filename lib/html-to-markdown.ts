@@ -109,6 +109,36 @@ turndown.addRule('heatmap', {
   },
 })
 
+turndown.addRule('imageFigure', {
+  filter: (node) =>
+    node instanceof HTMLElement &&
+    node.tagName === 'FIGURE' &&
+    node.classList.contains('doc-image-figure') &&
+    node.querySelector('img') !== null,
+  replacement: (_content, node) => {
+    const figure = node as HTMLElement
+    const img = figure.querySelector('img')!
+    const src = img.getAttribute('src') ?? ''
+    const caption = figure.querySelector('figcaption')?.textContent?.trim() ?? ''
+    const alt = caption || img.getAttribute('alt') || ''
+    const width = img.style.width ? parseInt(img.style.width, 10) : (img.getAttribute('width') ? Number(img.getAttribute('width')) : null)
+    const alignment = figure.dataset.align
+
+    let md = `![${alt}](${src})`
+
+    // Encode width and alignment as an HTML comment after the image for round-trip
+    const meta: string[] = []
+    if (width && width > 0) meta.push(`width=${width}`)
+    if (alignment && alignment !== 'center') meta.push(`align=${alignment}`)
+    if (caption) meta.push(`caption=${caption}`)
+    if (meta.length > 0) {
+      md += `<!-- ${meta.join(' ')} -->`
+    }
+
+    return `\n${md}\n`
+  },
+})
+
 turndown.addRule('codeBlock', {
   filter: (node) =>
     node instanceof HTMLPreElement &&

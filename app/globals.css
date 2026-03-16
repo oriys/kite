@@ -58,6 +58,13 @@
   --diff-gutter: oklch(0.94 0.003 90);
   --diff-gutter-text: oklch(0.58 0.006 85);
 
+  /* Suggestion review tokens */
+  --suggestion-delete-bg: oklch(0.95 0.03 25 / 0.6);
+  --suggestion-delete-text: oklch(0.52 0.08 25);
+  --suggestion-insert-bg: oklch(0.94 0.04 145 / 0.6);
+  --suggestion-insert-text: oklch(0.34 0.09 145);
+  --suggestion-focus-ring: oklch(0.63 0.16 244 / 0.5);
+
   /* Semantic tone tokens – used by StatusBadge, ApiResponseBadge, etc. */
   --tone-success-border: oklch(0.84 0.08 145);
   --tone-success-bg: oklch(0.62 0.11 145 / 0.10);
@@ -148,6 +155,12 @@
   --diff-change-border: oklch(0.40 0.06 83);
   --diff-gutter: oklch(0.26 0.004 85);
   --diff-gutter-text: oklch(0.58 0.006 90);
+
+  --suggestion-delete-bg: oklch(0.30 0.04 25 / 0.5);
+  --suggestion-delete-text: oklch(0.78 0.07 25);
+  --suggestion-insert-bg: oklch(0.30 0.04 145 / 0.5);
+  --suggestion-insert-text: oklch(0.78 0.07 145);
+  --suggestion-focus-ring: oklch(0.63 0.16 244 / 0.5);
 
   --tone-success-border: oklch(0.38 0.08 145);
   --tone-success-bg: oklch(0.70 0.11 145 / 0.10);
@@ -620,6 +633,56 @@
       display: none;
     }
 
+    /* ── Image figure ─────────────────────────────────────────────── */
+
+    .doc-image-figure {
+      @apply relative my-4 flex flex-col items-center;
+      &[data-align="left"] { @apply items-start; }
+      &[data-align="right"] { @apply items-end; }
+    }
+
+    .doc-image-figure img {
+      @apply max-w-full rounded-md shadow-sm;
+      display: block;
+    }
+
+    .doc-image-figure .doc-image-caption {
+      @apply mt-2 w-full max-w-md text-center text-xs leading-5 text-muted-foreground outline-none;
+      &:empty::before {
+        content: attr(placeholder);
+        @apply text-muted-foreground/40 italic;
+      }
+    }
+
+    .doc-image-figure .doc-image-controls {
+      @apply absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5 rounded-md border border-border/70 bg-card/95 px-1 py-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity;
+    }
+    .doc-image-figure:hover .doc-image-controls,
+    .doc-image-figure.resizing .doc-image-controls {
+      @apply opacity-100;
+    }
+
+    .doc-image-align-btn {
+      @apply flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground;
+      &.active {
+        @apply bg-accent/15 text-accent-foreground;
+      }
+    }
+
+    .doc-image-resize-handle {
+      @apply absolute right-0 bottom-0 h-4 w-4 cursor-se-resize opacity-0 transition-opacity;
+      &::after {
+        content: '';
+        @apply absolute right-0.5 bottom-0.5 block size-2.5 rounded-bl-sm border-b-2 border-r-2 border-foreground/30;
+      }
+    }
+    .doc-image-figure:hover .doc-image-resize-handle {
+      @apply opacity-100;
+    }
+    .doc-image-figure.resizing .doc-image-resize-handle {
+      @apply opacity-100;
+    }
+
     .doc-heatmap {
       @apply my-4 overflow-hidden rounded-md border border-border/75 bg-card/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:shadow-none;
     }
@@ -806,6 +869,107 @@
   outline: 2px solid oklch(0.72 0.16 55 / 0.4);
 }
 
+/* ── Block drag handle + menu ─────────────────────────────────────── */
+
+.doc-block-handle {
+  position: absolute;
+  z-index: 20;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: grab;
+  color: oklch(0.65 0 0);
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.prose-editorial:hover ~ .doc-block-handle,
+.doc-block-handle[style*="display: flex"] {
+  opacity: 0.6;
+}
+
+.doc-block-handle:hover {
+  opacity: 1 !important;
+  background-color: oklch(0.92 0 0);
+  color: oklch(0.35 0 0);
+}
+
+.dark .doc-block-handle:hover {
+  background-color: oklch(0.25 0 0);
+  color: oklch(0.75 0 0);
+}
+
+.doc-block-handle:active {
+  cursor: grabbing;
+}
+
+.doc-block-menu {
+  position: absolute;
+  z-index: 50;
+  display: none;
+  min-width: 160px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid oklch(0.88 0 0);
+  background: oklch(0.99 0 0);
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.08), 0 1px 4px oklch(0 0 0 / 0.04);
+  transform: translateX(-100%);
+}
+
+.dark .doc-block-menu {
+  border-color: oklch(0.28 0 0);
+  background: oklch(0.18 0 0);
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.32), 0 1px 4px oklch(0 0 0 / 0.16);
+}
+
+.doc-block-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: oklch(0.35 0 0);
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.doc-block-menu-item:hover {
+  background-color: oklch(0.95 0 0);
+}
+
+.dark .doc-block-menu-item {
+  color: oklch(0.78 0 0);
+}
+
+.dark .doc-block-menu-item:hover {
+  background-color: oklch(0.24 0 0);
+}
+
+.doc-block-menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background-color: oklch(0.9 0 0);
+}
+
+.dark .doc-block-menu-separator {
+  background-color: oklch(0.3 0 0);
+}
+
+.doc-block-menu-label {
+  padding: 4px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: oklch(0.6 0 0);
+}
+
 /* Inline comment highlight marks */
 .comment-highlight {
   color: inherit;
@@ -871,4 +1035,44 @@
 .use-pointer-cursors [data-slot="slider-thumb"],
 .use-pointer-cursors [data-slot="toggle-group-item"] {
   cursor: pointer;
+}
+
+/* ── Suggestion review inline decorations ─────────────────────── */
+
+.suggestion-delete {
+  text-decoration: line-through;
+  text-decoration-color: var(--suggestion-delete-text);
+  color: var(--suggestion-delete-text);
+  background-color: var(--suggestion-delete-bg);
+  border-radius: 2px;
+  padding-inline: 1px;
+  margin-inline-end: 2px;
+  transition: outline-color 0.15s ease;
+}
+
+.suggestion-insert {
+  display: inline;
+  vertical-align: baseline;
+  color: var(--suggestion-insert-text);
+  background-color: var(--suggestion-insert-bg);
+  border-radius: 2px;
+  padding-inline: 2px;
+  margin-inline-start: 2px;
+  font-style: normal;
+  line-height: inherit;
+  white-space: pre-wrap;
+  transition: outline-color 0.15s ease;
+}
+
+.suggestion-focused.suggestion-delete,
+.suggestion-focused.suggestion-insert {
+  outline: 2px solid var(--suggestion-focus-ring);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggestion-delete,
+  .suggestion-insert {
+    transition: none;
+  }
 }
