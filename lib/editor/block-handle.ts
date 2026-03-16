@@ -119,12 +119,12 @@ export const BlockHandle = Extension.create({
         return
       }
 
-      const editorRect = view.dom.parentElement?.getBoundingClientRect()
-      if (!editorRect) return
-
+      // Position handle inside the editor's padding gutter
+      const editorDom = view.dom
+      const editorRect = editorDom.getBoundingClientRect()
       const nodeRect = domNode.getBoundingClientRect()
-      handle.style.top = `${nodeRect.top - editorRect.top + view.dom.parentElement!.scrollTop}px`
-      handle.style.left = '-28px'
+      handle.style.top = `${nodeRect.top - editorRect.top + editorDom.scrollTop}px`
+      handle.style.left = '4px'
       handle.style.display = 'flex'
     }
 
@@ -147,11 +147,11 @@ export const BlockHandle = Extension.create({
       menuOpen = true
 
       const handleRect = handle.getBoundingClientRect()
-      const editorRect = view.dom.parentElement?.getBoundingClientRect()
-      if (!editorRect) return
+      const editorDom = view.dom
+      const editorRect = editorDom.getBoundingClientRect()
 
-      menu.style.top = `${handleRect.top - editorRect.top + view.dom.parentElement!.scrollTop}px`
-      menu.style.left = `${handleRect.left - editorRect.left - 4}px`
+      menu.style.top = `${handleRect.top - editorRect.top + editorDom.scrollTop}px`
+      menu.style.left = `${handleRect.right - editorRect.left + 4}px`
       menu.style.display = 'block'
 
       // Bind menu item clicks
@@ -256,12 +256,11 @@ export const BlockHandle = Extension.create({
           menu = createMenuElement()
           menu.style.display = 'none'
 
-          const container = editorView.dom.parentElement
-          if (container) {
-            container.style.position = 'relative'
-            container.appendChild(handle)
-            container.appendChild(menu)
-          }
+          // Append to the editor DOM itself (has padding gutter for the handle)
+          const editorDom = editorView.dom
+          editorDom.style.position = 'relative'
+          editorDom.appendChild(handle)
+          editorDom.appendChild(menu)
 
           // Handle click → open menu
           handle.addEventListener('mousedown', (e) => {
