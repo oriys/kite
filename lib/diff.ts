@@ -189,3 +189,140 @@ function mergeEqualBlocks(blocks: DiffBlock[]): DiffBlock[] {
   }
   return merged
 }
+
+// ─── Word-level diff ────────────────────────────────────────────
+// Produces a flat list of changes with character offsets into
+// the original (left) text, suitable for inline suggestion review.
+
+export interface WordDiffChange {
+  type: 'equal' | 'add' | 'remove'
+  text: string
+  /** Character offset into the original (left) text where this change maps to */
+  origOffset: number
+  /** Character length consumed in the original text (0 for 'add') */
+  origLength: number
+}
+
+/**
+ * Compute a word-level diff between two texts.
+ * Tokens preserve whitespace so the concatenation of all token texts
+ * exactly reproduces the original input.
+ */
+export function diffWords(left: string, right: string): WordDiffChange[] {
+  const leftTokens = tokenizeWords(left)
+  const rightTokens = tokenizeWords(right)
+  const ops = computeLCS(leftTokens, rightTokens)
+  return buildWordChanges(ops, leftTokens, rightTokens)
+}
+
+/**
+ * Split text into word tokens preserving all whitespace.
+ * Each token is either a word or a whitespace run.
+ */
+function tokenizeWords(text: string): string[] {
+  if (!text) return []
+  return text.match(/\S+|\s+/g) ?? []
+}
+
+function buildWordChanges(
+  ops: EditOp[],
+  leftTokens: string[],
+  rightTokens: string[],
+): WordDiffChange[] {
+  const changes: WordDiffChange[] = []
+
+  // Pre-compute character offset for each left token
+  const leftOffsets: number[] = []
+  let off = 0
+  for (const t of leftTokens) {
+    leftOffsets.push(off)
+    off += t.length
+  }
+
+  // Track current offset in original text
+  let origOffset = 0
+
+  // Pending remove/add tokens for merging into single change entries
+  let pendingRemove: string[] = []
+  let pendingRemoveOffset = 0
+  let pendingRemoveLength = 0
+  let pendingAdd: string[] = []
+
+  function flushPending() {
+    if (pendingRemove.length > 0) {
+      changes.push({
+        type: 'remove',
+        text: pendingRemove.join(''),
+        origOffset: pendingRemoveOffset,
+        origLength: pendingRemoveLength,
+      })
+      pendingRemove = []
+      pendingRemoveLength = 0
+    }
+    if (pendingAdd.length > 0) {
+      changes.push({
+        type: 'add',
+        text: pendingAdd.join(''),
+        origOffset,
+        origLength: 0,
+      })
+      pendingAdd = []
+    }
+  }
+
+  for (const op of ops) {
+    switch (op.type) {
+      case 'equal': {
+        flushPending()
+        const token = leftTokens[op.li]
+        changes.push({
+          type: 'equal',
+          text: token,
+          origOffset: leftOffsets[op.li],
+          origLength: token.length,
+        })
+        origOffset = leftOffsets[op.li] + token.length
+        break
+      }
+      case 'remove': {
+        if (pendingRemove.length === 0) {
+          pendingRemoveOffset = leftOffsets[op.li]
+        }
+        pendingRemove.push(leftTokens[op.li])
+        pendingRemoveLength += leftTokens[op.li].length
+        origOffset = leftOffsets[op.li] + leftTokens[op.li].length
+        break
+      }
+      case 'add': {
+        pendingAdd.push(rightTokens[op.ri])
+        break
+      }
+    }
+  }
+
+  flushPending()
+  return mergeAdjacentChanges(changes)
+}
+
+/**
+ * Merge consecutive same-type changes for cleaner output.
+ * e.g. [remove "hello", remove " "] → [remove "hello "]
+ */
+function mergeAdjacentChanges(changes: WordDiffChange[]): WordDiffChange[] {
+  if (changes.length === 0) return changes
+  const merged: WordDiffChange[] = [changes[0]]
+
+  for (let i = 1; i < changes.length; i++) {
+    const prev = merged[merged.length - 1]
+    const curr = changes[i]
+
+    if (prev.type === curr.type && prev.type !== 'equal') {
+      prev.text += curr.text
+      prev.origLength += curr.origLength
+    } else {
+      merged.push(curr)
+    }
+  }
+
+  return merged
+}

@@ -8,11 +8,16 @@ import { toast } from 'sonner'
 import {
   AI_ACTION_LABELS,
   MAX_AI_TRANSFORM_TEXT_LENGTH,
+  buildAiResultAutoFixPrompt,
+  canAutoFixAiResult,
   isAiAppendResultAction,
   isAiDiagramAction,
   isAiInlineDiffAction,
+  isAiModifyingAction,
   isAiPreviewOnlyAction,
   isAiRewriteAction,
+  shouldDirectReplaceAiResult,
+  shouldUseAiResultPanel,
   type AiTransformAction,
 } from '@/lib/ai'
 import {
@@ -136,6 +141,7 @@ export function DocEditor({
   // ── Refs ─────────────────────────────────────────────────────────────────
   const editorWrapperRef = React.useRef<HTMLDivElement>(null)
   const editorViewportRef = React.useRef<HTMLDivElement>(null)
+  const statsPillContainerRef = React.useRef<HTMLDivElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const latestMdRef = React.useRef(content)
   const switchingRef = React.useRef(false)
@@ -167,7 +173,7 @@ export function DocEditor({
     [readOnly, readOnlyAiActions],
   )
   const canShowSelectionAi = !readOnly || availableSelectionAiActions.length > 0
-  const showAiSidePanel = Boolean(ai.preview) && isAiPreviewOnlyAction(ai.preview!.action)
+  const showAiSidePanel = Boolean(ai.preview)
   const wysiwygOnLeft = resize.splitPaneLeading === 'wysiwyg'
   const aiPreviewOnLeft = showAiSidePanel && aiPreviewSide === 'left'
   const splitPaneColumns = `minmax(0, ${resize.splitPaneRatio}fr) minmax(0, ${1 - resize.splitPaneRatio}fr)`
@@ -447,16 +453,28 @@ export function DocEditor({
       aiAbortControllerRef.current = abortController
 
       const isDiagram = isAiDiagramAction(request.action)
-      const isPreviewOnly = isAiPreviewOnlyAction(request.action)
+      const modifiesOriginal = isAiModifyingAction(request.action)
+      const directReplaceResult = shouldDirectReplaceAiResult(
+        request.scope,
+        request.action,
+      )
+      const showResultPanel = shouldUseAiResultPanel(
+        request.scope,
+        request.action,
+      )
 
-      // Diagram/preview-only → show in side panel (existing behavior)
-      // All others → show loading in suggestion review toolbar
-      if (isDiagram || isPreviewOnly) {
+      // Full-document non-mutating actions and preview-only actions stay in the side panel.
+      // Mutating actions route into the suggestion/diff review flow.
+      if (showResultPanel || directReplaceResult) {
         dispatchAi({ type: 'SET_PENDING', action: request.action, scope: request.scope })
-        dispatchAi({ type: 'SET_PREVIEW', preview: { ...request, resultText: '' } })
-      } else {
+        if (showResultPanel) {
+          dispatchAi({ type: 'SET_PREVIEW', preview: { ...request, resultText: '' } })
+        }
+      }
+
+      if (!showResultPanel && !directReplaceResult) {
         suggestionReview.startAiLoading({
-          actionLabel: AI_ACTION_LABELS[request.action],
+          actionLabel: request.loadingActionLabel ?? AI_ACTION_LABELS[request.action],
           modelLabel: request.modelLabel,
         })
       }
@@ -527,8 +545,8 @@ export function DocEditor({
           return
         }
 
-        // Preview-only (non-diagram): show in side panel
-        if (isPreviewOnly) {
+        // Non-mutating document actions: show result in the side panel
+        if (showResultPanel) {
           const data = (await response.json()) as { result: string }
           if (requestId !== aiRequestIdRef.current) return
           dispatchAi({ type: 'SET_PREVIEW_RESULT', resultText: data.result })
@@ -536,11 +554,36 @@ export function DocEditor({
           return
         }
 
+        if (directReplaceResult) {
+          const data = (await response.json()) as { result: string }
+          if (requestId !== aiRequestIdRef.current) return
+          if (!editor) return
+
+          if (data.result === request.originalText) {
+            toast.info('Markdown formatting already looks good', {
+              description: 'No markdown fixes were needed.',
+            })
+            announce('Markdown formatting unchanged')
+            return
+          }
+
+          editor.commands.setContent(mdToHtml(data.result), { emitUpdate: false })
+          latestMdRef.current = data.result
+          onChange(data.result)
+          setSelectionInfo(null)
+          toast.success('Markdown formatting applied')
+          announce('Markdown formatting applied')
+          return
+        }
+
         // ── All other actions → decompose into suggestions ──────────
         const data = (await response.json()) as { result: string }
         if (requestId !== aiRequestIdRef.current) return
 
-        if (!editor) return
+        if (!editor) {
+          suggestionReview.cancelAiLoading()
+          return
+        }
 
         const resultText = data.result
 
@@ -550,12 +593,27 @@ export function DocEditor({
           ? editor.state.doc.content.size
           : sel?.to ?? editor.state.doc.content.size
 
-        if (isAiInlineDiffAction(request.action)) {
-          // Polish / autofix / custom → word-level inline diff
-          suggestionReview.startReviewFromAiRewrite(resultText, from, to)
+        const shouldUseDiffReview =
+          request.scope === 'document'
+            ? modifiesOriginal
+            : isAiInlineDiffAction(request.action)
+
+        let reviewStarted = false
+
+        if (shouldUseDiffReview) {
+          // Full-document rewrites and inline edit actions use diff review.
+          reviewStarted = suggestionReview.startReviewFromAiRewrite(
+            resultText,
+            from,
+            to,
+          )
         } else if (isAiRewriteAction(request.action)) {
-          // Expand / shorten / translate → whole-block replacement
-          suggestionReview.startReviewFromBlockReplace(resultText, from, to)
+          // Selection-only structural rewrites still use single block replacement suggestions.
+          reviewStarted = suggestionReview.startReviewFromBlockReplace(
+            resultText,
+            from,
+            to,
+          )
         } else if (isAiAppendResultAction(request.action)) {
           // Append: single insertion suggestion
           const insertPos = request.scope === 'document'
@@ -564,7 +622,19 @@ export function DocEditor({
               ? Math.min(sel.to, editor.state.doc.content.size)
               : editor.state.doc.content.size
 
-          suggestionReview.startReviewFromAppend(insertPos, resultText)
+          reviewStarted = suggestionReview.startReviewFromAppend(
+            insertPos,
+            resultText,
+          )
+        }
+
+        if (!reviewStarted) {
+          suggestionReview.cancelAiLoading()
+          toast.info('No changes suggested', {
+            description: 'The AI result matched the current content.',
+          })
+          announce('AI returned no changes')
+          return
         }
 
         announce('AI changes ready for review')
@@ -578,9 +648,9 @@ export function DocEditor({
           description: error instanceof Error ? error.message : 'An unexpected error occurred.',
         })
 
-        if (isDiagram || isPreviewOnly) {
+        if (showResultPanel) {
           dispatchAi({ type: 'SET_PREVIEW', preview: null })
-        } else {
+        } else if (!directReplaceResult) {
           suggestionReview.cancelAiLoading()
         }
         announce('AI transform failed')
@@ -593,7 +663,7 @@ export function DocEditor({
         }
       }
     },
-    [aiPrompts, announce, editor, suggestionReview],
+    [aiPrompts, announce, editor, onChange, suggestionReview],
   )
 
   const handleAiAction = React.useCallback(
@@ -675,6 +745,7 @@ export function DocEditor({
       action: ai.preview.action,
       modelId: ai.preview.modelId,
       modelLabel: ai.preview.modelLabel,
+      loadingActionLabel: ai.preview.loadingActionLabel,
       originalText: ai.preview.originalText,
       selectionRange: ai.preview.selectionRange,
       targetLanguage: ai.preview.targetLanguage,
@@ -682,6 +753,39 @@ export function DocEditor({
     }
     void runAiPreviewRequest(request)
   }, [ai.preview, runAiPreviewRequest])
+
+  const handleAutoFixAiPreview = React.useCallback(() => {
+    if (
+      !ai.preview ||
+      !canAutoFixAiResult(ai.preview.scope, ai.preview.action) ||
+      !ai.preview.resultText.trim() ||
+      readOnly
+    ) {
+      return
+    }
+
+    const request: AiPreviewRequest = {
+      scope: 'document',
+      action: 'custom',
+      modelId: ai.preview.modelId,
+      modelLabel: ai.preview.modelLabel,
+      loadingActionLabel:
+        ai.preview.action === 'score'
+          ? 'Applying score fixes'
+          : 'Applying review fixes',
+      originalText: latestMdRef.current,
+      selectionRange: null,
+      customPrompt: buildAiResultAutoFixPrompt(
+        ai.preview.action,
+        ai.preview.resultText,
+      ),
+    }
+
+    handleAiPreviewOpenChange(false)
+    requestAnimationFrame(() => {
+      void runAiPreviewRequest(request)
+    })
+  }, [ai.preview, handleAiPreviewOpenChange, readOnly, runAiPreviewRequest])
 
   // Accept for diagram/preview-only actions (side panel path)
   const handleAcceptAiPreview = React.useCallback(() => {
@@ -1089,6 +1193,11 @@ export function DocEditor({
             aiPreviewOnLeft ? 'xl:order-2' : 'xl:order-1',
           )}
         >
+          <div
+            ref={statsPillContainerRef}
+            className="pointer-events-none absolute inset-0 z-30"
+            aria-hidden="true"
+          />
           <div className="flex h-full min-h-0 min-w-0 flex-col">
             <div
               ref={resize.splitPaneRef}
@@ -1270,7 +1379,7 @@ export function DocEditor({
           ) : null}
         </motion.div>
 
-        {/* AI Preview Pane (diagram/preview-only actions only) */}
+        {/* AI result pane for preview-only and non-mutating document actions */}
         <div
           className={cn(
             'h-full min-h-0 min-w-0 overflow-hidden motion-reduce:transition-none',
@@ -1300,6 +1409,13 @@ export function DocEditor({
                 }
                 onRetry={handleRetryAiPreview}
                 onAccept={handleAcceptAiPreview}
+                onAutoFix={
+                  !readOnly &&
+                  ai.preview.resultText.trim() &&
+                  canAutoFixAiResult(ai.preview.scope, ai.preview.action)
+                    ? handleAutoFixAiPreview
+                    : undefined
+                }
                 side={aiPreviewSide}
                 onClose={() => handleAiPreviewOpenChange(false)}
               />
@@ -1311,8 +1427,8 @@ export function DocEditor({
         {showAiSidePanel ? (
           <button
             type="button"
-            onMouseDown={resize.handleDocumentResizeStart}
-            onTouchStart={resize.handleDocumentResizeStart}
+            onMouseDown={resize.handleAiPreviewResizeStart}
+            onTouchStart={resize.handleAiPreviewResizeStart}
             aria-label="Drag to resize AI split panes, click to swap sides"
             title="Drag to resize AI split panes, click to swap sides"
             className="absolute inset-y-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize items-center justify-center touch-none xl:flex"
@@ -1365,7 +1481,8 @@ export function DocEditor({
           <FloatingStatsPill
             editor={editor}
             selectionInfo={selectionInfo}
-            statsOverlayContainerRef={statsOverlayContainerRef}
+            statsOverlayContainerRef={statsPillContainerRef}
+            fallbackStatsOverlayContainerRef={statsOverlayContainerRef}
           />
         )}
 

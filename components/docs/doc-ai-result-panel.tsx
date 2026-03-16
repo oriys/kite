@@ -1,13 +1,11 @@
 'use client'
 
-import { Check, RefreshCw, X } from 'lucide-react'
+import { Check, RefreshCw, Sparkles, X } from 'lucide-react'
 
 import {
   AI_ACTION_LABELS,
-  isAiAppendResultAction,
   isAiDiagramAction,
   isAiPreviewOnlyAction,
-  isAiRewriteAction,
   type AiTransformAction,
 } from '@/lib/ai'
 import { type DocEditorAiPanelSide } from '@/lib/doc-editor-layout'
@@ -31,6 +29,7 @@ interface DocAiResultPanelProps {
   previewOnly?: boolean
   onRetry: () => void
   onAccept: () => void
+  onAutoFix?: () => void
   side?: DocEditorAiPanelSide
   onClose: () => void
 }
@@ -47,6 +46,7 @@ export function DocAiResultPanel({
   previewOnly = false,
   onRetry,
   onAccept,
+  onAutoFix,
   side = 'right',
   onClose,
 }: DocAiResultPanelProps) {
@@ -72,11 +72,7 @@ export function DocAiResultPanel({
       ? 'Preview the AI output here. This document is read-only in its current status, so applying changes is disabled.'
       : isDiagram
         ? 'Review the streamed analysis and embedded diagram here. Diagram previews stay in the panel and are not inserted into the document.'
-      : scope === 'document' && isAiRewriteAction(action)
-        ? 'Review the AI rewrite here. Accepting it will replace the current document.'
-        : scope === 'document' && isAiAppendResultAction(action)
-          ? 'Review the AI report here. Accepting it will append the result to the end of the document.'
-          : 'Reviewing only the AI output. The original stays visible in the editor.'
+        : 'Reviewing the AI output. The original stays visible in the editor.'
 
   const acceptLabel =
     action === 'explain'
@@ -180,6 +176,12 @@ export function DocAiResultPanel({
             <RefreshCw className={pending ? 'animate-spin' : undefined} />
             {pending ? 'Retrying…' : 'Retry'}
           </Button>
+          {onAutoFix ? (
+            <Button variant="outline" onClick={onAutoFix} disabled={pending}>
+              <Sparkles />
+              Auto-fix document
+            </Button>
+          ) : null}
           {!effectivePreviewOnly ? (
             <Button onClick={onAccept} disabled={pending}>
               <Check />

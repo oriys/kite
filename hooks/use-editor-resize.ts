@@ -31,6 +31,30 @@ interface UseEditorResizeOptions {
   hasAiPreview: boolean
 }
 
+export function getNextAiSplitRatio(
+  startRatio: number,
+  deltaX: number,
+  paneWidth: number,
+  side: DocEditorAiPanelSide,
+) {
+  if (paneWidth <= 0) {
+    return clamp(
+      startRatio,
+      DOC_AI_SPLIT_RATIO_MIN,
+      DOC_AI_SPLIT_RATIO_MAX,
+      DOC_AI_SPLIT_RATIO_DEFAULT,
+    )
+  }
+
+  const signedDelta = side === 'left' ? deltaX : -deltaX
+  return clamp(
+    startRatio + signedDelta / paneWidth,
+    DOC_AI_SPLIT_RATIO_MIN,
+    DOC_AI_SPLIT_RATIO_MAX,
+    DOC_AI_SPLIT_RATIO_DEFAULT,
+  )
+}
+
 export function useEditorResize({
   documentWidth,
   onDocumentWidthChange,
@@ -139,9 +163,7 @@ export function useEditorResize({
 
   const handleDocumentResizeStart = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
-      const canResizeAi = hasAiPreview && Boolean(aiSplitPaneRef.current)
-      const canResizeDoc = !hasAiPreview && typeof documentWidth === 'number' && Boolean(onDocumentWidthChange)
-      if (!canResizeAi && !canResizeDoc) return
+      if (typeof documentWidth !== 'number' || !onDocumentWidthChange) return
 
       event.preventDefault()
       event.stopPropagation()
@@ -149,13 +171,32 @@ export function useEditorResize({
       const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX
       documentResizeRef.current = {
         startClientX: clientX,
-        startValue: canResizeAi ? aiSplitRatio : documentWidth ?? 0,
-        mode: canResizeAi ? 'ai-preview' : 'document',
+        startValue: documentWidth,
+        mode: 'document',
         dragged: false,
       }
       setDocumentResizeActive(true)
     },
-    [hasAiPreview, aiSplitRatio, documentWidth, onDocumentWidthChange],
+    [documentWidth, onDocumentWidthChange],
+  )
+
+  const handleAiPreviewResizeStart = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
+      if (!hasAiPreview || !aiSplitPaneRef.current) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX
+      documentResizeRef.current = {
+        startClientX: clientX,
+        startValue: aiSplitRatio,
+        mode: 'ai-preview',
+        dragged: false,
+      }
+      setDocumentResizeActive(true)
+    },
+    [aiSplitRatio, hasAiPreview],
   )
 
   React.useEffect(() => {
@@ -170,8 +211,12 @@ export function useEditorResize({
         if (!pane) return
         const dx = clientX - ref.startClientX
         const paneWidth = pane.offsetWidth
-        if (paneWidth <= 0) return
-        const next = clamp(ref.startValue + dx / paneWidth, DOC_AI_SPLIT_RATIO_MIN, DOC_AI_SPLIT_RATIO_MAX, DOC_AI_SPLIT_RATIO_DEFAULT)
+        const next = getNextAiSplitRatio(
+          ref.startValue,
+          dx,
+          paneWidth,
+          aiPreviewSide,
+        )
         setAiSplitRatio(next)
       } else {
         const dx = clientX - ref.startClientX
@@ -216,6 +261,7 @@ export function useEditorResize({
     // Handlers
     handleSplitPaneScroll,
     handleSplitPaneResizeStart,
+    handleAiPreviewResizeStart,
     handleDocumentResizeStart,
   }
 }

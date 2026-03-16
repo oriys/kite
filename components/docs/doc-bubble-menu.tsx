@@ -47,6 +47,7 @@ import {
   DiagramActionIcon,
   ExplainActionIcon,
   ExpandActionIcon,
+  FormatActionIcon,
   ManageActionIcon,
   ShortenActionIcon,
 } from '@/components/docs/doc-bubble-menu-icons'
@@ -125,6 +126,7 @@ export function DocBubbleMenu({
   const showRewriteActions =
     availableAiActionSet.has('polish') ||
     availableAiActionSet.has('autofix') ||
+    availableAiActionSet.has('format') ||
     availableAiActionSet.has('shorten') ||
     availableAiActionSet.has('expand') ||
     availableAiActionSet.has('translate')
@@ -571,6 +573,25 @@ export function DocBubbleMenu({
                             icon={<AutoFixActionIcon className="size-4" />}
                             title={AI_ACTION_LABELS.autofix}
                             description="Correct spelling and formatting only."
+                          />
+                        </DropdownMenuItem>
+                      ) : null}
+
+                      {availableAiActionSet.has('format') ? (
+                        <DropdownMenuItem
+                          className="rounded-lg px-2 py-2"
+                          disabled={aiActionsDisabled}
+                          onMouseEnter={closeAiFlyoutDelayed}
+                          onFocus={() => openAiFlyoutImmediate(null)}
+                          onSelect={() => {
+                            onAiAction('format')
+                            closeAiMenu()
+                          }}
+                        >
+                          <AiMenuItemContent
+                            icon={<FormatActionIcon className="size-4" />}
+                            title={AI_ACTION_LABELS.format}
+                            description="Auto-detect and apply markdown structure."
                           />
                         </DropdownMenuItem>
                       ) : null}

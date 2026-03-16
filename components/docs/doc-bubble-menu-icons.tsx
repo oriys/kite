@@ -60,6 +60,26 @@ export function AutoFixActionIcon({ className }: { className?: string }) {
   )
 }
 
+export function FormatActionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M3 3.5h5.5M3 6.5h10M3 9.5h10M3 12.5h7"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M10.5 3.5h1.5l1 3-1 3h-1.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export function DiagramActionIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>

@@ -16,6 +16,7 @@ export interface AiPreviewRequest {
   action: AiTransformAction
   modelId: string
   modelLabel: string
+  loadingActionLabel?: string
   originalText: string
   selectionRange: { from: number; to: number } | null
   targetLanguage?: string

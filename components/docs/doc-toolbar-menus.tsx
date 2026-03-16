@@ -11,6 +11,7 @@ import {
   FileText,
   Languages,
   ListOrdered,
+  ListTree,
   Loader2,
   Minus,
   PenLine,
@@ -305,6 +306,19 @@ export function DocumentAiMenu({
                     icon={BadgeCheck}
                     label={AI_ACTION_LABELS.autofix}
                     description="Fix spelling and formatting only."
+                    shortcut="Replace"
+                  />
+                </DropdownMenuItem>
+              ) : null}
+              {availableDocumentAiActionSet.has('format') ? (
+                <DropdownMenuItem
+                  className="items-start gap-2.5 rounded-lg px-2 py-1.5"
+                  onSelect={() => onAiDocumentAction?.('format')}
+                >
+                  <DocumentAiMenuItemContent
+                    icon={ListTree}
+                    label={AI_ACTION_LABELS.format}
+                    description="Fix Markdown syntax and structure."
                     shortcut="Replace"
                   />
                 </DropdownMenuItem>

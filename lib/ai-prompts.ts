@@ -30,6 +30,8 @@ export const DEFAULT_AI_ACTION_PROMPTS: Record<AiTransformAction, string> = {
     'Improve clarity, fluency, and tone while preserving the original meaning, structure, and terminology.',
   autofix:
     'Fix spelling, grammar, punctuation, markdown formatting, and obvious formatting inconsistencies only. Do not change meaning, tone, terminology, factual content, or document structure beyond what is required to correct errors.',
+  format:
+    'Correct invalid or inconsistent Markdown syntax and reshape the existing content into the most appropriate Markdown structure for what is already there. Fix heading markers, heading hierarchy implied by the source, list markers and indentation, blockquotes, fenced code blocks, tables, horizontal rules, escaping, spacing around Markdown tokens, and required blank lines. When the content is plain text or poorly structured, convert it into suitable Markdown sections, lists, tables, code fences, or blockquotes only when justified by the existing content. Preserve every word, sentence, fact, ordering, and meaning unless a formatting correction requires different line breaks or Markdown wrappers. Do not rewrite, summarize, expand, shorten, translate, or change tone. Return the full corrected Markdown document only.',
   shorten:
     'Make the text materially shorter by removing redundancy while preserving the key meaning, structure, and important details.',
   expand:

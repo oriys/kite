@@ -50,6 +50,9 @@ const PROMPT_META: Record<
   autofix: {
     title: 'Auto Fix',
   },
+  format: {
+    title: 'Format',
+  },
   shorten: {
     title: 'Shorten',
   },

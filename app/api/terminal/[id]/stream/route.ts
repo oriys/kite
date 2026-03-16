@@ -1,4 +1,5 @@
 import { withWorkspaceAuth, notFound } from '@/lib/api-utils'
+import type { TerminalSessionStatus } from '@/lib/terminal-manager'
 import { terminalManager } from '@/lib/terminal-manager'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +12,10 @@ export async function GET(
   if ('error' in result) return result.error
 
   const { id } = await params
-  const session = terminalManager.getSession(id)
+  const session = terminalManager.getSession(id, {
+    userId: result.ctx.userId,
+    workspaceId: result.ctx.workspaceId,
+  })
   if (!session) return notFound()
 
   const encoder = new TextEncoder()
@@ -41,11 +45,31 @@ export async function GET(
         }
       }
 
+      const onStatus = (status: TerminalSessionStatus) => {
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `event: status\ndata: ${JSON.stringify({ status })}\n\n`,
+            ),
+          )
+        } catch {
+          /* stream closed */
+        }
+      }
+
+      onStatus(session.status)
+
+      for (const chunk of session.outputBuffer) {
+        onData(chunk)
+      }
+
       session.listeners.add(onData)
+      session.statusListeners.add(onStatus)
       session.exitListeners.add(onExit)
 
       req.signal.addEventListener('abort', () => {
         session.listeners.delete(onData)
+        session.statusListeners.delete(onStatus)
         session.exitListeners.delete(onExit)
       })
     },

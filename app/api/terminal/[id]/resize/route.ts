@@ -16,7 +16,12 @@ export async function POST(
     return badRequest('Missing cols or rows')
   }
 
-  if (!terminalManager.resize(id, body.cols, body.rows)) {
+  if (
+    !terminalManager.resize(id, body.cols, body.rows, {
+      userId: result.ctx.userId,
+      workspaceId: result.ctx.workspaceId,
+    })
+  ) {
     return notFound()
   }
 

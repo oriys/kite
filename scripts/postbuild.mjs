@@ -20,14 +20,22 @@ copyDirectory(
 )
 copyDirectory(join(repoRoot, 'public'), join(standaloneRoot, 'public'))
 
-const nodePtyRoot = dirname(require.resolve('node-pty/package.json'))
-const nodePtyStandaloneRoot = join(
-  standaloneRoot,
-  relative(repoRoot, nodePtyRoot),
-)
+let nodePtyRoot = null
+try {
+  nodePtyRoot = dirname(require.resolve('node-pty/package.json'))
+} catch {
+  nodePtyRoot = null
+}
 
-copyDirectory(join(nodePtyRoot, 'build'), join(nodePtyStandaloneRoot, 'build'))
-copyDirectory(
-  join(nodePtyRoot, 'prebuilds'),
-  join(nodePtyStandaloneRoot, 'prebuilds'),
-)
+if (nodePtyRoot) {
+  const nodePtyStandaloneRoot = join(
+    standaloneRoot,
+    relative(repoRoot, nodePtyRoot),
+  )
+
+  copyDirectory(join(nodePtyRoot, 'build'), join(nodePtyStandaloneRoot, 'build'))
+  copyDirectory(
+    join(nodePtyRoot, 'prebuilds'),
+    join(nodePtyStandaloneRoot, 'prebuilds'),
+  )
+}

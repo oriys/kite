@@ -8,6 +8,7 @@ import {
   jsonb,
   customType,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { relations } from 'drizzle-orm'
 import { users } from './schema-auth'
@@ -242,6 +243,60 @@ export const mcpServerConfigsRelations = relations(
     workspace: one(workspaces, {
       fields: [mcpServerConfigs.workspaceId],
       references: [workspaces.id],
+    }),
+  }),
+)
+
+export const cliSkillSourceTypeEnum = pgEnum('cli_skill_source_type', [
+  'github',
+  'registry',
+  'custom',
+])
+
+export const workspaceCliSkills = pgTable(
+  'workspace_cli_skills',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    sourceType: cliSkillSourceTypeEnum('source_type').notNull(),
+    source: text('source').notNull(),
+    ref: text('ref'),
+    computedHash: text('computed_hash'),
+    prompt: text('prompt'),
+    enabled: boolean('enabled').notNull().default(true),
+    installedBy: text('installed_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('workspace_cli_skills_workspace_slug_idx').on(
+      t.workspaceId,
+      t.slug,
+    ),
+    index('workspace_cli_skills_workspace_idx').on(t.workspaceId),
+    index('workspace_cli_skills_enabled_idx').on(t.workspaceId, t.enabled),
+  ],
+)
+
+export const workspaceCliSkillsRelations = relations(
+  workspaceCliSkills,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceCliSkills.workspaceId],
+      references: [workspaces.id],
+    }),
+    installer: one(users, {
+      fields: [workspaceCliSkills.installedBy],
+      references: [users.id],
     }),
   }),
 )

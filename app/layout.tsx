@@ -5,6 +5,7 @@ import { AppearanceProvider } from '@/components/appearance-provider'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SessionProvider } from '@/lib/auth-client'
 import { Toaster } from '@/components/ui/sonner'
+import { ErrorReporter } from '@/components/error-reporter'
 import './globals.css'
 
 const shouldRenderAnalytics =
@@ -41,6 +42,7 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AppearanceProvider>
             <SessionProvider>
+              <ErrorReporter />
               {children}
             </SessionProvider>
           </AppearanceProvider>

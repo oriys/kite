@@ -16,7 +16,12 @@ export async function POST(
     return badRequest('Missing data field')
   }
 
-  if (!terminalManager.writeInput(id, body.data)) {
+  if (
+    !terminalManager.writeInput(id, body.data, {
+      userId: result.ctx.userId,
+      workspaceId: result.ctx.workspaceId,
+    })
+  ) {
     return notFound()
   }
 

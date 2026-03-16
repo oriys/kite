@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, BrainCircuit, Cable, Key, KeyRound, Palette, PencilLine, Plug, SlidersHorizontal, Users, UsersRound } from 'lucide-react'
+import { Bell, BrainCircuit, Cable, Key, KeyRound, Palette, PencilLine, Plug, SlidersHorizontal, Sparkles, Users, UsersRound } from 'lucide-react'
 
 import { useSettingsAccess, type SettingsRole } from '@/components/settings/settings-access-provider'
 import { cn } from '@/lib/utils'
@@ -49,6 +49,12 @@ const SETTINGS_NAV = [
         minRole: 'member',
       },
       { href: '/docs/settings/mcp', label: 'MCP Servers', icon: Cable, minRole: 'admin' },
+      {
+        href: '/docs/settings/skills',
+        label: 'CLI Skills',
+        icon: Sparkles,
+        minRole: 'admin',
+      },
       {
         href: '/docs/settings/notifications',
         label: 'Notifications',

@@ -161,18 +161,24 @@ export interface FloatingStatsPillProps {
   editor: Editor
   selectionInfo: { words: number; chars: number } | null
   statsOverlayContainerRef?: React.RefObject<HTMLDivElement | null>
+  fallbackStatsOverlayContainerRef?: React.RefObject<HTMLDivElement | null>
 }
 
 export function FloatingStatsPill({
   editor,
   selectionInfo,
   statsOverlayContainerRef,
+  fallbackStatsOverlayContainerRef,
 }: FloatingStatsPillProps) {
   const [portalTarget, setPortalTarget] = React.useState<HTMLDivElement | null>(null)
 
   React.useEffect(() => {
-    setPortalTarget(statsOverlayContainerRef?.current ?? null)
-  }, [statsOverlayContainerRef])
+    setPortalTarget(
+      statsOverlayContainerRef?.current ??
+        fallbackStatsOverlayContainerRef?.current ??
+        null,
+    )
+  }, [fallbackStatsOverlayContainerRef, statsOverlayContainerRef])
 
   const content = (
     <div

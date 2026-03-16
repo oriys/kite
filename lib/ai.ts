@@ -1,6 +1,7 @@
 export const AI_ACTIONS = {
   polish: { label: 'Polish', mode: 'rewrite' },
   autofix: { label: 'Auto Fix', mode: 'rewrite' },
+  format: { label: 'Markdown Format', mode: 'rewrite' },
   shorten: { label: 'Shorten', mode: 'rewrite' },
   expand: { label: 'Expand', mode: 'rewrite' },
   translate: { label: 'Translate', mode: 'rewrite' },
@@ -55,12 +56,69 @@ export function isAiRewriteAction(action: AiTransformAction) {
   return AI_ACTIONS[action].mode === 'rewrite'
 }
 
+export function isAiModifyingAction(action: AiTransformAction) {
+  return isAiRewriteAction(action) || action === 'custom'
+}
+
+/** Actions where the result is close enough to the original for inline word-level diff. */
+export function isAiInlineDiffAction(action: AiTransformAction) {
+  return action === 'polish' || action === 'autofix' || action === 'custom'
+}
+
 export function isAiAppendResultAction(action: AiTransformAction) {
   return AI_ACTIONS[action].mode === 'append'
 }
 
 export function isAiPreviewOnlyAction(action: AiTransformAction) {
   return AI_ACTIONS[action].mode === 'preview'
+}
+
+export function shouldUseAiResultPanel(
+  scope: 'selection' | 'document',
+  action: AiTransformAction,
+) {
+  return isAiPreviewOnlyAction(action) || (scope === 'document' && !isAiModifyingAction(action))
+}
+
+export function shouldDirectReplaceAiResult(
+  scope: 'selection' | 'document',
+  action: AiTransformAction,
+) {
+  return scope === 'document' && action === 'format'
+}
+
+export function canAutoFixAiResult(
+  scope: 'selection' | 'document',
+  action: AiTransformAction,
+) {
+  return scope === 'document' && (action === 'review' || action === 'score')
+}
+
+export function buildAiResultAutoFixPrompt(
+  action: AiTransformAction,
+  resultText: string,
+) {
+  const trimmedResult = resultText.trim()
+  const intro =
+    action === 'score'
+      ? 'Rewrite the document to improve the weak areas identified in this scorecard. Raise clarity, completeness, structure, consistency, and technical accuracy where needed.'
+      : 'Rewrite the document to address the issues identified in this review. Fix the gaps, risks, and recommended fixes while preserving valid content and intent.'
+
+  const prefix = [
+    intro,
+    'Use the analysis below as guidance only.',
+    'Do not quote, summarize, or append the analysis itself in the output.',
+    'Return only the fully revised markdown document.',
+    '',
+    '<analysis>',
+  ].join('\n')
+  const suffix = '\n</analysis>'
+  const available = Math.max(
+    0,
+    MAX_AI_CUSTOM_PROMPT_LENGTH - prefix.length - suffix.length,
+  )
+
+  return `${prefix}${trimmedResult.slice(0, available)}${suffix}`
 }
 
 export function isAiDiagramAction(action: AiTransformAction) {

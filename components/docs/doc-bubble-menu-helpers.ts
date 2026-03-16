@@ -24,6 +24,7 @@ export const AI_MENU_CLOSE_DELAY = 110
 export const DEFAULT_SELECTION_AI_ACTIONS = [
   'polish',
   'autofix',
+  'format',
   'shorten',
   'expand',
   'translate',
