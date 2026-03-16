@@ -17,11 +17,24 @@ export async function POST(
   if (!config) return notFound()
 
   try {
-    const { ok, toolCount, error } = await testMcpServerConnection(config)
-    return NextResponse.json({ ok, toolCount, error })
+    const { ok, toolCount, promptCount, resourceCount, error } =
+      await testMcpServerConnection(config)
+    return NextResponse.json({
+      ok,
+      toolCount,
+      promptCount,
+      resourceCount,
+      error,
+    })
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Connection test failed'
-    return NextResponse.json({ ok: false, toolCount: 0, error: message })
+    return NextResponse.json({
+      ok: false,
+      toolCount: 0,
+      promptCount: 0,
+      resourceCount: 0,
+      error: message,
+    })
   }
 }

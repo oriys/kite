@@ -17,6 +17,10 @@ import {
   parseJsonRecord,
 } from '@/lib/mcp-parse'
 import {
+  parseMcpRemoteUrl,
+  validateMcpStdioCommand,
+} from '@/lib/mcp-transport'
+import {
   createMcpServerConfig,
   listMcpServerConfigs,
   serializeMcpServerConfig,
@@ -56,10 +60,20 @@ export async function POST(request: NextRequest) {
     if (command.length > MAX_MCP_COMMAND_LENGTH) {
       return badRequest('Command is too long')
     }
+    try {
+      validateMcpStdioCommand(command)
+    } catch (error) {
+      return badRequest(error instanceof Error ? error.message : 'Invalid command')
+    }
   } else {
     if (!url) return badRequest('URL is required for SSE/HTTP transport')
     if (url.length > MAX_MCP_URL_LENGTH) {
       return badRequest('URL is too long')
+    }
+    try {
+      parseMcpRemoteUrl(url)
+    } catch (error) {
+      return badRequest(error instanceof Error ? error.message : 'Invalid URL')
     }
   }
 

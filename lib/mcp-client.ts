@@ -9,33 +9,9 @@ import {
   MCP_TOOL_CALL_TIMEOUT_MS,
   MAX_MCP_RESOURCE_SIZE_BYTES,
 } from '@/lib/ai-config'
+import { parseMcpRemoteUrl, validateMcpStdioCommand } from '@/lib/mcp-transport'
 
 type McpServerConfig = typeof mcpServerConfigs.$inferSelect
-
-// ---------------------------------------------------------------------------
-// Stdio command whitelist
-// ---------------------------------------------------------------------------
-
-const ALLOWED_STDIO_COMMANDS = new Set([
-  'node',
-  'npx',
-  'python',
-  'python3',
-  'uvx',
-  'docker',
-  'deno',
-  'bun',
-  'bunx',
-])
-
-function validateStdioCommand(command: string) {
-  const binary = command.split('/').pop()?.split('\\').pop() ?? command
-  if (!ALLOWED_STDIO_COMMANDS.has(binary)) {
-    throw new Error(
-      `Stdio command "${binary}" is not allowed. Permitted: ${[...ALLOWED_STDIO_COMMANDS].join(', ')}`,
-    )
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Connection cache (5 min TTL, max 50 entries)
@@ -110,7 +86,7 @@ function createTransport(config: McpServerConfig) {
   switch (config.transportType) {
     case 'stdio': {
       if (!config.command) throw new Error('Missing command for stdio transport')
-      validateStdioCommand(config.command)
+      validateMcpStdioCommand(config.command)
       const userEnv = (config.env as Record<string, string>) ?? {}
       const mergedEnv: Record<string, string> = {}
       for (const [k, v] of Object.entries(process.env)) {
@@ -126,7 +102,7 @@ function createTransport(config: McpServerConfig) {
     case 'sse': {
       if (!config.url) throw new Error('Missing URL for SSE transport')
       const headers = (config.headers as Record<string, string>) ?? {}
-      return new SSEClientTransport(new URL(config.url), {
+      return new SSEClientTransport(parseMcpRemoteUrl(config.url), {
         requestInit: {
           headers,
         },
@@ -135,7 +111,7 @@ function createTransport(config: McpServerConfig) {
     case 'streamable_http': {
       if (!config.url) throw new Error('Missing URL for streamable HTTP transport')
       const headers = (config.headers as Record<string, string>) ?? {}
-      return new StreamableHTTPClientTransport(new URL(config.url), {
+      return new StreamableHTTPClientTransport(parseMcpRemoteUrl(config.url), {
         requestInit: {
           headers,
         },

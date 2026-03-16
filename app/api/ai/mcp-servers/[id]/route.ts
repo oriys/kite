@@ -17,6 +17,10 @@ import {
   parseJsonRecord,
 } from '@/lib/mcp-parse'
 import {
+  parseMcpRemoteUrl,
+  validateMcpStdioCommand,
+} from '@/lib/mcp-transport'
+import {
   deleteMcpServerConfig,
   getMcpServerConfig,
   serializeMcpServerConfig,
@@ -98,6 +102,38 @@ export async function PUT(
 
   if (typeof body.enabled === 'boolean') {
     patch.enabled = body.enabled
+  }
+
+  if (
+    patch.transportType !== undefined ||
+    patch.command !== undefined ||
+    patch.url !== undefined
+  ) {
+    const nextTransportType = patch.transportType ?? existing.transportType
+    const nextCommand = patch.command ?? existing.command
+    const nextUrl = patch.url ?? existing.url
+
+    if (nextTransportType === 'stdio') {
+      if (!nextCommand) {
+        return badRequest('Command is required for stdio transport')
+      }
+      try {
+        validateMcpStdioCommand(nextCommand)
+      } catch (error) {
+        return badRequest(
+          error instanceof Error ? error.message : 'Invalid command',
+        )
+      }
+    } else {
+      if (!nextUrl) {
+        return badRequest('URL is required for SSE/HTTP transport')
+      }
+      try {
+        parseMcpRemoteUrl(nextUrl)
+      } catch (error) {
+        return badRequest(error instanceof Error ? error.message : 'Invalid URL')
+      }
+    }
   }
 
   const config = await updateMcpServerConfig(id, result.ctx.workspaceId, patch)
