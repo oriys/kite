@@ -112,10 +112,12 @@ export function useDocuments(
 export function useDocument(id?: string | null) {
   const [doc, setDoc] = React.useState<Doc | undefined>(undefined)
   const [loading, setLoading] = React.useState(true)
+  const [errorStatus, setErrorStatus] = React.useState<number | null>(null)
 
   const refresh = React.useCallback(async () => {
     if (!id) {
       setDoc(undefined)
+      setErrorStatus(null)
       setLoading(false)
       return
     }
@@ -124,8 +126,10 @@ export function useDocument(id?: string | null) {
     const res = await fetch(`/api/documents/${id}`)
     if (res.ok) {
       setDoc(normalizeDoc(await res.json()))
+      setErrorStatus(null)
     } else {
       setDoc(undefined)
+      setErrorStatus(res.status)
     }
     setLoading(false)
   }, [id])
@@ -187,7 +191,7 @@ export function useDocument(id?: string | null) {
     return undefined
   }, [id])
 
-  return { doc, loading, update, transition, remove, duplicate, refresh }
+  return { doc, loading, errorStatus, update, transition, remove, duplicate, refresh }
 }
 
 function normalizeDoc(raw: Record<string, unknown>): Doc {

@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
-import { withWorkspaceAuth } from '@/lib/api-utils'
 import { IntegrationsSettings } from '@/components/settings/integrations-settings'
+import { requireWorkspacePageAuth } from '@/lib/workspace-page-auth'
 
 export const metadata: Metadata = {
   title: 'Integrations — Settings',
@@ -9,11 +8,7 @@ export const metadata: Metadata = {
 }
 
 export default async function IntegrationsSettingsPage() {
-  const result = await withWorkspaceAuth('admin')
-  if ('error' in result) {
-    if (result.error.status === 401) redirect('/auth/signin')
-    redirect('/docs')
-  }
+  const ctx = await requireWorkspacePageAuth('admin')
 
   return (
     <div className="flex flex-col gap-6">
@@ -27,7 +22,7 @@ export default async function IntegrationsSettingsPage() {
         </p>
       </div>
 
-      <IntegrationsSettings workspaceId={result.ctx.workspaceId} />
+      <IntegrationsSettings workspaceId={ctx.workspaceId} />
     </div>
   )
 }

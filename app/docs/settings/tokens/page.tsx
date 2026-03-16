@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
-import { withWorkspaceAuth } from '@/lib/api-utils'
 import { ApiTokensSettings } from '@/components/settings/api-tokens-settings'
+import { requireWorkspacePageAuth } from '@/lib/workspace-page-auth'
 
 export const metadata: Metadata = {
   title: 'API Tokens — Settings',
@@ -9,8 +8,7 @@ export const metadata: Metadata = {
 }
 
 export default async function TokensSettingsPage() {
-  const result = await withWorkspaceAuth('member')
-  if ('error' in result) redirect('/auth/signin')
+  const ctx = await requireWorkspacePageAuth('member')
 
-  return <ApiTokensSettings workspaceId={result.ctx.workspaceId} />
+  return <ApiTokensSettings workspaceId={ctx.workspaceId} />
 }

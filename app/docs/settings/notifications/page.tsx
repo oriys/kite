@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
 
 import { NotificationChannelsSettings } from '@/components/settings/notification-channels-settings'
-import { withWorkspaceAuth } from '@/lib/api-utils'
+import { requireWorkspacePageAuth } from '@/lib/workspace-page-auth'
 
 export const metadata: Metadata = {
   title: 'Notification Channels — Kite',
@@ -11,13 +10,7 @@ export const metadata: Metadata = {
 }
 
 export default async function NotificationChannelsRoute() {
-  const result = await withWorkspaceAuth('admin')
-  if ('error' in result) {
-    if (result.error.status === 401) {
-      redirect('/auth/signin')
-    }
-    redirect('/docs')
-  }
+  const ctx = await requireWorkspacePageAuth('admin')
 
   return (
     <div className="flex flex-col gap-6">
@@ -32,7 +25,7 @@ export default async function NotificationChannelsRoute() {
       </div>
 
       <NotificationChannelsSettings
-        workspaceId={result.ctx.workspaceId}
+        workspaceId={ctx.workspaceId}
       />
     </div>
   )

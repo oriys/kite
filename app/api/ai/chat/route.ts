@@ -8,6 +8,7 @@ import {
   streamChatResponse,
 } from '@/lib/ai-chat'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
+import { logServerError } from '@/lib/server-errors'
 
 const MAX_MESSAGE_LENGTH = 4000
 
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Stream RAG response
-    const { stream, sources } = await streamChatResponse({
+    const { stream, sources, attributionPromise } = await streamChatResponse({
       workspaceId: result.ctx.workspaceId,
       sessionId: activeSessionId,
       userMessage: message,
@@ -78,14 +79,29 @@ export async function POST(request: NextRequest) {
     const [browserStream, persistStream] = stream.tee()
 
     // Save assistant message in the background
-    collectStreamText(persistStream).then(async (fullText) => {
-      await saveChatMessage({
-        sessionId: activeSessionId,
-        role: 'assistant',
-        content: fullText,
-        sources,
+    void Promise.all([
+      collectStreamText(persistStream),
+      attributionPromise.catch((error) => {
+        logServerError('Failed to collect AI chat attribution.', error, {
+          sessionId: activeSessionId,
+        })
+        return undefined
       })
-    })
+    ])
+      .then(async ([fullText, attribution]) => {
+        await saveChatMessage({
+          sessionId: activeSessionId,
+          role: 'assistant',
+          content: fullText,
+          sources,
+          attribution,
+        })
+      })
+      .catch((error) => {
+        logServerError('Failed to persist assistant chat message.', error, {
+          sessionId: activeSessionId,
+        })
+      })
 
     return new Response(browserStream, {
       headers: {

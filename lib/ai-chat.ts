@@ -19,6 +19,15 @@ import { resolveWorkspaceMcpToolSet } from '@/lib/mcp-tools'
 import { getMcpPrompt } from '@/lib/mcp-client'
 import { getMcpServerConfig } from '@/lib/queries/mcp'
 import {
+  buildChatSystemPrompt,
+  hasChatGrounding,
+} from '@/lib/ai-chat-prompt'
+import {
+  type ChatMessageAttribution,
+  type ChatSource,
+  normalizeChatMessageAttribution,
+} from '@/lib/ai-chat-shared'
+import {
   DEFAULT_EMBEDDING_MODEL,
   DEFAULT_RERANKER_MODEL,
   TOP_K_CHUNKS,
@@ -44,18 +53,6 @@ import {
   TEMPERATURE_CHAT,
   MAX_MCP_TOOL_STEPS,
 } from '@/lib/ai-config'
-
-type ChatSourceRelationType = 'primary' | 'reference'
-
-export interface ChatSource {
-  documentId: string
-  documentSlug?: string | null
-  chunkId: string
-  title: string
-  preview: string
-  relationType?: ChatSourceRelationType
-  relationDescription?: string
-}
 
 interface RetrievedContextSection {
   source: ChatSource
@@ -1463,19 +1460,6 @@ function createStaticStream(text: string) {
   })
 }
 
-const CHAT_SYSTEM_PROMPT = [
-  'You are a knowledgeable assistant for an API documentation workspace.',
-  'Answer questions accurately using only the documentation context provided below.',
-  'When referencing information from the documentation, cite the source using [1], [2], etc. notation matching the context labels.',
-  'Some context sections are primary matches, while others are explicitly related documents referenced by those primary matches.',
-  'Use primary matches as the main evidence, and use related documents as supporting context.',
-  'If a related document conflicts with a primary match, call out the conflict and cite both sources.',
-  'If the context does not contain enough information to answer, say so clearly rather than guessing.',
-  'Do not fill gaps with general knowledge or unsupported assumptions.',
-  'Be concise and direct. Use markdown formatting for code, lists, and emphasis.',
-  'Use the same language as the user\'s question.',
-].join(' ')
-
 // ─── Chat session management ────────────────────────────────────
 
 export async function createChatSession(input: {
@@ -1522,17 +1506,23 @@ export async function listChatSessions(input: {
 }
 
 export async function getChatHistory(sessionId: string) {
-  return db
+  const rows = await db
     .select({
       id: aiChatMessages.id,
       role: aiChatMessages.role,
       content: aiChatMessages.content,
       sources: aiChatMessages.sources,
+      attribution: aiChatMessages.attribution,
       createdAt: aiChatMessages.createdAt,
     })
     .from(aiChatMessages)
     .where(eq(aiChatMessages.sessionId, sessionId))
     .orderBy(aiChatMessages.createdAt)
+
+  return rows.map((row) => ({
+    ...row,
+    attribution: normalizeChatMessageAttribution(row.attribution),
+  }))
 }
 
 export async function saveChatMessage(input: {
@@ -1540,6 +1530,7 @@ export async function saveChatMessage(input: {
   role: 'user' | 'assistant' | 'system'
   content: string
   sources?: ChatSource[]
+  attribution?: ChatMessageAttribution
 }) {
   const [message] = await db
     .insert(aiChatMessages)
@@ -1548,6 +1539,7 @@ export async function saveChatMessage(input: {
       role: input.role,
       content: input.content,
       sources: input.sources ?? [],
+      attribution: input.attribution,
     })
     .returning()
 
@@ -1606,30 +1598,18 @@ export async function streamChatResponse(input: {
       content: m.content,
     }))
 
-  // 2. Retrieve relevant documentation context
-  const { contextText, sources } = await retrieveChatContext({
-    workspaceId: input.workspaceId,
-    query: input.userMessage,
-    documentId: input.documentId,
-  })
-
-  if (!contextText || sources.length === 0) {
-    const noContextMessage = containsCjk(input.userMessage)
-      ? '我没有在当前工作区文档里检索到足够的信息来回答这个问题。请先确认相关文档已经导入，并在需要时重新生成 embeddings 后再试。'
-      : 'I could not find enough information in the current workspace documents to answer that. Please confirm the relevant document exists and rerun embeddings if needed, then try again.'
-
-    return {
-      stream: createStaticStream(noContextMessage),
-      model: 'grounded-fallback',
-      sources: [],
-    }
-  }
-
-  // 3. Build system prompt with RAG context
-  const systemPrompt = `${CHAT_SYSTEM_PROMPT}\n\n---\n\nDocumentation context:\n\n${contextText}`
-
-  // 4. Resolve AI model + MCP tools + optional MCP prompt
-  const [providers, settings, mcpTools, mcpPromptMessages] = await Promise.all([
+  const [
+    { contextText, sources },
+    providers,
+    settings,
+    mcpTools,
+    mcpPromptMessages,
+  ] = await Promise.all([
+    retrieveChatContext({
+      workspaceId: input.workspaceId,
+      query: input.userMessage,
+      documentId: input.documentId,
+    }),
     resolveWorkspaceAiProviders(input.workspaceId),
     getAiWorkspaceSettings(input.workspaceId),
     resolveWorkspaceMcpToolSet(input.workspaceId).catch(() => undefined),
@@ -1637,6 +1617,36 @@ export async function streamChatResponse(input: {
       ? resolveMcpPromptMessages(input.workspaceId, input.mcpPrompt)
       : Promise.resolve(undefined),
   ])
+
+  const hasDocumentationContext = Boolean(contextText && sources.length > 0)
+  const hasMcpTools = Boolean(mcpTools)
+  const hasMcpPromptMessages = Boolean(mcpPromptMessages?.length)
+
+  if (
+    !hasChatGrounding({
+      hasDocumentationContext,
+      hasMcpTools,
+      hasMcpPromptMessages,
+    })
+  ) {
+    const noContextMessage = containsCjk(input.userMessage)
+      ? '我没有在当前工作区文档或已启用的 MCP 工具中找到足够的信息来回答这个问题。请先确认相关文档已经导入并重新生成 embeddings，或者检查 MCP Server 是否已启用且可用后再试。'
+      : 'I could not find enough information in the current workspace documents or enabled MCP tools to answer that. Please confirm the relevant documents exist and rerun embeddings if needed, or verify the MCP server is enabled and reachable, then try again.'
+
+    return {
+      stream: createStaticStream(noContextMessage),
+      model: 'grounded-fallback',
+      sources: [],
+      attributionPromise: Promise.resolve(undefined),
+    }
+  }
+
+  // 2. Build system prompt with available grounding
+  const systemPrompt = buildChatSystemPrompt({
+    documentationContext: hasDocumentationContext ? contextText : undefined,
+    hasMcpTools,
+    hasMcpPromptMessages,
+  })
 
   const selection = resolveAiModelSelection({
     requestedModelId: input.model,
@@ -1653,7 +1663,7 @@ export async function streamChatResponse(input: {
     throw new Error('No AI model configured.')
   }
 
-  // 5. Stream response with full conversation context
+  // 3. Stream response with full conversation context
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     // Prepend MCP prompt messages if provided
     ...(mcpPromptMessages ?? []),
@@ -1675,5 +1685,11 @@ export async function streamChatResponse(input: {
     stream: result.stream,
     model: result.model,
     sources,
+    attributionPromise: result.attributionPromise.then((attribution) =>
+      normalizeChatMessageAttribution({
+        usedMcp: Boolean(mcpPromptMessages?.length) || attribution?.usedMcp,
+        mcpToolNames: attribution?.mcpToolNames ?? [],
+      }),
+    ),
   }
 }

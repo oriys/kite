@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 
@@ -26,6 +26,7 @@ import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
 import { useDocument } from '@/hooks/use-documents'
 import { useDocEditorWidth } from '@/hooks/use-doc-editor-width'
+import { DocsForbiddenState } from '@/components/docs/docs-forbidden-state'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -155,6 +156,7 @@ interface EditorSnapshot {
 
 export function DocEditorPageClient() {
   const params = useParams<{ doc?: string }>()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
   const { data: session } = useSession()
@@ -163,7 +165,7 @@ export function DocEditorPageClient() {
   const docId = routeDocParam ?? searchParams.get('doc')
   const translationParam = searchParams.get('translation')
   const referenceParam = searchParams.get('reference')
-  const { doc, loading, update, transition, remove, duplicate, refresh } = useDocument(docId)
+  const { doc, loading, errorStatus, update, transition, remove, duplicate, refresh } = useDocument(docId)
   const [availableLocales, setAvailableLocales] = React.useState<
     { code: string; translationId?: string }[]
   >([])
@@ -214,6 +216,12 @@ export function DocEditorPageClient() {
   const { documentWidth, setDocumentWidth } = useDocEditorWidth()
   const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
   const sourceLocale = doc?.locale ?? 'en'
+  const editorSignInHref = React.useMemo(() => {
+    const query = searchParams.toString()
+    const callbackPath = `${pathname}${query ? `?${query}` : ''}`
+
+    return `/auth/signin?callbackUrl=${encodeURIComponent(callbackPath)}`
+  }, [pathname, searchParams])
 
   const replaceEditorLocation = React.useCallback(
     (overrides: {
@@ -427,6 +435,12 @@ export function DocEditorPageClient() {
       setInitializedDocId(null)
     }
   }, [docId, initializedDocId])
+
+  React.useEffect(() => {
+    if (errorStatus === 401) {
+      router.replace(editorSignInHref)
+    }
+  }, [editorSignInHref, errorStatus, router])
 
   React.useEffect(() => {
     if (!referenceParam) {
@@ -1183,6 +1197,19 @@ export function DocEditorPageClient() {
 
   if (loading) {
     return <EditorSkeleton />
+  }
+
+  if (errorStatus === 401) {
+    return <EditorSkeleton />
+  }
+
+  if (errorStatus === 403) {
+    return (
+      <DocsForbiddenState
+        title="You cannot open this document."
+        description="This document is available in the workspace, but your current role or document permissions do not allow access. Ask a document manager or workspace admin if you need entry."
+      />
+    )
   }
 
   if (!docId || !doc) {

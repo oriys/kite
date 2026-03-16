@@ -13,6 +13,7 @@ import { relations } from 'drizzle-orm'
 import { users } from './schema-auth'
 import { workspaces } from './schema-workspace'
 import { documents } from './schema-documents'
+import type { ChatMessageAttribution } from './ai-chat-shared'
 
 export const aiProviderTypeEnum = pgEnum('ai_provider_type', [
   'openai_compatible',
@@ -168,6 +169,7 @@ export const aiChatMessages = pgTable(
         }>
       >()
       .default([]),
+    attribution: jsonb('attribution').$type<ChatMessageAttribution>(),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [

@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useSettingsAccess } from '@/components/settings/settings-access-provider'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -88,49 +90,13 @@ function getInviteUrl(token: string, origin: string) {
   return `${origin || ''}/invite/${token}`
 }
 
-function useWorkspaceId() {
-  const [workspaceId, setWorkspaceId] = React.useState<string | null>(null)
-  const [loading, setLoading] = React.useState(true)
-  React.useEffect(() => {
-    let cancelled = false
-
-    fetch('/api/workspaces')
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error('Failed to load workspaces')
-        }
-
-        return response.json() as Promise<{ id: string }[]>
-      })
-      .then((ws) => {
-        if (!cancelled) {
-          setWorkspaceId(ws[0]?.id ?? null)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWorkspaceId(null)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-  return { workspaceId, loading }
-}
-
 export default function MembersPage() {
-  const { workspaceId, loading: workspaceLoading } = useWorkspaceId()
+  const { workspaceId, currentRole } = useSettingsAccess()
+  const canManageMembers = currentRole === 'admin' || currentRole === 'owner'
   const [members, setMembers] = React.useState<Member[]>([])
   const [invites, setInvites] = React.useState<Invite[]>([])
   const [membersLoading, setMembersLoading] = React.useState(true)
-  const [invitesLoading, setInvitesLoading] = React.useState(true)
+  const [invitesLoading, setInvitesLoading] = React.useState(canManageMembers)
   const [search, setSearch] = React.useState('')
   const [debouncedSearch, setDebouncedSearch] = React.useState('')
   const [origin, setOrigin] = React.useState('')
@@ -172,22 +138,25 @@ export default function MembersPage() {
   }, [workspaceId, debouncedSearch])
 
   const fetchInvites = React.useCallback(async () => {
-    if (!workspaceId) return
+    if (!canManageMembers) {
+      setInvites([])
+      setInvitesLoading(false)
+      return
+    }
+
     setInvitesLoading(true)
     const res = await fetch(`/api/workspaces/${workspaceId}/invites`)
     if (res.ok) setInvites(await res.json())
     setInvitesLoading(false)
-  }, [workspaceId])
+  }, [canManageMembers, workspaceId])
 
   React.useEffect(() => {
-    if (!workspaceId) return
     void fetchInvites()
-  }, [workspaceId, fetchInvites])
+  }, [fetchInvites])
 
   React.useEffect(() => {
-    if (!workspaceId) return
     void fetchMembers()
-  }, [workspaceId, fetchMembers])
+  }, [fetchMembers])
 
   const handleRoleChange = async (userId: string, role: MemberRole) => {
     if (!workspaceId) return
@@ -251,21 +220,10 @@ export default function MembersPage() {
     }
   }
 
-  if (workspaceLoading || membersLoading || invitesLoading) {
+  if (membersLoading || (canManageMembers && invitesLoading)) {
     return (
       <div className="flex items-center justify-center py-20">
         <Spinner className="h-5 w-5" />
-      </div>
-    )
-  }
-
-  if (!workspaceId) {
-    return (
-      <div className="py-20 text-center">
-        <h1 className="text-xl font-semibold tracking-tight">Members</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Workspace data is unavailable right now.
-        </p>
       </div>
     )
   }
@@ -279,6 +237,17 @@ export default function MembersPage() {
         </p>
       </div>
 
+      {!canManageMembers ? (
+        <Alert className="mb-6 border-border/70 bg-muted/20">
+          <ShieldAlert className="size-4" />
+          <AlertTitle>Read-only access</AlertTitle>
+          <AlertDescription>
+            You can review workspace members here, but only admins and owners can invite people,
+            change roles, or remove access.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="relative max-w-xs flex-1">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -289,7 +258,7 @@ export default function MembersPage() {
             className="pl-8"
           />
         </div>
-        {workspaceId && (
+        {canManageMembers && (
           <InviteDialog
             workspaceId={workspaceId}
             onSuccess={() => fetchInvites()}
@@ -299,7 +268,14 @@ export default function MembersPage() {
 
       {/* Members list */}
       <div className="rounded-lg border border-border bg-card">
-        <div className="grid grid-cols-[1fr_120px_120px_40px] items-center gap-4 border-b border-border px-4 py-2.5">
+        <div
+          className={cn(
+            'items-center gap-4 border-b border-border px-4 py-2.5',
+            canManageMembers
+              ? 'grid grid-cols-[1fr_120px_120px_40px]'
+              : 'grid grid-cols-[1fr_120px_120px]',
+          )}
+        >
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Member
           </span>
@@ -309,7 +285,7 @@ export default function MembersPage() {
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Joined
           </span>
-          <span />
+          {canManageMembers ? <span /> : null}
         </div>
 
         {members.length === 0 && (
@@ -325,11 +301,18 @@ export default function MembersPage() {
             .slice(0, 2)
             .join('')
             .toUpperCase()
+          const roleMeta = ROLE_META[member.role]
+          const RoleIcon = roleMeta.icon
 
           return (
             <div
               key={member.userId}
-              className="grid grid-cols-[1fr_120px_120px_40px] items-center gap-4 border-b border-border/50 px-4 py-3 last:border-0"
+              className={cn(
+                'items-center gap-4 border-b border-border/50 px-4 py-3 last:border-0',
+                canManageMembers
+                  ? 'grid grid-cols-[1fr_120px_120px_40px]'
+                  : 'grid grid-cols-[1fr_120px_120px]',
+              )}
             >
               <div className="flex items-center gap-3 overflow-hidden">
                 <Avatar className="h-8 w-8 shrink-0">
@@ -351,62 +334,76 @@ export default function MembersPage() {
                 </div>
               </div>
 
-              <div>
-                <Select
-                  value={member.role}
-                  onValueChange={(v) =>
-                    handleRoleChange(member.userId, v as MemberRole)
-                  }
-                  disabled={member.role === 'owner'}
+              {canManageMembers ? (
+                <div>
+                  <Select
+                    value={member.role}
+                    onValueChange={(v) =>
+                      handleRoleChange(member.userId, v as MemberRole)
+                    }
+                    disabled={member.role === 'owner'}
+                  >
+                    <SelectTrigger className="h-7 w-[110px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(ROLE_META).map(([key, m]) => (
+                        <SelectItem key={key} value={key}>
+                          <span className={cn('flex items-center gap-1.5', m.color)}>
+                            <m.icon className="h-3 w-3" />
+                            {m.label}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    'inline-flex items-center gap-1.5 text-xs font-medium',
+                    roleMeta.color,
+                  )}
                 >
-                  <SelectTrigger className="h-7 w-[110px] text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(ROLE_META).map(([key, m]) => (
-                      <SelectItem key={key} value={key}>
-                        <span className={cn('flex items-center gap-1.5', m.color)}>
-                          <m.icon className="h-3 w-3" />
-                          {m.label}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  <RoleIcon className="h-3.5 w-3.5" />
+                  {roleMeta.label}
+                </div>
+              )}
 
               <span className="text-xs text-muted-foreground">
                 {new Date(member.joinedAt).toLocaleDateString()}
               </span>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    disabled={member.role === 'owner'}
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => handleRemove(member.userId, member.name)}
-                  >
-                    <UserX className="mr-2 h-4 w-4" />
-                    Remove
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {canManageMembers ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={member.role === 'owner'}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => handleRemove(member.userId, member.name)}
+                    >
+                      <UserX className="mr-2 h-4 w-4" />
+                      Remove
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
             </div>
           )
         })}
       </div>
 
       {/* Pending invites */}
-      {invites.length > 0 && (
+      {canManageMembers && invites.length > 0 && (
         <div className="mt-8">
           <h2 className="mb-3 text-sm font-semibold">
             Pending invites

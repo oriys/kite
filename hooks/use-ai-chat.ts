@@ -2,20 +2,18 @@
 
 import * as React from 'react'
 import { createClientUuid } from '@/lib/client-uuid'
+import {
+  type ChatMessageAttribution,
+  type ChatSource,
+  normalizeChatMessageAttribution,
+} from '@/lib/ai-chat-shared'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
-  sources?: Array<{
-    documentId: string
-    documentSlug?: string | null
-    chunkId: string
-    title: string
-    preview: string
-    relationType?: 'primary' | 'reference'
-    relationDescription?: string
-  }>
+  sources?: ChatSource[]
+  attribution?: ChatMessageAttribution
   createdAt?: string
 }
 
@@ -38,12 +36,63 @@ export function useAiChat(options: UseAiChatOptions = {}) {
   const [isStreaming, setIsStreaming] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const abortRef = React.useRef<AbortController | null>(null)
+  const messagesRef = React.useRef<ChatMessage[]>([])
+
+  React.useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  const mapChatMessage = React.useCallback((message: ChatMessage): ChatMessage => ({
+    id: message.id ?? createClientUuid(),
+    role: message.role,
+    content: message.content,
+    sources: message.sources,
+    attribution: normalizeChatMessageAttribution(message.attribution),
+    createdAt: message.createdAt,
+  }), [])
+
+  const fetchSessionMessages = React.useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/ai/chat/sessions/${id}`, {
+        cache: 'no-store',
+      })
+      if (!res.ok) return null
+
+      const data = (await res.json()) as { messages: ChatMessage[] }
+      return data.messages.map(mapChatMessage)
+    },
+    [mapChatMessage],
+  )
+
+  const syncSessionMessages = React.useCallback(
+    async (id: string, expectedMessageCount?: number) => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const nextMessages = await fetchSessionMessages(id)
+        if (!nextMessages) return
+
+        if (
+          expectedMessageCount === undefined ||
+          nextMessages.length >= expectedMessageCount
+        ) {
+          setSessionId(id)
+          setMessages(nextMessages)
+          return
+        }
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, 150 * (attempt + 1)),
+        )
+      }
+    },
+    [fetchSessionMessages],
+  )
 
   const sendMessage = React.useCallback(
     async (content: string) => {
       if (!content.trim() || isStreaming) return
 
       setError(null)
+      const expectedMessageCount = messagesRef.current.length + 2
 
       // Add user message immediately
       const userMessage: ChatMessage = {
@@ -85,6 +134,7 @@ export function useAiChat(options: UseAiChatOptions = {}) {
         // Capture session ID from header
         const newSessionId = res.headers.get('x-ai-chat-session')
         if (newSessionId) setSessionId(newSessionId)
+        const activeSessionId = newSessionId ?? sessionId
 
         // Parse sources
         let sources: ChatMessage['sources'] = []
@@ -114,9 +164,15 @@ export function useAiChat(options: UseAiChatOptions = {}) {
 
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantId ? { ...m, content: fullText, sources } : m,
+              m.id === assistantId
+                ? { ...m, content: fullText, sources }
+                : m,
             ),
           )
+        }
+
+        if (activeSessionId) {
+          await syncSessionMessages(activeSessionId, expectedMessageCount)
         }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
@@ -131,7 +187,13 @@ export function useAiChat(options: UseAiChatOptions = {}) {
         abortRef.current = null
       }
     },
-    [isStreaming, sessionId, options.documentId, options.model],
+    [
+      isStreaming,
+      options.documentId,
+      options.model,
+      sessionId,
+      syncSessionMessages,
+    ],
   )
 
   const stopStreaming = React.useCallback(() => {
@@ -149,24 +211,15 @@ export function useAiChat(options: UseAiChatOptions = {}) {
 
   const loadSession = React.useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/ai/chat/sessions/${id}`)
-      if (!res.ok) return
+      const nextMessages = await fetchSessionMessages(id)
+      if (!nextMessages) return
 
-      const data = await res.json()
       setSessionId(id)
-      setMessages(
-        data.messages.map((m: ChatMessage) => ({
-          id: m.id ?? createClientUuid(),
-          role: m.role,
-          content: m.content,
-          sources: m.sources,
-          createdAt: m.createdAt,
-        })),
-      )
+      setMessages(nextMessages)
     } catch {
       // Non-critical: loading previous session is optional, user starts with empty chat
     }
-  }, [])
+  }, [fetchSessionMessages])
 
   return {
     sessionId,

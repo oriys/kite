@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
-import { withWorkspaceAuth } from '@/lib/api-utils'
 import { SsoSettings } from '@/components/settings/sso-settings'
+import { requireWorkspacePageAuth } from '@/lib/workspace-page-auth'
 
 export const metadata: Metadata = {
   title: 'SSO — Settings',
@@ -9,8 +8,7 @@ export const metadata: Metadata = {
 }
 
 export default async function SsoSettingsPage() {
-  const result = await withWorkspaceAuth('admin')
-  if ('error' in result) redirect('/auth/signin')
+  const ctx = await requireWorkspacePageAuth('admin')
 
-  return <SsoSettings workspaceId={result.ctx.workspaceId} />
+  return <SsoSettings workspaceId={ctx.workspaceId} />
 }

@@ -4,12 +4,15 @@ import * as React from 'react'
 import {
   Plus,
   MoreHorizontal,
+  ShieldAlert,
   Users,
   Trash2,
   UserPlus,
   UserMinus,
 } from 'lucide-react'
 
+import { useSettingsAccess } from '@/components/settings/settings-access-provider'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -65,45 +68,9 @@ interface WorkspaceMember {
   image: string | null
 }
 
-function useWorkspaceId() {
-  const [workspaceId, setWorkspaceId] = React.useState<string | null>(null)
-  const [loading, setLoading] = React.useState(true)
-  React.useEffect(() => {
-    let cancelled = false
-
-    fetch('/api/workspaces')
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error('Failed to load workspaces')
-        }
-
-        return response.json() as Promise<{ id: string }[]>
-      })
-      .then((ws) => {
-        if (!cancelled) {
-          setWorkspaceId(ws[0]?.id ?? null)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWorkspaceId(null)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-  return { workspaceId, loading }
-}
-
 export default function TeamsPage() {
-  const { workspaceId, loading: workspaceLoading } = useWorkspaceId()
+  const { workspaceId, currentRole } = useSettingsAccess()
+  const canManageTeams = currentRole === 'admin' || currentRole === 'owner'
   const [teams, setTeams] = React.useState<Team[]>([])
   const [loading, setLoading] = React.useState(true)
   const [selectedTeamId, setSelectedTeamId] = React.useState<string | null>(null)
@@ -133,17 +100,20 @@ export default function TeamsPage() {
   )
 
   const fetchWsMembers = React.useCallback(async () => {
-    if (!workspaceId) return
+    if (!canManageTeams) {
+      setWsMembers([])
+      return
+    }
+
     const res = await fetch(`/api/workspaces/${workspaceId}/members`)
     if (res.ok) setWsMembers(await res.json())
-  }, [workspaceId])
+  }, [canManageTeams, workspaceId])
 
   React.useEffect(() => {
-    if (!workspaceId) return
     Promise.all([fetchTeams(), fetchWsMembers()]).finally(() =>
       setLoading(false),
     )
-  }, [workspaceId, fetchTeams, fetchWsMembers])
+  }, [fetchTeams, fetchWsMembers])
 
   React.useEffect(() => {
     if (selectedTeamId) fetchTeamDetail(selectedTeamId)
@@ -200,21 +170,10 @@ export default function TeamsPage() {
     }
   }
 
-  if (workspaceLoading || loading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Spinner className="h-5 w-5" />
-      </div>
-    )
-  }
-
-  if (!workspaceId) {
-    return (
-      <div className="py-20 text-center">
-        <h1 className="text-xl font-semibold tracking-tight">Teams</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Workspace data is unavailable right now.
-        </p>
       </div>
     )
   }
@@ -232,6 +191,17 @@ export default function TeamsPage() {
         </p>
       </div>
 
+      {!canManageTeams ? (
+        <Alert className="mb-6 border-border/70 bg-muted/20">
+          <ShieldAlert className="size-4" />
+          <AlertTitle>Read-only access</AlertTitle>
+          <AlertDescription>
+            You can review team structure here, but only admins and owners can create teams,
+            edit membership, or delete team records.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <div className="flex gap-6">
         {/* Team list */}
         <div className="w-64 shrink-0">
@@ -239,7 +209,7 @@ export default function TeamsPage() {
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Teams
             </span>
-            {workspaceId && (
+            {canManageTeams && (
               <CreateTeamDialog
                 workspaceId={workspaceId}
                 teams={teams}
@@ -281,24 +251,26 @@ export default function TeamsPage() {
                     </p>
                   )}
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() =>
-                        handleDeleteTeam(selectedTeam.id, selectedTeam.name)
-                      }
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete team
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {canManageTeams ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() =>
+                          handleDeleteTeam(selectedTeam.id, selectedTeam.name)
+                        }
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete team
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
               </div>
 
               <div className="mb-3 flex items-center justify-between">
@@ -308,13 +280,15 @@ export default function TeamsPage() {
                     {selectedTeam.members?.length ?? 0}
                   </Badge>
                 </span>
-                <AddMemberSelect
-                  wsMembers={wsMembers}
-                  teamMembers={selectedTeam.members ?? []}
-                  onAdd={(userId) =>
-                    handleAddMember(selectedTeam.id, userId)
-                  }
-                />
+                {canManageTeams ? (
+                  <AddMemberSelect
+                    wsMembers={wsMembers}
+                    teamMembers={selectedTeam.members ?? []}
+                    onAdd={(userId) =>
+                      handleAddMember(selectedTeam.id, userId)
+                    }
+                  />
+                ) : null}
               </div>
 
               <div className="rounded-lg border border-border bg-card">
@@ -351,16 +325,18 @@ export default function TeamsPage() {
                             </p>
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() =>
-                            handleRemoveMember(selectedTeam.id, m.userId)
-                          }
-                        >
-                          <UserMinus className="h-4 w-4" />
-                        </Button>
+                        {canManageTeams ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() =>
+                              handleRemoveMember(selectedTeam.id, m.userId)
+                            }
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </Button>
+                        ) : null}
                       </div>
                     )
                   })

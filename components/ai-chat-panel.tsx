@@ -2,9 +2,10 @@
 
 import * as React from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Bot, Send, Square, Plus, FileText, Sparkles, Loader2, X } from 'lucide-react'
+import { Bot, Send, Square, Plus, FileText, Sparkles, Loader2, X, Cable } from 'lucide-react'
 
 import { MarkdownPreview } from '@/components/docs/markdown-preview'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -302,7 +303,7 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
             )}
           </form>
           <p className="mt-2 text-center text-[10px] text-muted-foreground">
-            AI answers are grounded in your workspace documents
+            AI answers can use workspace RAG and enabled MCP tools
           </p>
         </div>
       </SheetContent>
@@ -321,7 +322,7 @@ function EmptyState() {
       <div>
         <p className="text-sm font-medium">Ask anything about your docs</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Answers are sourced from your workspace documents using RAG.
+          Answers can use workspace documents (RAG) and enabled MCP tools.
         </p>
       </div>
     </div>
@@ -340,6 +341,9 @@ function MessageBubble({
     () => normalizeAssistantContent(message.content),
     [message.content],
   )
+  const usesRag = !isUser && Boolean(message.sources?.length)
+  const usesMcp = !isUser && Boolean(message.attribution?.usedMcp)
+  const mcpToolNames = message.attribution?.mcpToolNames ?? []
 
   return (
     <div className={cn('flex flex-col gap-1', isUser ? 'items-end' : 'items-start')}>
@@ -366,6 +370,36 @@ function MessageBubble({
           />
         )}
       </div>
+
+      {!isUser && (usesRag || usesMcp) && (
+        <div className="flex max-w-[92%] flex-wrap gap-1 px-1">
+          {usesRag ? (
+            <Badge
+              variant="outline"
+              className="border-emerald-500/25 bg-emerald-500/8 px-1.5 py-0.5 text-[10px] tracking-[0.12em] text-emerald-700 dark:text-emerald-300"
+            >
+              <FileText className="size-2.5" />
+              Used RAG
+            </Badge>
+          ) : null}
+          {usesMcp ? (
+            <Badge
+              variant="outline"
+              className="border-accent/25 bg-accent/8 px-1.5 py-0.5 text-[10px] tracking-[0.12em] text-accent"
+              title={
+                mcpToolNames.length > 0
+                  ? `MCP tools: ${mcpToolNames.join(', ')}`
+                  : 'Used MCP during this reply'
+              }
+            >
+              <Cable className="size-2.5" />
+              {mcpToolNames.length > 0
+                ? `Used MCP · ${mcpToolNames.length} tool${mcpToolNames.length === 1 ? '' : 's'}`
+                : 'Used MCP'}
+            </Badge>
+          ) : null}
+        </div>
+      )}
 
       {/* Source citations */}
       {message.sources && message.sources.length > 0 && (

@@ -5,6 +5,10 @@ import { generateText, streamText, embedMany, type ToolSet } from 'ai'
 import type { LanguageModel, EmbeddingModel } from 'ai'
 
 import { createAiModelRef } from '@/lib/ai'
+import {
+  collectMcpToolNamesFromSteps,
+  createChatMessageAttribution,
+} from '@/lib/ai-chat-shared'
 import { TEMPERATURE_CHAT, TEMPERATURE_COMPLETION } from '@/lib/ai-config'
 import {
   AiCompletionError,
@@ -287,12 +291,58 @@ export async function requestAiChatCompletionStream(input: {
 
   try {
     const model = createLanguageModel(input.provider, input.model)
+    const toolNames = new Set<string>()
+    let resolveAttribution: (
+      value: ReturnType<typeof createChatMessageAttribution>,
+    ) => void = () => {}
+    const attributionPromise = new Promise<ReturnType<typeof createChatMessageAttribution>>(
+      (resolve) => {
+        resolveAttribution = resolve
+      },
+    )
+    let attributionResolved = false
+    const finishAttribution = (
+      value: ReturnType<typeof createChatMessageAttribution>,
+    ) => {
+      if (attributionResolved) return
+      attributionResolved = true
+      resolveAttribution(value)
+    }
     const result = streamText({
       model,
       system: input.systemPrompt,
       messages: input.messages,
       temperature: input.temperature ?? TEMPERATURE_CHAT,
       ...(input.tools ? { tools: input.tools, maxSteps: input.maxSteps ?? 1 } : {}),
+      onStepFinish(step) {
+        for (const toolName of collectMcpToolNamesFromSteps([step])) {
+          toolNames.add(toolName)
+        }
+      },
+      onFinish(event) {
+        for (const toolName of collectMcpToolNamesFromSteps(event.steps)) {
+          toolNames.add(toolName)
+        }
+        finishAttribution(
+          createChatMessageAttribution({
+            mcpToolNames: toolNames,
+          }),
+        )
+      },
+      onError() {
+        finishAttribution(
+          createChatMessageAttribution({
+            mcpToolNames: toolNames,
+          }),
+        )
+      },
+      onAbort() {
+        finishAttribution(
+          createChatMessageAttribution({
+            mcpToolNames: toolNames,
+          }),
+        )
+      },
     })
 
     const encoder = new TextEncoder()
@@ -313,6 +363,7 @@ export async function requestAiChatCompletionStream(input: {
     return {
       stream,
       model: createAiModelRef(input.provider.id, input.model),
+      attributionPromise,
     }
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
