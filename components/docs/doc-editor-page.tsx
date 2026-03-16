@@ -20,7 +20,7 @@ import {
   queuePendingDocumentSummary,
 } from '@/lib/document-summary-queue'
 import { cn } from '@/lib/utils'
-import { BookOpenText, ChevronDown, Download, Globe, Link2, Lock, MessageSquare, MoreHorizontal, ShieldCheck, Tag, Users } from 'lucide-react'
+import { BookOpenText, ChevronDown, Download, Globe, Link2, List, Lock, MessageSquare, MoreHorizontal, ShieldCheck, Tag, Users } from 'lucide-react'
 import type { CommentSelection } from '@/lib/editor/editor-helpers'
 import { clampDocEditorWidth } from '@/lib/doc-editor-layout'
 import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
@@ -38,6 +38,8 @@ import { EditorErrorBoundary } from '@/components/docs/editor-error-boundary'
 import { DocStatusBar, type SaveState } from '@/components/docs/doc-status-bar'
 import { type EditorViewMode } from '@/components/docs/doc-toolbar'
 import { DocCommentSidebar } from '@/components/docs/doc-comment-sidebar'
+import { DocOutline } from '@/components/docs/doc-outline'
+import { type OutlineHeading } from '@/hooks/use-doc-outline'
 import { DocReferenceSidebar } from '@/components/docs/doc-reference-sidebar'
 import {
   ResizableHandle,
@@ -183,6 +185,9 @@ export function DocEditorPageClient() {
   const [initializedDocId, setInitializedDocId] = React.useState<string | null>(null)
   const [saveState, setSaveState] = React.useState<SaveState>('idle')
   const [commentSidebarOpen, setCommentSidebarOpen] = React.useState(false)
+  const [outlineOpen, setOutlineOpen] = React.useState(false)
+  const [outlineHeadings, setOutlineHeadings] = React.useState<OutlineHeading[]>([])
+  const [outlineActiveId, setOutlineActiveId] = React.useState<string | null>(null)
   const [referencePanelOpen, setReferencePanelOpen] = React.useState(false)
   const [isEditorFullscreen, setIsEditorFullscreen] = React.useState(false)
   const [metadataExpanded, setMetadataExpanded] = React.useState(false)
@@ -215,6 +220,21 @@ export function DocEditorPageClient() {
   } | null>(null)
   const { documentWidth, setDocumentWidth } = useDocEditorWidth()
   const { aiPanelSide, setAiPanelSide } = useDocEditorAiPanelSide()
+
+  // Poll outline headings from the editor handle when the sidebar is open
+  React.useEffect(() => {
+    if (!outlineOpen) return
+    const tick = () => {
+      const handle = editorFocusRef.current
+      if (handle) {
+        setOutlineHeadings(handle.getOutlineHeadings?.() ?? [])
+        setOutlineActiveId(handle.getOutlineActiveId?.() ?? null)
+      }
+    }
+    tick()
+    const id = setInterval(tick, 600)
+    return () => clearInterval(id)
+  }, [outlineOpen])
   const sourceLocale = doc?.locale ?? 'en'
   const editorSignInHref = React.useMemo(() => {
     const query = searchParams.toString()
@@ -1238,6 +1258,7 @@ export function DocEditorPageClient() {
     ? undefined
     : getEditorShellStyle(documentWidth)
   const showCommentSidebar = !isEditorFullscreen && commentSidebarOpen
+  const showOutlineSidebar = !isEditorFullscreen && outlineOpen
   const showReferencePanel = !isEditorFullscreen && referencePanelOpen
   const currentVisibility = VISIBILITY_OPTIONS.find((o) => o.value === visibility) ?? VISIBILITY_OPTIONS[2]
   const currentLocaleLabel = LOCALE_OPTIONS.find((l) => l.code === activeLocale)?.label ?? activeLocale
@@ -1306,6 +1327,8 @@ export function DocEditorPageClient() {
                   aiPreviewSide={aiPanelSide}
                   onAiPreviewSideChange={setAiPanelSide}
                   onComment={handleComment}
+                  outlineOpen={outlineOpen}
+                  onOutlineOpenChange={setOutlineOpen}
                 />
               </EditorErrorBoundary>
             </div>
@@ -1319,6 +1342,16 @@ export function DocEditorPageClient() {
             onCommentCreated={handleCommentCreated}
             onPendingClear={() => setPendingComment(null)}
           />
+        ) : null}
+        {showOutlineSidebar ? (
+          <div className="w-60 shrink-0 border-l overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+            <DocOutline
+              headings={outlineHeadings}
+              activeId={outlineActiveId}
+              onSelect={(h) => editorFocusRef.current?.scrollToOutlineHeading?.(h)}
+              onClose={() => setOutlineOpen(false)}
+            />
+          </div>
         ) : null}
       </div>
     </div>
@@ -1346,6 +1379,16 @@ export function DocEditorPageClient() {
                 className="min-w-0 flex-1 border-0 bg-transparent px-0 text-lg font-semibold tracking-tight shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
               />
               <PresenceAvatars documentId={doc.id} currentUserId={currentUserId} />
+              <Button
+                variant={outlineOpen ? 'secondary' : 'ghost'}
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                aria-label="Toggle document outline"
+                aria-pressed={outlineOpen}
+                onClick={() => setOutlineOpen((v) => !v)}
+              >
+                <List className="size-4" />
+              </Button>
               <Button
                 variant={referencePanelOpen ? 'secondary' : 'ghost'}
                 size="icon"

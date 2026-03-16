@@ -59,7 +59,6 @@ import { aiReducer, AI_INITIAL_STATE } from '@/components/docs/doc-editor-hooks'
 import { CustomAiPromptDialog, LinkInputDialog, FloatingStatsPill } from '@/components/docs/doc-editor-panes'
 import { useSuggestionReview } from '@/hooks/use-suggestion-review'
 import { useDocOutline } from '@/hooks/use-doc-outline'
-import { DocOutline } from '@/components/docs/doc-outline'
 
 export type { DocEditorHandle } from '@/lib/editor/editor-helpers'
 
@@ -84,6 +83,8 @@ export function DocEditor({
   aiPreviewSide = 'right',
   onAiPreviewSideChange,
   onComment,
+  outlineOpen = false,
+  onOutlineOpenChange,
 }: DocEditorProps) {
   // ── AI model state ───────────────────────────────────────────────────────
   const {
@@ -117,7 +118,6 @@ export function DocEditor({
   const [linkInputUrl, setLinkInputUrl] = React.useState('')
   const [findReplaceOpen, setFindReplaceOpen] = React.useState(false)
   const [a11yAnnouncement, setA11yAnnouncement] = React.useState('')
-  const [outlineOpen, setOutlineOpen] = React.useState(false)
 
   const announce = React.useCallback((message: string) => {
     setA11yAnnouncement('')
@@ -368,9 +368,12 @@ export function DocEditor({
 
           editor.view.dispatch(tr)
         },
+        getOutlineHeadings: () => outline.headings,
+        getOutlineActiveId: () => outline.activeId,
+        scrollToOutlineHeading: (heading) => outline.scrollToHeading(heading),
       }
     }
-  }, [editor, editorFocusRef, flushHtmlToMd])
+  }, [editor, editorFocusRef, flushHtmlToMd, outline])
 
   // ── Mode changes ─────────────────────────────────────────────────────────
 
@@ -1046,7 +1049,7 @@ export function DocEditor({
           aiDocumentPendingAction={aiDocumentPendingAction}
           onAiDocumentAction={handleAiDocumentActionWrapper}
           outlineOpen={outlineOpen}
-          onOutlineOpenChange={setOutlineOpen}
+          onOutlineOpenChange={onOutlineOpenChange}
         />
 
         {/* Find/Replace bar */}
@@ -1134,25 +1137,6 @@ export function DocEditor({
                       ref={editorWrapperRef}
                       className="relative h-full min-h-full"
                     >
-                      {/* Document outline panel */}
-                      <AnimatePresence>
-                        {outlineOpen ? (
-                          <motion.div
-                            initial={reducedMotion ? false : { opacity: 0, x: -12 }}
-                            animate={reducedMotion ? undefined : { opacity: 1, x: 0 }}
-                            exit={reducedMotion ? undefined : { opacity: 0, x: -12 }}
-                            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                            className="absolute left-2 top-2 z-30 w-56 max-h-[calc(100%-1rem)] overflow-y-auto overscroll-contain rounded-md border border-border/70 bg-card/98 shadow-md backdrop-blur-sm [scrollbar-width:thin]"
-                          >
-                            <DocOutline
-                              headings={outline.headings}
-                              activeId={outline.activeId}
-                              onSelect={(h) => outline.scrollToHeading(h)}
-                              onClose={() => setOutlineOpen(false)}
-                            />
-                          </motion.div>
-                        ) : null}
-                      </AnimatePresence>
                       <EditorContent editor={editor} />
 
                       {hasRichEditor(mode) && editor && canShowSelectionAi && (

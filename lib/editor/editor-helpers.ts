@@ -51,12 +51,19 @@ export interface DocEditorProps {
   aiPreviewSide?: DocEditorAiPanelSide
   onAiPreviewSideChange?: (side: DocEditorAiPanelSide) => void
   onComment?: (selection: CommentSelection) => void
+  outlineOpen?: boolean
+  onOutlineOpenChange?: (open: boolean) => void
 }
+
+import { type OutlineHeading } from '@/hooks/use-doc-outline'
 
 export interface DocEditorHandle {
   focus: () => void
   flushPendingContent?: () => string
   applyCommentMark?: (from: number, to: number, commentId: string) => void
+  getOutlineHeadings?: () => OutlineHeading[]
+  getOutlineActiveId?: () => string | null
+  scrollToOutlineHeading?: (heading: OutlineHeading) => void
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
