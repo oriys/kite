@@ -437,7 +437,10 @@ features:
 | --- | --- | --- |
 | \`DATABASE_URL\` | Yes | Primary Postgres connection string |
 | \`AUTH_SECRET\` | Yes | Signs session and auth tokens |
-| \`APP_PORT\` | No | Overrides the local HTTP port |`,
+| \`APP_PORT\` | No | Overrides the local HTTP port |
+| \`APP_HOST\` | No | Overrides the local bind address |
+| \`APP_BASE_URL\` | No | Sets the public base URL when host inference is not enough |
+| \`DB_HOST\` | No | Sets the Postgres host when \`DATABASE_URL\` is omitted |`,
   },
   {
     id: 'test-matrix',

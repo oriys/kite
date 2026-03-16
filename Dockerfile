@@ -15,7 +15,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Provide a placeholder so the build can import lib/db.ts without crashing.
 # The real DATABASE_URL is supplied at runtime via env/env_file.
-ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+ENV DATABASE_URL="postgresql://placeholder:placeholder@db.invalid:5432/placeholder"
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
@@ -33,11 +33,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
-EXPOSE 3000
-ENV PORT=3000
+EXPOSE 8000
+ENV PORT=8000
 ENV HOSTNAME="0.0.0.0"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+  CMD wget --no-verbose --tries=1 --spider "http://127.0.0.1:${PORT}/" || exit 1
 
 CMD ["node", "server.js"]

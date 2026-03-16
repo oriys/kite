@@ -5,6 +5,7 @@ import { Sparkles, FileText, Loader2, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { getDocEditorHref } from '@/lib/documents'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -197,7 +198,7 @@ export function SpecDocGenerator({ sourceId, endpoints }: SpecDocGeneratorProps)
               {results.map((doc) => (
                 <a
                   key={doc.documentId}
-                  href={`/docs/editor?id=${doc.documentId}`}
+                  href={getDocEditorHref(doc.documentId)}
                   className="flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-muted/40"
                 >
                   <FileText className="size-3.5 text-muted-foreground" />

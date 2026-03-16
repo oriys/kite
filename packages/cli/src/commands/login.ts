@@ -19,9 +19,18 @@ export const loginCommand = new Command('login')
         process.exit(1)
       }
 
+      const baseUrl = getBaseUrl()
+      if (!baseUrl) {
+        console.error(
+          chalk.red('✗'),
+          'Base URL is not configured. Pass `--url <url>` or set KITE_BASE_URL.',
+        )
+        process.exit(1)
+      }
+
       const spinner = ora('Validating token…').start()
       try {
-        const url = `${getBaseUrl()}/api/tokens`
+        const url = `${baseUrl}/api/tokens`
         const res = await fetch(url, {
           headers: { 'Authorization': `Bearer ${opts.token}` },
         })
@@ -45,7 +54,7 @@ export const loginCommand = new Command('login')
       const token = getApiToken()
       const baseUrl = getBaseUrl()
       console.log(chalk.bold('Current configuration:'))
-      console.log(`  URL:   ${baseUrl}`)
+      console.log(`  URL:   ${baseUrl ?? chalk.dim('not set')}`)
       console.log(`  Token: ${token ? token.slice(0, 12) + '…' : chalk.dim('not set')}`)
     }
   })

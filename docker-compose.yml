@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg17
     ports:
       - "${DB_PORT:-5432}:5432"
     environment:
@@ -19,13 +19,15 @@ services:
     build:
       context: .
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-8000}:${APP_PORT:-8000}"
     depends_on:
       postgres:
         condition: service_healthy
     env_file:
       - .env
     environment:
+      APP_HOST: ${APP_HOST:-0.0.0.0}
+      PORT: ${APP_PORT:-8000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-editorial}
 
 volumes:

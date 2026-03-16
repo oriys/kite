@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { createClientUuid } from '@/lib/client-uuid'
 
 export interface ChatMessage {
   id: string
@@ -46,14 +47,14 @@ export function useAiChat(options: UseAiChatOptions = {}) {
 
       // Add user message immediately
       const userMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: createClientUuid(),
         role: 'user',
         content: content.trim(),
       }
       setMessages((prev) => [...prev, userMessage])
 
       // Add placeholder for assistant
-      const assistantId = crypto.randomUUID()
+      const assistantId = createClientUuid()
       setMessages((prev) => [
         ...prev,
         { id: assistantId, role: 'assistant', content: '' },
@@ -155,7 +156,7 @@ export function useAiChat(options: UseAiChatOptions = {}) {
       setSessionId(id)
       setMessages(
         data.messages.map((m: ChatMessage) => ({
-          id: m.id ?? crypto.randomUUID(),
+          id: m.id ?? createClientUuid(),
           role: m.role,
           content: m.content,
           sources: m.sources,

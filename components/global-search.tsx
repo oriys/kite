@@ -6,6 +6,7 @@ import { FileText, Search, Loader2, Sparkles } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { sanitizeSearchHeadline } from '@/lib/sanitize'
+import { getDocEditorHref } from '@/lib/documents'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 interface SearchResult {
@@ -119,7 +120,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
   const handleSelect = useCallback(
     (id: string) => {
       onOpenChange(false)
-      window.location.href = `/docs/editor?id=${id}`
+      window.location.href = getDocEditorHref(id)
     },
     [onOpenChange],
   )

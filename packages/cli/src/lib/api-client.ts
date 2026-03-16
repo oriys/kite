@@ -3,8 +3,14 @@ import { getApiToken, getBaseUrl } from './config.js'
 export async function apiRequest(path: string, options: RequestInit = {}) {
   const token = getApiToken()
   if (!token) throw new Error('Not authenticated. Run `kite login` first.')
+  const baseUrl = getBaseUrl()
+  if (!baseUrl) {
+    throw new Error(
+      'Base URL is not configured. Run `kite login --url <url>` or set KITE_BASE_URL.',
+    )
+  }
 
-  const url = `${getBaseUrl()}${path}`
+  const url = `${baseUrl}${path}`
   const response = await fetch(url, {
     ...options,
     headers: {

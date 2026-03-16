@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { useDocCompare, type CompareMode } from '@/hooks/use-doc-compare'
-import { type Doc } from '@/lib/documents'
+import { type Doc, type DocumentListResponse } from '@/lib/documents'
 import { Button } from '@/components/ui/button'
 import {
   ResizablePanelGroup,
@@ -16,6 +16,8 @@ import { DocComparePanel } from '@/components/docs/doc-compare-panel'
 import { DocDiffView, DiffStats } from '@/components/docs/doc-diff-view'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useMounted } from '@/hooks/use-mounted'
+
+const DOCUMENT_SELECTOR_PAGE_SIZE = 100
 
 export function DocComparePageClient() {
   const mounted = useMounted()
@@ -42,13 +44,45 @@ export function DocComparePageClient() {
   const [allDocs, setAllDocs] = React.useState<{ id: string; title: string }[]>([])
   React.useEffect(() => {
     let cancelled = false
+
+    async function fetchDocumentPage(page: number) {
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(DOCUMENT_SELECTOR_PAGE_SIZE),
+        sort: 'title_asc',
+      })
+      const res = await fetch(`/api/documents?${params.toString()}`)
+      if (!res.ok) {
+        throw new Error(`Failed to load documents page ${page}`)
+      }
+
+      return normalizeDocumentListPage(await res.json())
+    }
+
     async function load() {
       try {
-        const res = await fetch('/api/documents')
-        if (!res.ok) return
-        const data = (await res.json()) as Doc[]
+        const firstPage = await fetchDocumentPage(1)
+        const remainingPages = firstPage.pagination.totalPages > 1
+          ? await Promise.all(
+            Array.from(
+              { length: firstPage.pagination.totalPages - 1 },
+              (_, index) => fetchDocumentPage(index + 2),
+            ),
+          )
+          : []
+
+        const data = [firstPage, ...remainingPages]
+          .flatMap((page) => page.items)
+          .reduce<Map<string, { id: string; title: string }>>((acc, doc) => {
+            acc.set(doc.id, {
+              id: doc.id,
+              title: doc.title || 'Untitled',
+            })
+            return acc
+          }, new Map())
+
         if (!cancelled) {
-          setAllDocs(data.map((d) => ({ id: d.id, title: d.title })))
+          setAllDocs(Array.from(data.values()))
         }
       } catch (error) {
         console.warn('[doc-compare] Failed to load documents:', error)
@@ -197,6 +231,50 @@ export function DocComparePageClient() {
       </div>
     </div>
   )
+}
+
+function normalizeDocumentListPage(raw: unknown): DocumentListResponse {
+  if (Array.isArray(raw)) {
+    const items = raw as Doc[]
+    return {
+      items,
+      counts: {
+        all: items.length,
+        draft: 0,
+        review: 0,
+        published: 0,
+        archived: 0,
+      },
+      categories: [],
+      pagination: {
+        page: 1,
+        pageSize: DOCUMENT_SELECTOR_PAGE_SIZE,
+        total: items.length,
+        totalPages: 1,
+      },
+    }
+  }
+
+  const payload = raw as Partial<DocumentListResponse>
+  return {
+    items: Array.isArray(payload.items) ? payload.items : [],
+    counts: {
+      all: payload.counts?.all ?? 0,
+      draft: payload.counts?.draft ?? 0,
+      review: payload.counts?.review ?? 0,
+      published: payload.counts?.published ?? 0,
+      archived: payload.counts?.archived ?? 0,
+    },
+    categories: Array.isArray(payload.categories)
+      ? payload.categories.map((value) => String(value))
+      : [],
+    pagination: {
+      page: payload.pagination?.page ?? 1,
+      pageSize: payload.pagination?.pageSize ?? DOCUMENT_SELECTOR_PAGE_SIZE,
+      total: payload.pagination?.total ?? 0,
+      totalPages: payload.pagination?.totalPages ?? 1,
+    },
+  }
 }
 
 function CompareSkeleton() {

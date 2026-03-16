@@ -1,6 +1,6 @@
 import { eq, and, isNull, lt, desc } from 'drizzle-orm'
 import { db } from '../db'
-import { workspaceInvites, workspaceMembers, users } from '../schema'
+import { workspaceInvites, workspaceMembers, users, workspaces } from '../schema'
 import { emitAuditEvent } from './audit-logs'
 import type { MemberRole } from './members'
 
@@ -15,6 +15,21 @@ function generateToken(): string {
 export interface WorkspaceInvite {
   id: string
   workspaceId: string
+  email: string | null
+  role: MemberRole
+  token: string
+  type: 'email' | 'link'
+  invitedBy: string
+  inviterName: string | null
+  expiresAt: Date
+  acceptedAt: Date | null
+  createdAt: Date
+}
+
+export interface InvitePreview {
+  id: string
+  workspaceId: string
+  workspaceName: string
   email: string | null
   role: MemberRole
   token: string
@@ -121,6 +136,32 @@ export async function listPendingInvites(
     .orderBy(desc(workspaceInvites.createdAt))
 
   return rows as WorkspaceInvite[]
+}
+
+export async function getInvitePreview(
+  token: string,
+): Promise<InvitePreview | null> {
+  const [invite] = await db
+    .select({
+      id: workspaceInvites.id,
+      workspaceId: workspaceInvites.workspaceId,
+      workspaceName: workspaces.name,
+      email: workspaceInvites.email,
+      role: workspaceInvites.role,
+      token: workspaceInvites.token,
+      type: workspaceInvites.type,
+      invitedBy: workspaceInvites.invitedBy,
+      inviterName: users.name,
+      expiresAt: workspaceInvites.expiresAt,
+      acceptedAt: workspaceInvites.acceptedAt,
+      createdAt: workspaceInvites.createdAt,
+    })
+    .from(workspaceInvites)
+    .innerJoin(workspaces, eq(workspaceInvites.workspaceId, workspaces.id))
+    .leftJoin(users, eq(workspaceInvites.invitedBy, users.id))
+    .where(eq(workspaceInvites.token, token))
+
+  return (invite as InvitePreview | undefined) ?? null
 }
 
 export async function revokeInvite(

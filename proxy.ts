@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
 
-const publicPaths = ['/', '/auth', '/components', '/api/auth', '/api/mock', '/pub']
+const publicPaths = ['/', '/auth', '/components', '/api/auth', '/api/mock', '/pub', '/invite']
 
 function isPublicPath(pathname: string) {
   return publicPaths.some(
