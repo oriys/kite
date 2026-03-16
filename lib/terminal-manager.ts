@@ -1,11 +1,18 @@
-import * as pty from 'node-pty'
 import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import type { IPty } from 'node-pty'
+
+let ptyModulePromise: Promise<typeof import('node-pty')> | null = null
+
+async function loadPtyModule() {
+  ptyModulePromise ??= import('node-pty')
+  return ptyModulePromise
+}
 
 export interface TerminalSession {
   id: string
-  pty: pty.IPty
+  pty: IPty
   tmpDir: string
   listeners: Set<(data: string) => void>
   exitListeners: Set<(code: number | undefined) => void>
@@ -15,7 +22,11 @@ export interface TerminalSession {
 class TerminalManager {
   private sessions = new Map<string, TerminalSession>()
 
-  createSession(options?: { cols?: number; rows?: number }): TerminalSession {
+  async createSession(options?: {
+    cols?: number
+    rows?: number
+  }): Promise<TerminalSession> {
+    const pty = await loadPtyModule()
     const id = crypto.randomUUID()
     const tmpDir = mkdtempSync(join(tmpdir(), 'kite-term-'))
 
@@ -23,17 +34,25 @@ class TerminalManager {
       process.env.SHELL ||
       (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash')
 
-    const ptyProcess = pty.spawn(shell, [], {
-      name: 'xterm-256color',
-      cols: options?.cols ?? 80,
-      rows: options?.rows ?? 24,
-      cwd: tmpDir,
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-      } as Record<string, string>,
-    })
+    let ptyProcess: IPty
+    try {
+      ptyProcess = pty.spawn(shell, [], {
+        name: 'xterm-256color',
+        cols: options?.cols ?? 80,
+        rows: options?.rows ?? 24,
+        cwd: tmpDir,
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          COLORTERM: 'truecolor',
+        } as Record<string, string>,
+      })
+    } catch (error) {
+      if (existsSync(tmpDir)) {
+        rmSync(tmpDir, { recursive: true, force: true })
+      }
+      throw error
+    }
 
     const session: TerminalSession = {
       id,

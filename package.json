@@ -6,7 +6,7 @@
     "dev": "node --env-file=.env ./scripts/run-next.mjs dev",
     "dev:neon": "node --env-file=.env.neon ./scripts/run-next.mjs dev",
     "build": "next build",
-    "postbuild": "mkdir -p .next/standalone/.next/static .next/standalone/public && cp -R .next/static/. .next/standalone/.next/static && cp -R public/. .next/standalone/public",
+    "postbuild": "node ./scripts/postbuild.mjs",
     "start": "node --env-file=.env ./scripts/run-next.mjs start",
     "lint": "eslint .",
     "test": "vitest run",

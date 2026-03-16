@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   const cols = typeof body.cols === 'number' ? body.cols : 80
   const rows = typeof body.rows === 'number' ? body.rows : 24
 
-  const session = terminalManager.createSession({ cols, rows })
+  const session = await terminalManager.createSession({ cols, rows })
 
   return NextResponse.json({
     id: session.id,
