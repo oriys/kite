@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { parseOpenAPISpec, computeChecksum } from '@/lib/openapi/parser'
 import {
+  getOpenapiSpecTooLargeMessage,
+  isOpenapiContentTooLarge,
+  parseOpenapiCreateRequestPayload,
+} from '@/lib/openapi/upload'
+import {
   createOpenapiSource,
   listOpenapiSources,
 } from '@/lib/queries/openapi'
@@ -28,6 +33,10 @@ function serializeOpenapiSourceSummary(source: {
   }
 }
 
+function payloadTooLarge(message = getOpenapiSpecTooLargeMessage()) {
+  return NextResponse.json({ error: message }, { status: 413 })
+}
+
 /**
  * POST /api/openapi — Create a new OpenAPI source (upload or URL).
  */
@@ -36,14 +45,10 @@ export async function POST(req: NextRequest) {
   if ('error' in authResult) return authResult.error
   const { ctx } = authResult
 
-  const body = await req.json().catch(() => null)
-  if (!body) return badRequest('Invalid JSON')
+  const body = await parseOpenapiCreateRequestPayload(req)
+  if (!body) return badRequest('Invalid request payload')
 
-  const { name, rawContent, sourceUrl } = body as {
-    name?: string
-    rawContent?: string
-    sourceUrl?: string
-  }
+  const { name, rawContent, sourceUrl } = body
 
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     return badRequest('name is required')
@@ -64,6 +69,10 @@ export async function POST(req: NextRequest) {
     content = rawContent
   } else {
     return badRequest('Either rawContent or sourceUrl is required')
+  }
+
+  if (isOpenapiContentTooLarge(content)) {
+    return payloadTooLarge()
   }
 
   // Parse and validate the spec

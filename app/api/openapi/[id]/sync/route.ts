@@ -3,6 +3,10 @@ import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
 import { parseOpenAPISpec, computeChecksum } from '@/lib/openapi/parser'
 import { diffEndpoints } from '@/lib/openapi/differ'
 import {
+  getOpenapiSpecTooLargeMessage,
+  isOpenapiContentTooLarge,
+} from '@/lib/openapi/upload'
+import {
   getOpenapiSourceWithContent,
   syncOpenapiSource,
 } from '@/lib/queries/openapi'
@@ -28,6 +32,10 @@ function serializeOpenapiSourceSummary(source: {
     createdAt: source.createdAt,
     lastSyncedAt: source.lastSyncedAt ?? null,
   }
+}
+
+function payloadTooLarge(message = getOpenapiSpecTooLargeMessage()) {
+  return NextResponse.json({ error: message }, { status: 413 })
 }
 
 /**
@@ -66,6 +74,10 @@ export async function POST(
     return badRequest(
       'No sourceUrl configured and no rawContent provided. Supply rawContent in the request body.',
     )
+  }
+
+  if (isOpenapiContentTooLarge(newContent)) {
+    return payloadTooLarge()
   }
 
   const newChecksum = computeChecksum(newContent)

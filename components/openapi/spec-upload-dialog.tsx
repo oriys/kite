@@ -13,6 +13,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import {
+  getOpenapiSpecTooLargeMessage,
+  OPENAPI_SPEC_MAX_SIZE,
+} from '@/lib/openapi/upload'
 import { Upload, Link, Loader2, CheckCircle2, FileJson } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -22,6 +26,8 @@ interface SpecUploadDialogProps {
   onSuccess?: (source: Record<string, unknown>) => void
 }
 
+const OPENAPI_SPEC_TOO_LARGE_MESSAGE = getOpenapiSpecTooLargeMessage()
+
 export function SpecUploadDialog({
   open,
   onOpenChange,
@@ -30,30 +36,26 @@ export function SpecUploadDialog({
   const [mode, setMode] = useState<'file' | 'url'>('file')
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
-  const [fileContent, setFileContent] = useState<string | null>(null)
-  const [fileName, setFileName] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const reset = useCallback(() => {
     setName('')
     setUrl('')
-    setFileContent(null)
-    setFileName(null)
+    setSelectedFile(null)
     setIsDragOver(false)
     setIsSubmitting(false)
   }, [])
 
-  const handleFileRead = useCallback((file: File) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const content = e.target?.result as string
-      setFileContent(content)
-      setFileName(file.name)
-      // Auto-fill name from filename if empty
-      setName((prev) => prev || file.name.replace(/\.(json|ya?ml)$/i, ''))
+  const handleFileSelect = useCallback((file: File) => {
+    if (file.size > OPENAPI_SPEC_MAX_SIZE) {
+      toast.error(OPENAPI_SPEC_TOO_LARGE_MESSAGE)
+      return
     }
-    reader.readAsText(file)
+
+    setSelectedFile(file)
+    setName((prev) => prev || file.name.replace(/\.(json|ya?ml)$/i, ''))
   }, [])
 
   const handleDrop = useCallback(
@@ -61,17 +63,17 @@ export function SpecUploadDialog({
       e.preventDefault()
       setIsDragOver(false)
       const file = e.dataTransfer.files[0]
-      if (file) handleFileRead(file)
+      if (file) handleFileSelect(file)
     },
-    [handleFileRead],
+    [handleFileSelect],
   )
 
   const handleFileChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
-      if (file) handleFileRead(file)
+      if (file) handleFileSelect(file)
     },
-    [handleFileRead],
+    [handleFileSelect],
   )
 
   const handleSubmit = async () => {
@@ -80,7 +82,7 @@ export function SpecUploadDialog({
       return
     }
 
-    if (mode === 'file' && !fileContent) {
+    if (mode === 'file' && !selectedFile) {
       toast.error('Please upload an OpenAPI spec file')
       return
     }
@@ -93,28 +95,54 @@ export function SpecUploadDialog({
     setIsSubmitting(true)
 
     try {
-      const payload: Record<string, string> = { name: name.trim() }
+      let res: Response
+
       if (mode === 'file') {
-        payload.rawContent = fileContent!
+        const formData = new FormData()
+        formData.set('name', name.trim())
+        formData.set('file', selectedFile!)
+        res = await fetch('/api/openapi', {
+          method: 'POST',
+          body: formData,
+        })
       } else {
-        payload.sourceUrl = url.trim()
+        const payload: Record<string, string> = {
+          name: name.trim(),
+          sourceUrl: url.trim(),
+        }
+
+        res = await fetch('/api/openapi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
       }
 
-      const res = await fetch('/api/openapi', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const data = await res.json()
+      const payload = (await res.json().catch(() => null)) as
+        | Record<string, unknown>
+        | null
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to create OpenAPI source')
+        const error =
+          typeof payload?.error === 'string'
+            ? payload.error
+            : res.status === 413
+              ? OPENAPI_SPEC_TOO_LARGE_MESSAGE
+              : 'Failed to create OpenAPI source'
+        toast.error(error)
         return
       }
 
-      toast.success(`API source "${data.name}" created successfully`)
-      onSuccess?.(data)
+      if (!payload) {
+        toast.error('Failed to create OpenAPI source')
+        return
+      }
+
+      const createdName =
+        typeof payload.name === 'string' ? payload.name : name.trim()
+
+      toast.success(`API source "${createdName}" created successfully`)
+      onSuccess?.(payload)
       onOpenChange(false)
       reset()
     } catch {
@@ -182,13 +210,13 @@ export function SpecUploadDialog({
                   isDragOver
                     ? 'border-primary/50 bg-primary/5'
                     : 'border-muted-foreground/25 hover:border-muted-foreground/40',
-                  fileContent && 'border-emerald-500/40 bg-emerald-500/5',
+                  selectedFile && 'border-emerald-500/40 bg-emerald-500/5',
                 )}
               >
-                {fileContent ? (
+                {selectedFile ? (
                   <>
                     <CheckCircle2 className="mb-2 h-8 w-8 text-emerald-500" />
-                    <p className="text-sm font-medium">{fileName}</p>
+                    <p className="text-sm font-medium">{selectedFile.name}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       File loaded — ready to import
                     </p>
@@ -197,8 +225,7 @@ export function SpecUploadDialog({
                       size="sm"
                       className="mt-2"
                       onClick={() => {
-                        setFileContent(null)
-                        setFileName(null)
+                        setSelectedFile(null)
                       }}
                     >
                       Remove

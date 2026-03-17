@@ -4,6 +4,7 @@ import ora from 'ora'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, extname, basename } from 'node:path'
 import { apiRequest } from '../lib/api-client.js'
+import { buildOpenapiUploadBody } from '../lib/openapi-upload.js'
 
 async function collectFiles(path: string): Promise<string[]> {
   const info = await stat(path)
@@ -58,7 +59,7 @@ export const pushCommand = new Command('push')
           if (type === 'openapi') {
             await apiRequest('/api/openapi', {
               method: 'POST',
-              body: JSON.stringify({ name, rawContent: content }),
+              body: buildOpenapiUploadBody(name, content),
             })
           } else {
             await apiRequest('/api/documents', {

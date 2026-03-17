@@ -2,6 +2,9 @@
 const nextConfig = {
   output: 'standalone',
   serverExternalPackages: ['postgres', 'yaml', 'node-pty'],
+  experimental: {
+    proxyClientMaxBodySize: '20mb',
+  },
   images: {
     unoptimized: true,
   },

@@ -3,6 +3,7 @@ import chalk from 'chalk'
 import ora from 'ora'
 import { readFile } from 'node:fs/promises'
 import { apiRequest } from '../lib/api-client.js'
+import { buildOpenapiUploadBody } from '../lib/openapi-upload.js'
 
 const SEVERITY_COLORS: Record<string, (s: string) => string> = {
   error: chalk.red,
@@ -23,7 +24,7 @@ export const lintCommand = new Command('lint')
       // Push the spec to get an ID, then trigger lint
       const uploadRes = await apiRequest('/api/openapi', {
         method: 'POST',
-        body: JSON.stringify({ name: `lint-${Date.now()}`, rawContent: content }),
+        body: buildOpenapiUploadBody(`lint-${Date.now()}`, content),
       })
       const source = await uploadRes.json() as { id: string }
 
