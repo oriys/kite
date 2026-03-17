@@ -24,10 +24,6 @@ export async function getAuthenticatedUser() {
   return session?.user ?? null
 }
 
-export async function getWorkspaceContext(userId: string) {
-  return getDefaultWorkspace(userId)
-}
-
 export async function resolveAuthenticatedUser(
   sessionUser: Awaited<ReturnType<typeof getAuthenticatedUser>>,
 ) {

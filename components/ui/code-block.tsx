@@ -57,5 +57,4 @@ function CodeBlock({ code, language = 'text', copy = true, className, ...props }
   )
 }
 
-export { CodeBlock, highlightCode }
-export type { Language }
+export { CodeBlock }

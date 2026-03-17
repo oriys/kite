@@ -32,7 +32,7 @@ const icons = {
   tip: Lightbulb,
 }
 
-export interface CalloutProps
+interface CalloutProps
   extends React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof calloutVariants> {
   icon?: React.ReactNode

@@ -46,7 +46,7 @@ export function MetricTile({
   )
 }
 
-export function TokenSwatch({
+function TokenSwatch({
   label,
   token,
   note,

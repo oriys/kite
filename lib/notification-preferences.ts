@@ -14,7 +14,7 @@ export type NotificationPreferenceValues = Record<
   boolean
 >
 
-export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferenceValues = {
+const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferenceValues = {
   commentEnabled: true,
   mentionEnabled: true,
   approvalEnabled: true,

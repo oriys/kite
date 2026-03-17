@@ -12,7 +12,6 @@ import { JsonViewerNode, SchemaViewerNode, HeatmapNode } from '@/lib/editor/cust
 import { CommentMark } from '@/lib/editor/comment-marks'
 import { createImagePasteDropExtension } from '@/lib/editor/image-paste-drop'
 import { SearchReplace } from '@/lib/editor/search-replace'
-import { AutocompleteGhostText } from '@/lib/editor/autocomplete-plugin'
 import { SuggestionHighlight } from '@/lib/editor/suggestion-plugin'
 import { BlockHandle } from '@/lib/editor/block-handle'
 
@@ -51,7 +50,6 @@ export function createEditorExtensions() {
     CharacterCount,
     SearchReplace,
     CommentMark,
-    AutocompleteGhostText,
     SuggestionHighlight,
     JsonViewerNode,
     SchemaViewerNode,

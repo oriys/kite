@@ -13,7 +13,7 @@ export type PersonalFeatureId = (typeof PERSONAL_FEATURE_IDS)[number]
 
 export type PersonalFeatureVisibility = Record<PersonalFeatureId, boolean>
 
-export const DEFAULT_PERSONAL_FEATURE_VISIBILITY: PersonalFeatureVisibility = {
+const DEFAULT_PERSONAL_FEATURE_VISIBILITY: PersonalFeatureVisibility = {
   openApi: true,
   templates: true,
   aiWorkspace: true,

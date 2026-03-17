@@ -9,7 +9,7 @@ import { users, accounts, sessions, verificationTokens } from './schema'
 import { ensureDefaultWorkspace } from './queries/workspaces'
 import { DEV_MOCK_AUTH_ENABLED, DEV_MOCK_USERS } from './dev-mock-auth'
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn } = NextAuth({
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,

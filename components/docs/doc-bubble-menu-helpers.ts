@@ -17,7 +17,7 @@ export const MENU_HORIZONTAL_PADDING = 24
 export const AI_MENU_FLYOUT_GAP = 8
 export const AI_MENU_MODELS_WIDTH = 288
 export const AI_MENU_LANGUAGES_WIDTH = 224
-export const AI_MENU_TONES_WIDTH = 224
+const AI_MENU_TONES_WIDTH = 224
 export const AI_MENU_PROMPTS_WIDTH = 416
 export const AI_MENU_OPEN_DELAY = 140
 export const AI_MENU_CLOSE_DELAY = 110
@@ -39,7 +39,7 @@ export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-export function isRectVisibleInViewport(rect: DOMRect, viewportRect: DOMRect) {
+function isRectVisibleInViewport(rect: DOMRect, viewportRect: DOMRect) {
   return (
     rect.width > 0 &&
     rect.height > 0 &&

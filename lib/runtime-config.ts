@@ -3,29 +3,6 @@ function readEnv(env: NodeJS.ProcessEnv, key: string): string | undefined {
   return value ? value : undefined
 }
 
-export function getAppPort(env: NodeJS.ProcessEnv = process.env): string {
-  return readEnv(env, 'APP_PORT') ?? readEnv(env, 'PORT') ?? '8000'
-}
-
-export function getAppHost(env: NodeJS.ProcessEnv = process.env): string {
-  return (
-    readEnv(env, 'APP_HOST') ??
-    readEnv(env, 'HOST') ??
-    readEnv(env, 'HOSTNAME') ??
-    '0.0.0.0'
-  )
-}
-
-export function getAppBaseUrl(
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  return (
-    readEnv(env, 'APP_BASE_URL') ??
-    readEnv(env, 'AUTH_URL') ??
-    readEnv(env, 'KITE_BASE_URL')
-  )
-}
-
 export function getDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   const directUrl = readEnv(env, 'DATABASE_URL')
   if (directUrl) {

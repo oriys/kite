@@ -104,7 +104,7 @@ export function clamp(value: number, min: number, max: number, fallback: number)
   return Math.min(max, Math.max(min, value))
 }
 
-export function readStorage<T>(key: string, parse: (v: string | null) => T, fallback: T): T {
+function readStorage<T>(key: string, parse: (v: string | null) => T, fallback: T): T {
   if (typeof window === 'undefined') return fallback
   try {
     return parse(window.localStorage.getItem(key))

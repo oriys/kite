@@ -9,13 +9,13 @@ import type { Suggestion } from '@/lib/suggestions'
 //   • Insertions → highlighted widget span
 //   • Current (focused) → additional focus ring
 
-export interface SuggestionPluginState {
+interface SuggestionPluginState {
   suggestions: Suggestion[]
   currentIndex: number
   active: boolean
 }
 
-export const suggestionPluginKey = new PluginKey<DecorationSet>(
+const suggestionPluginKey = new PluginKey<DecorationSet>(
   'suggestionHighlight',
 )
 

@@ -2,9 +2,9 @@ export type DocEditorAiPanelSide = 'left' | 'right'
 
 export const DOC_EDITOR_WIDTH_STORAGE_KEY = 'doc-editor-width'
 export const DOC_EDITOR_AI_PANEL_SIDE_STORAGE_KEY = 'doc-editor-ai-panel-side'
-export const DOC_EDITOR_WIDTH_MIN = 880
-export const DOC_EDITOR_WIDTH_MAX = 2000
-export const DOC_EDITOR_WIDTH_STEP = 40
+const DOC_EDITOR_WIDTH_MIN = 880
+const DOC_EDITOR_WIDTH_MAX = 2000
+const DOC_EDITOR_WIDTH_STEP = 40
 export const DOC_EDITOR_WIDTH_DEFAULT = 1760
 
 export const DOC_EDITOR_WIDTH_PRESETS = [

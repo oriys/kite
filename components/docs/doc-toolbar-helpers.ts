@@ -36,7 +36,7 @@ export function wrapSelection(ta: HTMLTextAreaElement, before: string, after: st
   ta.setSelectionRange(newStart, newEnd)
 }
 
-export function insertAtLineStart(ta: HTMLTextAreaElement, prefix: string) {
+function insertAtLineStart(ta: HTMLTextAreaElement, prefix: string) {
   const start = ta.selectionStart
   const lineStart = ta.value.lastIndexOf('\n', start - 1) + 1
   ta.setSelectionRange(lineStart, lineStart)
@@ -59,7 +59,7 @@ export function richExec(cmd: string, value?: string) {
   document.execCommand(cmd, false, value)
 }
 
-export function richWrap(tag: string) {
+function richWrap(tag: string) {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return
   const range = sel.getRangeAt(0)
