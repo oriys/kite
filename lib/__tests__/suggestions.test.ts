@@ -368,18 +368,14 @@ describe('buildDocTextWithPmMap', () => {
     const doc = mockDoc(['hello'])
     const { text, map } = buildDocTextWithPmMap(doc)
     expect(text).toBe('hello')
-    expect(map).toEqual([2, 3, 4, 5, 6])
+    expect(map).toEqual([2, 3, 4, 5, 6, 7])
   })
 
   it('inserts newline between paragraphs', () => {
     const doc = mockDoc(['ab', 'cd'])
     const { text, map } = buildDocTextWithPmMap(doc)
     expect(text).toBe('ab\ncd')
-    expect(map[0]).toBe(2)  // 'a'
-    expect(map[1]).toBe(3)  // 'b'
-    expect(map[2]).toBe(6)  // '\n' → p2 content start
-    expect(map[3]).toBe(6)  // 'c'
-    expect(map[4]).toBe(7)  // 'd'
+    expect(map).toEqual([2, 3, 4, 6, 7, 8])
   })
 
   it('respects from/to range for selection-scoped diffs', () => {
@@ -387,6 +383,19 @@ describe('buildDocTextWithPmMap', () => {
     const doc = mockDoc(['hello world'])
     const { text, map } = buildDocTextWithPmMap(doc, 8, 13)
     expect(text).toBe('world')
-    expect(map).toEqual([8, 9, 10, 11, 12])
+    expect(map).toEqual([8, 9, 10, 11, 12, 13])
+  })
+
+  it('maps a removed paragraph separator to the block boundary, not the next first character', () => {
+    const doc = mockDoc(['Category', 'Company'])
+    const { text, map } = buildDocTextWithPmMap(doc)
+    const suggestions = changesToSuggestions(diffWords(text, 'Category Company'), map, 'ai')
+
+    expect(text).toBe('Category\nCompany')
+    expect(suggestions).toHaveLength(1)
+    expect(suggestions[0].originalText).toBe('\n')
+    expect(suggestions[0].replacementText).toBe(' ')
+    expect(suggestions[0].from).toBe(10)
+    expect(suggestions[0].to).toBe(12)
   })
 })

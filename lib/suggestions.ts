@@ -87,11 +87,12 @@ export function nextPendingIndex(
 
 /**
  * Walk a ProseMirror doc range and produce both the plain-text content and
- * a parallel array mapping each character index → PM position.
+ * a parallel array mapping each plain-text offset boundary → PM position.
  *
  * Unlike `doc.textContent`, this inserts `\n` between block-level nodes so
- * the output is diffable across paragraphs. The map accounts for those
- * virtual newlines.
+ * the output is diffable across paragraphs. The map includes boundaries for
+ * those virtual newlines so paragraph-join/split diffs do not collapse onto
+ * the first character of the next block.
  *
  * For selection-scoped rewrites pass the selection `from`/`to`.
  * For document-scoped rewrites omit them (defaults to full doc).
@@ -116,16 +117,31 @@ export function buildDocTextWithPmMap(doc: {
   const end = to ?? doc.content.size
   const chars: string[] = []
   const map: number[] = []
-  let prevTextblockEnd = -1
+  let prevTextblockContentEnd = -1
+
+  const ensureBoundary = (pos: number) => {
+    if (map.length === 0) {
+      map.push(pos)
+      return
+    }
+
+    if (map[map.length - 1] !== pos) {
+      map.push(pos)
+    }
+  }
 
   doc.nodesBetween(start, end, (node, pos) => {
     if (node.isTextblock) {
-      if (prevTextblockEnd >= 0) {
+      const blockContentStart = pos + 1
+      const blockContentEnd = pos + node.nodeSize - 1
+
+      if (prevTextblockContentEnd >= 0) {
         // Separator between text blocks (mirrors doc.textBetween('\n'))
+        ensureBoundary(prevTextblockContentEnd)
         chars.push('\n')
-        map.push(pos + 1) // content start of this block
+        ensureBoundary(blockContentStart)
       }
-      prevTextblockEnd = pos + node.nodeSize
+      prevTextblockContentEnd = blockContentEnd
     }
 
     if (node.isText && node.text) {
@@ -133,12 +149,17 @@ export function buildDocTextWithPmMap(doc: {
       const nodeEnd = pos + node.text.length
       const cStart = Math.max(start, nodeStart)
       const cEnd = Math.min(end, nodeEnd)
+      ensureBoundary(cStart)
       for (let i = cStart; i < cEnd; i++) {
         chars.push(node.text[i - nodeStart])
-        map.push(i)
+        map.push(i + 1)
       }
     }
   })
+
+  if (map.length === 0) {
+    map.push(start)
+  }
 
   return { text: chars.join(''), map }
 }
@@ -170,7 +191,7 @@ export function buildTextToPmMap(doc: {
  *
  * @param originalPlainText - plain text extracted from the editor for the range being diffed
  * @param rewrittenPlainText - plain text extracted from the AI result
- * @param textToPmMap - position map where `map[i]` is the PM position of `originalPlainText[i]`
+ * @param textToPmMap - boundary map where `map[i]` is the PM position at plain-text offset `i`
  */
 export function diffToSuggestions(
   originalPlainText: string,
@@ -206,7 +227,7 @@ export function changesToSuggestions(
     if (change.type === 'remove') {
       const pmFrom = resolvePmOffset(textToPmMap, change.origOffset)
       let lastOrigEnd = change.origOffset + change.origLength
-      let pmTo = resolvePmOffsetAfter(textToPmMap, lastOrigEnd)
+      let pmTo = resolvePmOffset(textToPmMap, lastOrigEnd)
 
       let origText = change.text
       let replText = ''
@@ -233,7 +254,7 @@ export function changesToSuggestions(
           // Absorb whitespace + next removal into original
           origText += ws.text + nextRemove.text
           lastOrigEnd = nextRemove.origOffset + nextRemove.origLength
-          pmTo = resolvePmOffsetAfter(textToPmMap, lastOrigEnd)
+          pmTo = resolvePmOffset(textToPmMap, lastOrigEnd)
 
           // Mirror whitespace in replacement, then absorb paired add if present
           replText += ws.text
@@ -285,13 +306,4 @@ function resolvePmOffset(textToPmMap: number[], offset: number): number {
 
   const lastPmPos = textToPmMap[textToPmMap.length - 1]
   return lastPmPos == null ? 0 : lastPmPos + 1
-}
-
-function resolvePmOffsetAfter(textToPmMap: number[], endOffset: number): number {
-  if (endOffset <= 0) return resolvePmOffset(textToPmMap, 0)
-
-  const lastIndex = Math.min(endOffset - 1, textToPmMap.length - 1)
-  const lastPmPos = textToPmMap[lastIndex]
-  if (lastPmPos == null) return resolvePmOffset(textToPmMap, endOffset)
-  return lastPmPos + 1
 }
