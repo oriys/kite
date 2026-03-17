@@ -204,10 +204,9 @@ export function changesToSuggestions(
     // Collect adjacent remove+add pairs into a single replacement suggestion,
     // merging across whitespace-only equal gaps to avoid visual fragmentation.
     if (change.type === 'remove') {
-      const pmFrom = textToPmMap[change.origOffset] ?? 0
+      const pmFrom = resolvePmOffset(textToPmMap, change.origOffset)
       let lastOrigEnd = change.origOffset + change.origLength
-      let pmTo =
-        (textToPmMap[lastOrigEnd - 1] ?? pmFrom) + 1
+      let pmTo = resolvePmOffsetAfter(textToPmMap, lastOrigEnd)
 
       let origText = change.text
       let replText = ''
@@ -234,7 +233,7 @@ export function changesToSuggestions(
           // Absorb whitespace + next removal into original
           origText += ws.text + nextRemove.text
           lastOrigEnd = nextRemove.origOffset + nextRemove.origLength
-          pmTo = (textToPmMap[lastOrigEnd - 1] ?? pmTo) + 1
+          pmTo = resolvePmOffsetAfter(textToPmMap, lastOrigEnd)
 
           // Mirror whitespace in replacement, then absorb paired add if present
           replText += ws.text
@@ -261,7 +260,7 @@ export function changesToSuggestions(
       )
     } else if (change.type === 'add') {
       // Pure insertion (no preceding remove)
-      const insertAt = textToPmMap[change.origOffset] ?? textToPmMap[textToPmMap.length - 1] ?? 0
+      const insertAt = resolvePmOffset(textToPmMap, change.origOffset)
 
       suggestions.push(
         createSuggestion({
@@ -278,4 +277,21 @@ export function changesToSuggestions(
   }
 
   return suggestions
+}
+
+function resolvePmOffset(textToPmMap: number[], offset: number): number {
+  if (offset <= 0) return textToPmMap[0] ?? 0
+  if (offset < textToPmMap.length) return textToPmMap[offset]
+
+  const lastPmPos = textToPmMap[textToPmMap.length - 1]
+  return lastPmPos == null ? 0 : lastPmPos + 1
+}
+
+function resolvePmOffsetAfter(textToPmMap: number[], endOffset: number): number {
+  if (endOffset <= 0) return resolvePmOffset(textToPmMap, 0)
+
+  const lastIndex = Math.min(endOffset - 1, textToPmMap.length - 1)
+  const lastPmPos = textToPmMap[lastIndex]
+  if (lastPmPos == null) return resolvePmOffset(textToPmMap, endOffset)
+  return lastPmPos + 1
 }

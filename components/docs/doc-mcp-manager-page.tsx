@@ -8,7 +8,7 @@ import {
   createDefaultMcpServerFormValues,
   type McpServerFormValues,
 } from '@/lib/ai'
-import type { McpServerConfigListItem } from '@/lib/queries/mcp'
+import type { McpServerConfigListItem } from '@/lib/mcp-server-config'
 import { useMcpServers } from '@/hooks/use-mcp-servers'
 import {
   AlertDialog,

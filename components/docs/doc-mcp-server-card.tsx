@@ -1,6 +1,6 @@
 import { PencilLine, Trash2, Plug, Loader2 } from 'lucide-react'
 
-import type { McpServerConfigListItem } from '@/lib/queries/mcp'
+import type { McpServerConfigListItem } from '@/lib/mcp-server-config'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'

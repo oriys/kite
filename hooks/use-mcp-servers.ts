@@ -3,7 +3,12 @@
 import * as React from 'react'
 
 import type { McpServerFormValues } from '@/lib/ai'
-import type { McpServerConfigListItem } from '@/lib/queries/mcp'
+import {
+  normalizeMcpServerConfigList,
+  normalizeMcpServerConfigListItem,
+  normalizeMcpServerConnectionTestResult,
+  type McpServerConfigListItem,
+} from '@/lib/mcp-server-config'
 
 async function parseResponseError(response: Response) {
   const body = await response.json().catch(() => null)
@@ -30,7 +35,7 @@ export function useMcpServers() {
         throw new Error(await parseResponseError(response))
       }
 
-      const nextItems = (await response.json()) as McpServerConfigListItem[]
+      const nextItems = normalizeMcpServerConfigList(await response.json())
       setItems(nextItems)
       setError(null)
       return nextItems
@@ -65,7 +70,7 @@ export function useMcpServers() {
           throw new Error(await parseResponseError(response))
         }
 
-        const server = (await response.json()) as McpServerConfigListItem
+        const server = normalizeMcpServerConfigListItem(await response.json())
         await refresh().catch(() => undefined)
         return server
       } finally {
@@ -80,7 +85,7 @@ export function useMcpServers() {
       setMutating(true)
 
       try {
-        const response = await fetch(`/api/ai/mcp-servers/${id}`, {
+        const response = await fetch(`/api/ai/mcp-servers/${encodeURIComponent(id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(values),
@@ -90,7 +95,7 @@ export function useMcpServers() {
           throw new Error(await parseResponseError(response))
         }
 
-        const server = (await response.json()) as McpServerConfigListItem
+        const server = normalizeMcpServerConfigListItem(await response.json())
         await refresh().catch(() => undefined)
         return server
       } finally {
@@ -105,7 +110,7 @@ export function useMcpServers() {
       setMutating(true)
 
       try {
-        const response = await fetch(`/api/ai/mcp-servers/${id}`, {
+        const response = await fetch(`/api/ai/mcp-servers/${encodeURIComponent(id)}`, {
           method: 'DELETE',
         })
 
@@ -126,7 +131,7 @@ export function useMcpServers() {
       setMutating(true)
 
       try {
-        const response = await fetch(`/api/ai/mcp-servers/${id}`, {
+        const response = await fetch(`/api/ai/mcp-servers/${encodeURIComponent(id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled }),
@@ -146,21 +151,18 @@ export function useMcpServers() {
 
   const testConnection = React.useCallback(
     async (id: string) => {
-      const response = await fetch(`/api/ai/mcp-servers/${id}/test`, {
-        method: 'POST',
-      })
+      const response = await fetch(
+        `/api/ai/mcp-servers/${encodeURIComponent(id)}/test`,
+        {
+          method: 'POST',
+        },
+      )
 
       if (!response.ok) {
         throw new Error(await parseResponseError(response))
       }
 
-      return (await response.json()) as {
-        ok: boolean
-        toolCount: number
-        promptCount: number
-        resourceCount: number
-        error?: string
-      }
+      return normalizeMcpServerConnectionTestResult(await response.json())
     },
     [],
   )

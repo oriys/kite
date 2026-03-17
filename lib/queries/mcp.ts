@@ -1,37 +1,11 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
 
+import { getMcpTransportLabel } from '../ai'
 import { db } from '../db'
+import type { McpServerConfigListItem } from '../mcp-server-config'
 import { mcpServerConfigs } from '../schema'
 
 type McpServerConfigRow = typeof mcpServerConfigs.$inferSelect
-
-export interface McpServerConfigListItem {
-  id: string
-  name: string
-  transportType: McpServerConfigRow['transportType']
-  transportLabel: string
-  command: string
-  url: string
-  enabled: boolean
-  args: string[]
-  env: Record<string, string>
-  headers: Record<string, string>
-  argsCount: number
-  envCount: number
-  headersCount: number
-  createdAt: string
-  updatedAt: string
-}
-
-const TRANSPORT_LABELS: Record<McpServerConfigRow['transportType'], string> = {
-  stdio: 'Standard I/O',
-  sse: 'SSE',
-  streamable_http: 'Streamable HTTP',
-}
-
-function getTransportLabel(type: McpServerConfigRow['transportType']) {
-  return TRANSPORT_LABELS[type]
-}
 
 function asStringArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((v) => typeof v === 'string')
@@ -55,7 +29,7 @@ export function serializeMcpServerConfig(
     id: row.id,
     name: row.name,
     transportType: row.transportType,
-    transportLabel: getTransportLabel(row.transportType),
+    transportLabel: getMcpTransportLabel(row.transportType),
     command: row.command ?? '',
     url: row.url ?? '',
     enabled: row.enabled,

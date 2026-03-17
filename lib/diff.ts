@@ -217,11 +217,54 @@ export function diffWords(left: string, right: string): WordDiffChange[] {
 
 /**
  * Split text into word tokens preserving all whitespace.
- * Each token is either a word or a whitespace run.
+ * Each token is either a word, a whitespace run, or a single CJK character.
+ * This keeps diffs localized for Chinese/Japanese/Korean text where words
+ * are commonly written without spaces.
  */
 function tokenizeWords(text: string): string[] {
   if (!text) return []
-  return text.match(/\S+|\s+/g) ?? []
+  const tokens: string[] = []
+  let buffer = ''
+  let mode: 'word' | 'space' | null = null
+
+  const flush = () => {
+    if (!buffer) return
+    tokens.push(buffer)
+    buffer = ''
+    mode = null
+  }
+
+  const pushBuffered = (nextMode: 'word' | 'space', char: string) => {
+    if (mode === nextMode) {
+      buffer += char
+      return
+    }
+    flush()
+    buffer = char
+    mode = nextMode
+  }
+
+  for (const char of Array.from(text)) {
+    if (/\s/u.test(char)) {
+      pushBuffered('space', char)
+      continue
+    }
+
+    if (isCjkChar(char)) {
+      flush()
+      tokens.push(char)
+      continue
+    }
+
+    pushBuffered('word', char)
+  }
+
+  flush()
+  return tokens
+}
+
+function isCjkChar(char: string): boolean {
+  return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(char)
 }
 
 function buildWordChanges(

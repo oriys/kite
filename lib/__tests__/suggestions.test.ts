@@ -82,6 +82,17 @@ describe('diffWords', () => {
     expect(removes.length).toBeGreaterThan(0)
     expect(adds.length).toBeGreaterThan(0)
   })
+
+  it('keeps Chinese diffs scoped to changed characters', () => {
+    const changes = diffWords('保留正确中文内容', '保留更新中文内容')
+    const removes = changes.filter((c) => c.type === 'remove')
+    const adds = changes.filter((c) => c.type === 'add')
+
+    expect(removes).toHaveLength(1)
+    expect(adds).toHaveLength(1)
+    expect(removes[0].text).toBe('正确')
+    expect(adds[0].text).toBe('更新')
+  })
 })
 
 // ── createSuggestion ────────────────────────────────────────────
@@ -275,6 +286,34 @@ describe('changesToSuggestions', () => {
     expect(suggestions[0].replacementText).toBe('xxx yyy zzz')
     expect(suggestions[0].from).toBe(0)
     expect(suggestions[0].to).toBe(11)
+  })
+
+  it('keeps Chinese replacement ranges limited to the changed substring', () => {
+    const original = '保留正确中文内容'
+    const changes = diffWords(original, '保留更新中文内容')
+    const textToPmMap = Array.from({ length: original.length }, (_, i) => i)
+    const suggestions = changesToSuggestions(changes, textToPmMap, 'ai')
+
+    expect(suggestions).toHaveLength(1)
+    expect(suggestions[0].originalText).toBe('正确')
+    expect(suggestions[0].replacementText).toBe('更新')
+    expect(suggestions[0].from).toBe(2)
+    expect(suggestions[0].to).toBe(4)
+  })
+
+  it('maps insertions after the final original character', () => {
+    const changes: WordDiffChange[] = [
+      { type: 'equal', text: '中', origOffset: 0, origLength: 1 },
+      { type: 'equal', text: '文', origOffset: 1, origLength: 1 },
+      { type: 'add', text: '测试', origOffset: 2, origLength: 0 },
+    ]
+    const suggestions = changesToSuggestions(changes, [10, 11], 'ai')
+
+    expect(suggestions).toHaveLength(1)
+    expect(suggestions[0].originalText).toBe('')
+    expect(suggestions[0].replacementText).toBe('测试')
+    expect(suggestions[0].from).toBe(12)
+    expect(suggestions[0].to).toBe(12)
   })
 })
 
