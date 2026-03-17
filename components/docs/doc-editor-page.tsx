@@ -7,9 +7,11 @@ import { toast } from 'sonner'
 
 import { REVIEW_READ_ONLY_AI_ACTIONS } from '@/lib/ai'
 import {
+  areDocumentTagsEqual,
   getDocEditorHref,
   getDocumentIdentifier,
   isDocumentTitleMissing,
+  normalizeDocumentTags,
   normalizeDocumentSlug,
   type Doc,
   type DocStatus,
@@ -27,6 +29,7 @@ import { useDocEditorAiPanelSide } from '@/hooks/use-doc-editor-ai-panel-side'
 import { useDocument } from '@/hooks/use-documents'
 import { useDocEditorWidth } from '@/hooks/use-doc-editor-width'
 import { DocsForbiddenState } from '@/components/docs/docs-forbidden-state'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -74,6 +77,10 @@ function getEditorShellStyle(documentWidth: number) {
   return {
     maxWidth: `${clampDocEditorWidth(documentWidth)}px`,
   } satisfies React.CSSProperties
+}
+
+function formatDocumentTags(value: readonly string[]) {
+  return value.join(', ')
 }
 
 const LOCALE_OPTIONS = [
@@ -175,6 +182,7 @@ export function DocEditorPageClient() {
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
   const [category, setCategory] = React.useState('')
+  const [tagsInput, setTagsInput] = React.useState('')
   const [slugInput, setSlugInput] = React.useState('')
   const [activeLocale, setActiveLocale] = React.useState('en')
   const [activeTranslationId, setActiveTranslationId] = React.useState<string | null>(
@@ -427,6 +435,7 @@ export function DocEditorPageClient() {
         translationId: null,
       })
       setCategory(doc.category ?? '')
+      setTagsInput(formatDocumentTags(doc.tags ?? []))
       setSlugInput(doc.slug ?? '')
       setVisibility(doc.visibility)
       setInitializedDocId(doc.id)
@@ -439,6 +448,7 @@ export function DocEditorPageClient() {
       setTitle('')
       setContent('')
       setCategory('')
+      setTagsInput('')
       setSlugInput('')
       setActiveLocale('en')
       setActiveTranslationId(null)
@@ -856,6 +866,46 @@ export function DocEditorPageClient() {
       }
     },
     [category, handleCategorySave],
+  )
+
+  const handleTagsSave = React.useCallback(
+    async (nextTagsValue: string) => {
+      if (!docId) return
+
+      const normalizedTags = normalizeDocumentTags(nextTagsValue)
+      if (areDocumentTagsEqual(normalizedTags, doc?.tags ?? [])) {
+        setTagsInput(formatDocumentTags(normalizedTags))
+        return
+      }
+
+      setTagsInput(formatDocumentTags(normalizedTags))
+
+      try {
+        const res = await fetch(`/api/documents/${docId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tags: normalizedTags }),
+        })
+        if (!res.ok) throw new Error('Failed to update tags')
+        await refresh()
+        toast.success(normalizedTags.length > 0 ? 'Tags updated' : 'Tags cleared')
+      } catch {
+        setTagsInput(formatDocumentTags(doc?.tags ?? []))
+        toast.error('Failed to update tags')
+      }
+    },
+    [doc?.tags, docId, refresh],
+  )
+
+  const handleTagsKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        void handleTagsSave(tagsInput)
+        editorFocusRef.current?.focus()
+      }
+    },
+    [handleTagsSave, tagsInput],
   )
 
   const handleSlugSave = React.useCallback(
@@ -1545,13 +1595,13 @@ export function DocEditorPageClient() {
                 {isReadOnly ? (
                   category ? (
                     <div className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 text-xs text-muted-foreground">
-                      <Tag className="size-3.5" />
+                      <List className="size-3.5" />
                       <span className="max-w-[160px] truncate">{category}</span>
                     </div>
                   ) : null
                 ) : (
                   <div className="flex h-8 w-[170px] items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5">
-                    <Tag className="size-3.5 text-muted-foreground" />
+                    <List className="size-3.5 text-muted-foreground" />
                     <Input
                       value={category}
                       onChange={(e) => setCategory(e.target.value)}
@@ -1559,6 +1609,37 @@ export function DocEditorPageClient() {
                       onKeyDown={handleCategoryKeyDown}
                       aria-label="Document category"
                       placeholder="Category"
+                      className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                )}
+                {isReadOnly ? (
+                  doc.tags.length > 0 ? (
+                    <div className="inline-flex min-h-8 max-w-full items-start gap-1.5 rounded-md border border-border/70 bg-muted/25 px-2.5 py-1.5 text-xs text-muted-foreground">
+                      <Tag className="mt-0.5 size-3.5 shrink-0" />
+                      <div className="flex flex-wrap gap-1">
+                        {doc.tags.map((tag) => (
+                          <Badge
+                            key={tag}
+                            variant="outline"
+                            className="h-5 rounded-md border-border/60 bg-background/60 px-1.5 text-[10px] font-medium text-muted-foreground"
+                          >
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null
+                ) : (
+                  <div className="flex min-h-8 min-w-[220px] max-w-full items-center gap-1.5 rounded-md border border-input/80 bg-background/80 px-2.5">
+                    <Tag className="size-3.5 text-muted-foreground" />
+                    <Input
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      onBlur={() => void handleTagsSave(tagsInput)}
+                      onKeyDown={handleTagsKeyDown}
+                      aria-label="Document tags"
+                      placeholder="Tags, comma separated"
                       className="h-auto border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
                     />
                   </div>

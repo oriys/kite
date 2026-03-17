@@ -246,6 +246,7 @@ function normalizeDocumentListPage(raw: unknown): DocumentListResponse {
         archived: 0,
       },
       categories: [],
+      tags: [],
       pagination: {
         page: 1,
         pageSize: DOCUMENT_SELECTOR_PAGE_SIZE,
@@ -268,6 +269,7 @@ function normalizeDocumentListPage(raw: unknown): DocumentListResponse {
     categories: Array.isArray(payload.categories)
       ? payload.categories.map((value) => String(value))
       : [],
+    tags: Array.isArray(payload.tags) ? payload.tags.map((value) => String(value)) : [],
     pagination: {
       page: payload.pagination?.page ?? 1,
       pageSize: payload.pagination?.pageSize ?? DOCUMENT_SELECTOR_PAGE_SIZE,

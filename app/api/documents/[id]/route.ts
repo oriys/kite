@@ -19,7 +19,10 @@ import {
   MAX_TITLE_LENGTH,
   MAX_CONTENT_SIZE,
   MAX_DOCUMENT_CATEGORY_LENGTH,
+  MAX_DOCUMENT_TAG_COUNT,
+  MAX_DOCUMENT_TAG_LENGTH,
 } from '@/lib/constants'
+import { coerceDocumentTagsInput } from '@/lib/documents'
 import { visibilityEnum } from '@/lib/schema'
 
 export async function GET(
@@ -56,12 +59,20 @@ export async function PATCH(
     title?: string
     slug?: string
     category?: string
+    tags?: string[]
     content?: string
     visibility?: (typeof visibilityEnum.enumValues)[number]
   } = {}
   if (typeof body.title === 'string') patch.title = body.title
   if (typeof body.slug === 'string') patch.slug = body.slug
   if (typeof body.category === 'string') patch.category = body.category.trim()
+  if (body.tags !== undefined) {
+    const tags = coerceDocumentTagsInput(body.tags)
+    if (tags === null) {
+      return badRequest('Invalid tags')
+    }
+    patch.tags = tags
+  }
   if (typeof body.content === 'string') patch.content = body.content
   if (body.visibility !== undefined) {
     if (
@@ -79,6 +90,12 @@ export async function PATCH(
   if (patch.category !== undefined && patch.category.length > MAX_DOCUMENT_CATEGORY_LENGTH) {
     return badRequest('Category too long')
   }
+  if (patch.tags !== undefined && patch.tags.length > MAX_DOCUMENT_TAG_COUNT) {
+    return badRequest('Too many tags')
+  }
+  if (patch.tags !== undefined && patch.tags.some((tag) => tag.length > MAX_DOCUMENT_TAG_LENGTH)) {
+    return badRequest('Tag too long')
+  }
   if (patch.content !== undefined && patch.content.length > MAX_CONTENT_SIZE) return badRequest('Content too large')
 
   const existing = await getDocumentByIdentifier(id, result.ctx.workspaceId)
@@ -93,6 +110,7 @@ export async function PATCH(
     patch.title !== undefined ||
     patch.slug !== undefined ||
     patch.category !== undefined ||
+    patch.tags !== undefined ||
     patch.content !== undefined
   if (includesContentChange && !access.canEdit) return forbidden()
   if (patch.visibility !== undefined && !access.canManagePermissions) {

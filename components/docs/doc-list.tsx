@@ -1,10 +1,19 @@
 'use client'
 
 import Link from 'next/link'
-import { Clock, FileText, GitCompareArrows, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  FileText,
+  GitCompareArrows,
+  Tag,
+  Trash2,
+} from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { type Doc, getDocEditorHref, getStatusConfig } from '@/lib/documents'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import {
@@ -109,11 +118,43 @@ export function DocList({
               >
                 <Link
                   href={getDocEditorHref(doc)}
-                  className="min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  className="block min-w-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
-                  <p className="truncate text-sm font-medium leading-5 text-foreground transition-colors group-hover:text-accent-foreground">
-                    {doc.title || 'Untitled'}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium leading-5 text-foreground transition-colors group-hover:text-accent-foreground">
+                      {doc.title || 'Untitled'}
+                    </p>
+                    {doc.category || doc.tags.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                        {doc.category ? (
+                          <Badge
+                            variant="secondary"
+                            className="h-5 rounded-md px-1.5 text-[10px] font-medium"
+                          >
+                            {doc.category}
+                          </Badge>
+                        ) : null}
+                        {doc.tags.length > 0 ? <Tag className="size-3 text-muted-foreground" /> : null}
+                        {doc.tags.slice(0, 3).map((tag) => (
+                          <Badge
+                            key={tag}
+                            variant="outline"
+                            className="h-5 rounded-md border-border/60 bg-background/60 px-1.5 text-[10px] font-medium text-muted-foreground"
+                          >
+                            {tag}
+                          </Badge>
+                        ))}
+                        {doc.tags.length > 3 ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 rounded-md border-border/60 bg-background/60 px-1.5 text-[10px] font-medium text-muted-foreground"
+                          >
+                            +{doc.tags.length - 3}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </Link>
 
                 <div className="flex items-center lg:justify-start">

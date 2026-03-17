@@ -11,10 +11,14 @@ import {
   MAX_TITLE_LENGTH,
   MAX_CONTENT_SIZE,
   MAX_DOCUMENT_CATEGORY_LENGTH,
+  MAX_DOCUMENT_TAG_COUNT,
+  MAX_DOCUMENT_TAG_LENGTH,
 } from '@/lib/constants'
 import {
+  coerceDocumentTagsInput,
   createEmptyDocumentCounts,
   isDocumentSort,
+  normalizeDocumentTags,
   type DocStatus,
   type DocumentListCounts,
   type DocumentSort,
@@ -32,6 +36,7 @@ export async function GET(request: NextRequest) {
   const rawPageSize = searchParams.get('page_size')
   const rawSort = searchParams.get('sort')
   const rawCategory = searchParams.get('category')
+  const rawTag = searchParams.get('tag')
 
   let statusFilter: DocStatus | undefined
   if (rawStatus) {
@@ -65,6 +70,7 @@ export async function GET(request: NextRequest) {
     result.ctx.role,
   )
   const visibleDocs = docs.filter((doc) => accessMap.get(doc.id)?.canView)
+  const selectedTag = normalizeDocumentTags(rawTag).at(0)
   const categories = Array.from(
     new Set(
       visibleDocs
@@ -72,17 +78,23 @@ export async function GET(request: NextRequest) {
         .filter((value) => value.length > 0),
     ),
   ).sort((left, right) => left.localeCompare(right))
+  const tags = Array.from(
+    new Set(visibleDocs.flatMap((doc) => doc.tags)),
+  ).sort((left, right) => left.localeCompare(right))
   const categoryFilteredDocs = rawCategory?.trim()
     ? visibleDocs.filter((doc) => doc.category.trim() === rawCategory.trim())
     : visibleDocs
-  const counts = categoryFilteredDocs.reduce<DocumentListCounts>((acc, doc) => {
+  const tagFilteredDocs = selectedTag
+    ? categoryFilteredDocs.filter((doc) => doc.tags.includes(selectedTag))
+    : categoryFilteredDocs
+  const counts = tagFilteredDocs.reduce<DocumentListCounts>((acc, doc) => {
     acc.all += 1
     acc[doc.status] += 1
     return acc
   }, createEmptyDocumentCounts())
   const filteredDocs = statusFilter
-    ? categoryFilteredDocs.filter((doc) => doc.status === statusFilter)
-    : categoryFilteredDocs
+    ? tagFilteredDocs.filter((doc) => doc.status === statusFilter)
+    : tagFilteredDocs
   const total = filteredDocs.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -93,10 +105,11 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(
     {
-      items: pageItems,
-      counts,
-      categories,
-      pagination: {
+        items: pageItems,
+        counts,
+        categories,
+        tags,
+        pagination: {
         page: currentPage,
         pageSize,
         total,
@@ -117,10 +130,16 @@ export async function POST(request: NextRequest) {
   const content = typeof body.content === 'string' ? body.content : ''
   const category =
     typeof body.category === 'string' ? body.category.trim() : ''
+  const tags = coerceDocumentTagsInput(body.tags)
 
   if (title.length > MAX_TITLE_LENGTH) return badRequest('Title too long')
   if (category.length > MAX_DOCUMENT_CATEGORY_LENGTH) {
     return badRequest('Category too long')
+  }
+  if (tags === null) return badRequest('Invalid tags')
+  if (tags.length > MAX_DOCUMENT_TAG_COUNT) return badRequest('Too many tags')
+  if (tags.some((tag) => tag.length > MAX_DOCUMENT_TAG_LENGTH)) {
+    return badRequest('Tag too long')
   }
   if (content.length > MAX_CONTENT_SIZE) return badRequest('Content too large')
 
@@ -131,6 +150,7 @@ export async function POST(request: NextRequest) {
     result.ctx.userId,
     '',
     category,
+    tags,
   )
 
   const accessMap = await buildDocumentAccessMap(

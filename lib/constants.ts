@@ -11,6 +11,8 @@ export const VALID_STATUSES: readonly DocStatus[] = [
 
 export const MAX_TITLE_LENGTH = 255
 export const MAX_DOCUMENT_CATEGORY_LENGTH = 64
+export const MAX_DOCUMENT_TAG_COUNT = 20
+export const MAX_DOCUMENT_TAG_LENGTH = 32
 export const MAX_CONTENT_SIZE = 10 * 1024 * 1024 // 10 MB
 export const DOCUMENT_PERMISSION_LEVELS = ['view', 'edit', 'manage'] as const
 

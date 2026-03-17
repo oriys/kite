@@ -18,6 +18,7 @@ import { rebuildWorkspaceDocumentRelations } from '../document-relations'
 import {
   MAX_DOCUMENT_SLUG_LENGTH,
   normalizeDocumentSlug,
+  normalizeDocumentTags,
   type DocumentSort,
 } from '../documents'
 import {
@@ -44,6 +45,7 @@ interface ImportDocumentInput {
   slug?: string
   content: string
   summary?: string
+  tags?: string[]
   status?: DocStatusValue
   createdAt?: string
   updatedAt?: string
@@ -137,6 +139,11 @@ export async function listDocuments(
         ilike(documents.title, pattern),
         ilike(documents.summary, pattern),
         ilike(documents.content, pattern),
+        sql<boolean>`exists (
+          select 1
+          from unnest(${documents.tags}) as document_tag(tag)
+          where tag ilike ${pattern}
+        )`,
       )!,
     )
   }
@@ -165,6 +172,7 @@ export async function listDocuments(
       title: documents.title,
       slug: documents.slug,
       category: documents.category,
+      tags: documents.tags,
       content: sql<string>`''`,
       summary: documents.summary,
       preview:
@@ -239,18 +247,20 @@ export async function createDocument(
   createdBy: string,
   summary = '',
   category = '',
+  tags: readonly string[] = [],
 ) {
   const allocateSlug = await createDocumentSlugAllocator(workspaceId)
   const [doc] = await db
     .insert(documents)
     .values({
       workspaceId,
-      title,
-      slug: allocateSlug(title),
-      category,
-      content,
-      summary,
-      createdBy,
+        title,
+        slug: allocateSlug(title),
+        category,
+        tags: normalizeDocumentTags(tags),
+        content,
+        summary,
+        createdBy,
     })
     .returning()
 
@@ -278,6 +288,7 @@ export async function importDocuments(
         slug: allocateSlug(sourceDoc.slug?.trim() || sourceDoc.title),
         content: sourceDoc.content,
         summary: sourceDoc.summary ?? '',
+        tags: normalizeDocumentTags(sourceDoc.tags),
         status: (sourceDoc.status ?? 'draft') as DocStatusValue,
         createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
         updatedAt: Number.isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
@@ -329,6 +340,7 @@ export async function updateDocument(
     title?: string
     slug?: string
     category?: string
+    tags?: string[]
     content?: string
     visibility?: VisibilityValue
   },
@@ -384,8 +396,16 @@ export async function updateDocument(
       )
   }
 
-  const documentPatch = { ...patch }
-  delete documentPatch.slug
+  const documentPatch: {
+    title?: string
+    category?: string
+    tags?: string[]
+    content?: string
+    visibility?: VisibilityValue
+  } = { ...patch }
+  if (patch.tags !== undefined) {
+    documentPatch.tags = normalizeDocumentTags(patch.tags)
+  }
   const [updated] = await db
     .update(documents)
     .set({
@@ -469,6 +489,7 @@ export async function duplicateDocument(
     userId,
     source.summary,
     source.category,
+    source.tags,
   )
 }
 

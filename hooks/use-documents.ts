@@ -17,6 +17,7 @@ interface UseDocumentsOptions {
   pageSize?: number
   sort?: DocumentSort
   category?: string
+  tag?: string
 }
 
 export function useDocuments(
@@ -31,6 +32,7 @@ export function useDocuments(
     createEmptyDocumentCounts(),
   )
   const [categories, setCategories] = React.useState<string[]>([])
+  const [tags, setTags] = React.useState<string[]>([])
   const [pagination, setPagination] = React.useState<DocumentListPagination>({
     page: options.page ?? 1,
     pageSize: options.pageSize ?? 100,
@@ -42,6 +44,7 @@ export function useDocuments(
   const pageSize = options.pageSize ?? 100
   const sort = options.sort ?? 'updated_desc'
   const category = options.category?.trim() ?? ''
+  const tag = options.tag?.trim().toLowerCase() ?? ''
 
   const refresh = React.useCallback(async (options: { silent?: boolean } = {}) => {
     const requestId = ++requestIdRef.current
@@ -56,6 +59,7 @@ export function useDocuments(
       if (apiVersionId) params.set('api_version_id', apiVersionId)
       if (searchQuery?.trim()) params.set('q', searchQuery.trim())
       if (category) params.set('category', category)
+      if (tag) params.set('tag', tag)
       params.set('page', String(page))
       params.set('page_size', String(pageSize))
       params.set('sort', sort)
@@ -67,6 +71,7 @@ export function useDocuments(
           setItems(payload.items)
           setCounts(payload.counts)
           setCategories(payload.categories)
+          setTags(payload.tags)
           setPagination(payload.pagination)
         }
         return payload.items
@@ -78,7 +83,7 @@ export function useDocuments(
         setLoading(false)
       }
     }
-  }, [apiVersionId, category, page, pageSize, searchQuery, sort, statusFilter])
+  }, [apiVersionId, category, page, pageSize, searchQuery, sort, statusFilter, tag])
 
   React.useEffect(() => {
     void refresh()
@@ -106,7 +111,7 @@ export function useDocuments(
     [refresh],
   )
 
-  return { items, counts, categories, pagination, loading, refresh, create, remove }
+  return { items, counts, categories, tags, pagination, loading, refresh, create, remove }
 }
 
 export function useDocument(id?: string | null) {
@@ -139,7 +144,9 @@ export function useDocument(id?: string | null) {
   }, [refresh])
 
   const update = React.useCallback(
-    async (patch: Partial<Pick<Doc, 'title' | 'slug' | 'category' | 'content'>>) => {
+    async (
+      patch: Partial<Pick<Doc, 'title' | 'slug' | 'category' | 'tags' | 'content'>>,
+    ) => {
       if (!id) return undefined
       const res = await fetch(`/api/documents/${id}`, {
         method: 'PATCH',
@@ -205,6 +212,7 @@ function normalizeDoc(raw: Record<string, unknown>): Doc {
         ? null
         : String(raw.slug),
     category: String(raw.category ?? ''),
+    tags: Array.isArray(raw.tags) ? raw.tags.map((value) => String(value)) : [],
     content: String(raw.content ?? ''),
     summary: String(raw.summary ?? ''),
     preview:
@@ -266,6 +274,7 @@ function normalizeDocCollection(
       items,
       counts,
       categories: [],
+      tags: [],
       pagination: {
         page: fallbackPage,
         pageSize: fallbackPageSize,
@@ -279,6 +288,7 @@ function normalizeDocCollection(
     items?: unknown[]
     counts?: Partial<DocumentListCounts>
     categories?: unknown[]
+    tags?: unknown[]
     pagination?: Partial<DocumentListPagination>
   }
   const items = Array.isArray(payload.items) ? normalizeDocList(payload.items) : []
@@ -300,6 +310,7 @@ function normalizeDocCollection(
     categories: Array.isArray(payload.categories)
       ? payload.categories.map((value) => String(value))
       : [],
+    tags: Array.isArray(payload.tags) ? payload.tags.map((value) => String(value)) : [],
     pagination,
   }
 }

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowUpDown, ListFilter, Plus, Search } from 'lucide-react'
+import { ArrowUpDown, ListFilter, Plus, Search, Tag } from 'lucide-react'
 
 import {
   DOCUMENT_SORT_OPTIONS,
@@ -48,6 +48,7 @@ const SUMMARY_REFRESH_INTERVAL_MS = 1500
 const SUMMARY_REFRESH_MAX_ATTEMPTS = 6
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
 const ALL_CATEGORIES_VALUE = '__all_categories__'
+const ALL_TAGS_VALUE = '__all_tags__'
 
 export default function DocsPage() {
   const mounted = useMounted()
@@ -63,13 +64,25 @@ export default function DocsPage() {
   const [pageSize, setPageSize] = React.useState<number>(20)
   const [currentPage, setCurrentPage] = React.useState(1)
   const [categoryFilter, setCategoryFilter] = React.useState('')
+  const [tagFilter, setTagFilter] = React.useState('')
   const pendingSummaryRefreshRef = React.useRef(false)
-  const { items, counts, categories, pagination, loading, create, remove, refresh } = useDocuments(
+  const {
+    items,
+    counts,
+    categories,
+    tags: availableTags,
+    pagination,
+    loading,
+    create,
+    remove,
+    refresh,
+  } = useDocuments(
     filter === 'all' ? undefined : filter,
     currentVersionId,
     debouncedSearchQuery,
     {
       category: categoryFilter,
+      tag: tagFilter,
       page: currentPage,
       pageSize,
       sort,
@@ -88,7 +101,7 @@ export default function DocsPage() {
 
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [categoryFilter, currentVersionId, debouncedSearchQuery, filter, pageSize, sort])
+  }, [categoryFilter, currentVersionId, debouncedSearchQuery, filter, pageSize, sort, tagFilter])
 
   React.useEffect(() => {
     if (currentPage > pagination.totalPages) {
@@ -243,7 +256,7 @@ export default function DocsPage() {
               className="h-8 pl-8 text-xs"
             />
           </div>
-          <div className="grid gap-2.5 sm:grid-cols-3 lg:ml-auto lg:flex lg:items-center">
+          <div className="grid gap-2.5 sm:grid-cols-4 lg:ml-auto lg:flex lg:items-center">
             <div className="flex items-center gap-2">
               <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
                 <ListFilter className="size-3.5" />
@@ -273,6 +286,34 @@ export default function DocsPage() {
               ) : (
                 <div className={cn(controlPlaceholderClassName, 'min-w-[150px]')}>
                   {categoryFilter || 'All categories'}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
+                <Tag className="size-3.5" />
+                Tag
+              </span>
+              {mounted ? (
+                <Select
+                  value={tagFilter || ALL_TAGS_VALUE}
+                  onValueChange={(value) => setTagFilter(value === ALL_TAGS_VALUE ? '' : value)}
+                >
+                  <SelectTrigger size="sm" className="h-8 min-w-[150px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value={ALL_TAGS_VALUE}>All tags</SelectItem>
+                    {availableTags.map((tag) => (
+                      <SelectItem key={tag} value={tag}>
+                        {tag}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className={cn(controlPlaceholderClassName, 'min-w-[150px]')}>
+                  {tagFilter || 'All tags'}
                 </div>
               )}
             </div>

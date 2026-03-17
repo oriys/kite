@@ -73,6 +73,7 @@ export interface Doc {
   title: string
   slug: string | null
   category: string
+  tags: string[]
   content: string
   summary: string
   preview?: string
@@ -122,6 +123,7 @@ export interface DocumentListResponse {
   items: Doc[]
   counts: DocumentListCounts
   categories: string[]
+  tags: string[]
   pagination: DocumentListPagination
 }
 
@@ -154,6 +156,57 @@ export function normalizeDocumentSlug(value: string) {
   }
 
   return clampDocumentSlugLength(`doc-${baseSlug}`)
+}
+
+export function normalizeDocumentTags(value: readonly string[] | string | null | undefined) {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,\n]/g)
+      : []
+
+  const seen = new Set<string>()
+
+  return rawValues.reduce<string[]>((acc, item) => {
+    const normalized = item.trim().toLowerCase()
+
+    if (!normalized || seen.has(normalized)) {
+      return acc
+    }
+
+    seen.add(normalized)
+    acc.push(normalized)
+    return acc
+  }, [])
+}
+
+export function coerceDocumentTagsInput(value: unknown) {
+  if (value === undefined || value === null) {
+    return []
+  }
+
+  if (typeof value === 'string') {
+    return normalizeDocumentTags(value)
+  }
+
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return normalizeDocumentTags(value)
+  }
+
+  return null
+}
+
+export function areDocumentTagsEqual(
+  left: readonly string[] | string | null | undefined,
+  right: readonly string[] | string | null | undefined,
+) {
+  const normalizedLeft = normalizeDocumentTags(left)
+  const normalizedRight = normalizeDocumentTags(right)
+
+  return (
+    normalizedLeft.length === normalizedRight.length
+    && normalizedLeft.every((tag, index) => tag === normalizedRight[index])
+  )
 }
 
 export function isDocumentSlug(value: string | null | undefined) {

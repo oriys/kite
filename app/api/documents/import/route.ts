@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import { importDocuments } from '@/lib/queries/documents'
-import type { DocStatus } from '@/lib/documents'
+import { coerceDocumentTagsInput, type DocStatus } from '@/lib/documents'
 import {
   isValidStatus,
   MAX_IMPORT_COUNT,
   MAX_TITLE_LENGTH,
   MAX_CONTENT_SIZE,
+  MAX_DOCUMENT_TAG_COUNT,
+  MAX_DOCUMENT_TAG_LENGTH,
 } from '@/lib/constants'
 
 interface ImportVersionPayload {
@@ -19,6 +21,7 @@ interface ImportVersionPayload {
 interface ImportDocumentPayload {
   title: string
   content: string
+  tags?: string[]
   status?: DocStatus
   createdAt?: string
   updatedAt?: string
@@ -46,10 +49,14 @@ function normalizeDocument(raw: unknown): ImportDocumentPayload | null {
   const titleValue = typeof doc.title === 'string' ? doc.title.trim() : ''
   const content = typeof doc.content === 'string' ? doc.content : null
   const status = typeof doc.status === 'string' ? doc.status : undefined
+  const tags = coerceDocumentTagsInput(doc.tags)
 
   if (content === null) return null
   if (titleValue.length > MAX_TITLE_LENGTH || content.length > MAX_CONTENT_SIZE) return null
   if (status && !isValidStatus(status)) return null
+  if (tags === null) return null
+  if (tags.length > MAX_DOCUMENT_TAG_COUNT) return null
+  if (tags.some((tag) => tag.length > MAX_DOCUMENT_TAG_LENGTH)) return null
 
   const versions = Array.isArray(doc.versions)
     ? doc.versions
@@ -60,6 +67,7 @@ function normalizeDocument(raw: unknown): ImportDocumentPayload | null {
   return {
     title: titleValue || 'Untitled',
     content,
+    tags: tags ?? [],
     status: status as DocStatus | undefined,
     createdAt: typeof doc.createdAt === 'string' ? doc.createdAt : undefined,
     updatedAt: typeof doc.updatedAt === 'string' ? doc.updatedAt : undefined,

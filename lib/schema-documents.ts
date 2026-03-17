@@ -48,6 +48,7 @@ export const documents = pgTable(
     title: text('title').notNull().default('Untitled'),
     slug: text('slug'),
     category: text('category').notNull().default(''),
+    tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
     content: text('content').notNull().default(''),
     summary: text('summary').notNull().default(''),
     status: docStatusEnum('status').notNull().default('draft'),
