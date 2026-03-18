@@ -13,8 +13,8 @@
     "test:watch": "vitest",
     "db:generate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs generate",
     "db:migrate": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs migrate",
-    "db:push": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs push",
-    "db:push:neon": "node --env-file=.env.neon ./node_modules/drizzle-kit/bin.cjs push",
+    "db:push": "node --env-file=.env ./scripts/run-drizzle-push.mjs",
+    "db:push:neon": "node --env-file=.env.neon ./scripts/run-drizzle-push.mjs",
     "db:studio": "node --env-file=.env ./node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {

@@ -99,7 +99,7 @@ export const userFeaturePreferences = pgTable(
   'user_feature_preferences',
   {
     userId: text('user_id')
-      .notNull()
+      .primaryKey()
       .references(() => users.id, { onDelete: 'cascade' }),
     openApiEnabled: boolean('openapi_enabled').notNull().default(true),
     templatesEnabled: boolean('templates_enabled').notNull().default(true),
@@ -112,5 +112,4 @@ export const userFeaturePreferences = pgTable(
     navOrder: jsonb('nav_order').$type<string[]>(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId] })],
 )

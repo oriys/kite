@@ -16,7 +16,7 @@ const databaseUrl =
     : 'postgresql://placeholder:placeholder@db.invalid:5432/placeholder'
 
 export default defineConfig({
-  schema: './lib/schema*.ts',
+  schema: './lib/schema.ts',
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
