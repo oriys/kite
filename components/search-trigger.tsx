@@ -22,7 +22,7 @@ export function SearchTrigger() {
         <Search className="size-4" />
       </InputGroupAddon>
       <InputGroupInput
-        placeholder="Search tokens, patterns, and blocks"
+        placeholder="Search docs…"
         readOnly
         className="cursor-pointer"
       />

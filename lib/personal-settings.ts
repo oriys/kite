@@ -1,5 +1,6 @@
 export const PERSONAL_FEATURE_IDS = [
   'openApi',
+  'grpc',
   'templates',
   'aiWorkspace',
   'analytics',
@@ -15,6 +16,7 @@ export const NAV_ITEM_KEYS = [
   'documents',
   'compare',
   'openApi',
+  'grpc',
   'analytics',
   'templates',
   'approvals',
@@ -28,6 +30,7 @@ export const DEFAULT_NAV_ORDER: NavItemKey[] = [...NAV_ITEM_KEYS]
 
 const DEFAULT_PERSONAL_FEATURE_VISIBILITY: PersonalFeatureVisibility = {
   openApi: true,
+  grpc: true,
   templates: true,
   aiWorkspace: true,
   analytics: true,
@@ -48,6 +51,12 @@ export const PERSONAL_FEATURE_CONFIG: Record<
     description:
       'Hide OpenAPI source management when you are not importing or syncing API specs.',
     href: '/docs/openapi',
+  },
+  grpc: {
+    label: 'gRPC',
+    description:
+      'Hide gRPC service management when you are not importing or browsing proto definitions.',
+    href: '/docs/grpc',
   },
   templates: {
     label: 'Templates',
@@ -101,6 +110,8 @@ export function createPersonalFeatureVisibilityUpdate(
   enabled: boolean,
 ): Partial<PersonalFeatureVisibility> {
   switch (featureId) {
+    case 'grpc':
+      return { grpc: enabled }
     case 'openApi':
       return { openApi: enabled }
     case 'templates':
@@ -113,6 +124,10 @@ export function createPersonalFeatureVisibilityUpdate(
       return { approvals: enabled }
     case 'linkHealth':
       return { linkHealth: enabled }
+    default: {
+      const exhaustiveCheck: never = featureId
+      throw new Error(`Unsupported personal feature: ${exhaustiveCheck}`)
+    }
   }
 }
 

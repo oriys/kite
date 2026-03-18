@@ -60,6 +60,7 @@ const NAV_ITEM_LABELS: Record<NavItemKey, string> = {
   documents: 'Documents',
   compare: 'Compare',
   openApi: 'OpenAPI',
+  grpc: 'gRPC',
   analytics: 'Analytics',
   templates: 'Templates',
   approvals: 'Approvals',

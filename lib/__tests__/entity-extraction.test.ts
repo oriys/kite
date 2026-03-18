@@ -247,6 +247,7 @@ describe('ENTITY_EXTRACTION_SYSTEM_PROMPT', () => {
 describe('mergeEntityDescriptions', () => {
   it('returns existing when new is empty', async () => {
     const result = await mergeEntityDescriptions({
+      workspaceId: 'ws_test',
       existingDescription: 'Existing desc',
       newDescription: '',
       entityName: 'Foo',
@@ -257,6 +258,7 @@ describe('mergeEntityDescriptions', () => {
 
   it('returns new when existing is empty', async () => {
     const result = await mergeEntityDescriptions({
+      workspaceId: 'ws_test',
       existingDescription: '',
       newDescription: 'New desc',
       entityName: 'Foo',
@@ -267,6 +269,7 @@ describe('mergeEntityDescriptions', () => {
 
   it('concatenates descriptions below threshold', async () => {
     const result = await mergeEntityDescriptions({
+      workspaceId: 'ws_test',
       existingDescription: 'First description',
       newDescription: 'Second description',
       entityName: 'Foo',
@@ -277,6 +280,7 @@ describe('mergeEntityDescriptions', () => {
 
   it('truncates when above threshold without LLM provider', async () => {
     const result = await mergeEntityDescriptions({
+      workspaceId: 'ws_test',
       existingDescription: 'A'.repeat(3000),
       newDescription: 'B'.repeat(3000),
       entityName: 'Foo',

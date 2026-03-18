@@ -13,6 +13,7 @@ import {
   LayoutTemplate,
   LinkIcon,
   Menu,
+  Network,
   Search,
   Settings,
 } from 'lucide-react'
@@ -41,7 +42,6 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { UserMenu } from '@/components/auth/user-menu'
 import { GlobalSearch } from '@/components/global-search'
 import { NotificationBell } from '@/components/notification-bell'
-import { AiChatTrigger } from '@/components/ai-chat-panel'
 
 const NAV_ITEMS: ReadonlyArray<{
   key: NavItemKey
@@ -58,6 +58,13 @@ const NAV_ITEMS: ReadonlyArray<{
     label: 'OpenAPI',
     icon: Braces,
     featureId: 'openApi' as PersonalFeatureId,
+  },
+  {
+    key: 'grpc',
+    href: '/docs/grpc',
+    label: 'gRPC',
+    icon: Network,
+    featureId: 'grpc' as PersonalFeatureId,
   },
   {
     key: 'analytics',
@@ -384,7 +391,6 @@ export function DocsTopNav() {
           >
             <Search className="size-4" />
           </Button>
-          <AiChatTrigger />
           <NotificationBell />
           <ThemeToggle />
           <UserMenu />

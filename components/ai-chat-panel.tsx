@@ -18,7 +18,7 @@ import {
 import { MarkdownPreview } from '@/components/docs/markdown-preview'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { useAiChat, type ChatMessage, type ChatSession } from '@/hooks/use-ai-chat'
 import {
@@ -39,14 +39,14 @@ interface AiChatPanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   documentId?: string
+  initialInput?: string | null
+  resetOnInitialInput?: boolean
+  onInitialInputApplied?: () => void
 }
 
 const MARKDOWN_HINT_RE =
   /(^#{1,6}\s)|(^>\s)|(^[-*+]\s)|(^\d+\.\s)|(```)|(\[[^\]]+\]\([^)]+\))|(^\|.+\|$)/m
 const COMPOSER_MAX_HEIGHT = 220
-const DESKTOP_MIN_WIDTH = 420
-const DEFAULT_DRAWER_WIDTH = 560
-const RESIZE_STEP = 24
 
 function looksLikeJsonDocument(value: string) {
   if (!/^[\[{]/.test(value) || !/[\]}]$/.test(value)) {
@@ -131,16 +131,14 @@ function normalizeAssistantContent(content: string) {
   return `\`\`\`${language}\n${trimmed}\n\`\`\``
 }
 
-function clampDrawerWidth(nextWidth: number) {
-  if (typeof window === 'undefined') {
-    return nextWidth
-  }
-
-  const maxWidth = Math.max(DESKTOP_MIN_WIDTH, Math.floor(window.innerWidth * 0.5))
-  return Math.min(Math.max(nextWidth, DESKTOP_MIN_WIDTH), maxWidth)
-}
-
-export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps) {
+export function AiChatPanel({
+  open,
+  onOpenChange,
+  documentId,
+  initialInput,
+  resetOnInitialInput = false,
+  onInitialInputApplied,
+}: AiChatPanelProps) {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -163,11 +161,10 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
 
   const [historyOpen, setHistoryOpen] = React.useState(false)
   const [input, setInput] = React.useState('')
-  const [drawerWidth, setDrawerWidth] = React.useState(DEFAULT_DRAWER_WIDTH)
   const [pendingSessionId, setPendingSessionId] = React.useState<string | null>(null)
-  const resizeStateRef = React.useRef<{ startX: number; startWidth: number } | null>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLTextAreaElement>(null)
+  const lastAppliedInitialInputRef = React.useRef<string | null>(null)
 
   React.useEffect(() => {
     if (!open) {
@@ -185,51 +182,39 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
   }, [open, refreshSessions])
 
   React.useEffect(() => {
-    if (!open || typeof window === 'undefined') {
+    if (!open || !initialInput) {
+      if (!open) {
+        lastAppliedInitialInputRef.current = null
+      }
       return
     }
 
-    const handleResize = () => {
-      setDrawerWidth((current) => clampDrawerWidth(current))
+    if (lastAppliedInitialInputRef.current === initialInput) {
+      return
     }
 
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [open])
+    lastAppliedInitialInputRef.current = initialInput
 
-  React.useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      const state = resizeStateRef.current
-      if (!state) {
-        return
-      }
-
-      setDrawerWidth(clampDrawerWidth(state.startWidth + (state.startX - event.clientX)))
+    if (resetOnInitialInput) {
+      clearChat()
+      setHistoryOpen(false)
+      setPendingSessionId(null)
     }
 
-    const stopResize = () => {
-      if (!resizeStateRef.current) {
-        return
-      }
-
-      resizeStateRef.current = null
-      document.body.style.removeProperty('cursor')
-      document.body.style.removeProperty('user-select')
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', stopResize)
-    window.addEventListener('pointercancel', stopResize)
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', stopResize)
-      window.removeEventListener('pointercancel', stopResize)
-      document.body.style.removeProperty('cursor')
-      document.body.style.removeProperty('user-select')
-    }
-  }, [])
+    setInput(initialInput)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      const length = initialInput.length
+      inputRef.current?.setSelectionRange(length, length)
+    })
+    onInitialInputApplied?.()
+  }, [
+    clearChat,
+    initialInput,
+    onInitialInputApplied,
+    open,
+    resetOnInitialInput,
+  ])
 
   React.useEffect(() => {
     const element = scrollRef.current
@@ -352,227 +337,195 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
     [loadSession],
   )
 
-  const handleResizeStart = React.useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (typeof window === 'undefined' || window.innerWidth < 640) {
-        return
-      }
-
-      resizeStateRef.current = {
-        startX: event.clientX,
-        startWidth: drawerWidth,
-      }
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-    },
-    [drawerWidth],
-  )
-
-  const handleResizeKeyDown = React.useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
-        return
-      }
-
-      event.preventDefault()
-      setDrawerWidth((current) =>
-        clampDrawerWidth(
-          current + (event.key === 'ArrowLeft' ? RESIZE_STEP : -RESIZE_STEP),
-        ),
-      )
-    },
-    [],
-  )
-
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="overflow-visible border-border/70 bg-popover/95 p-0 text-popover-foreground shadow-[0_32px_90px_-38px_rgba(15,23,42,0.34)] backdrop-blur-xl dark:shadow-[0_42px_120px_-42px_rgba(0,0,0,0.72)] sm:max-w-[min(1120px,96vw)]"
         showCloseButton={false}
-        style={{ '--chat-panel-width': `${drawerWidth}px` } as React.CSSProperties}
-        className="w-full gap-0 p-0 sm:w-[var(--chat-panel-width)] sm:max-w-[60vw]"
       >
-        <SheetTitle className="sr-only">AI chat panel</SheetTitle>
+        <DialogTitle className="sr-only">Ask Docs</DialogTitle>
+        <DialogDescription className="sr-only">
+          AI answers grounded in workspace documents and linked knowledge.
+        </DialogDescription>
 
-        <div
-          className="absolute inset-y-0 left-0 z-20 hidden w-3 translate-x-[-50%] cursor-col-resize items-center justify-center sm:flex"
-          role="separator"
-          aria-label="Resize chat panel"
-          aria-orientation="vertical"
-          tabIndex={0}
-          onPointerDown={handleResizeStart}
-          onKeyDown={handleResizeKeyDown}
-        >
-          <div className="h-16 w-0.5 rounded-sm bg-border/60 transition-all hover:bg-border" />
-        </div>
+        <div className="relative">
+          <aside
+            className={cn(
+              'absolute inset-y-0 left-0 z-20 flex w-[min(360px,88vw)] flex-col overflow-hidden rounded-[calc(var(--radius)+8px)] border border-border/70 bg-card shadow-[0_28px_80px_-38px_rgba(15,23,42,0.28)] transition-[transform,opacity] duration-300 ease-[0.16,1,0.3,1] dark:shadow-[0_28px_80px_-42px_rgba(0,0,0,0.72)] sm:-translate-x-[calc(100%+1rem)]',
+              historyOpen
+                ? 'translate-x-0 opacity-100 pointer-events-auto'
+                : '-translate-x-full opacity-0 pointer-events-none sm:opacity-0',
+            )}
+          >
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-4">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-muted-foreground/80">
+                  Sessions
+                </p>
+                <p className="text-sm font-semibold tracking-tight text-foreground">History</p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="rounded-full text-muted-foreground hover:bg-muted/45 hover:text-foreground"
+                title="Close history"
+                onClick={() => setHistoryOpen(false)}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+            </div>
 
-        <div className="relative flex h-full min-h-0 flex-col bg-background font-sans">
-          <header className="border-b border-border/40 px-4 py-3 bg-background">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="rounded-md hover:bg-muted/80"
-                  onClick={() => setHistoryOpen((current) => !current)}
-                >
-                  <History className="size-[18px]" />
-                </Button>
-                <div className="min-w-0">
-                  <h2 className="truncate text-sm font-semibold tracking-tight text-foreground/90">
-                    {activeSession ? getChatSessionTitle(activeSession.title) : 'Assistant'}
-                  </h2>
-                  {activeSession ? (
-                    <p className="text-[10px] font-mono tracking-tight text-muted-foreground/70 uppercase">
-                      {formatChatSessionTimestamp(activeSession.updatedAt)}
+            {sessionsError ? (
+              <div className="border-b border-tone-error-border/20 bg-tone-error-bg/20 px-4 py-3 text-xs text-tone-error-text">
+                {sessionsError}
+              </div>
+            ) : null}
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
+              {isLoadingSessions && sessions.length === 0 ? (
+                <SessionListSkeleton />
+              ) : sessionGroups.length > 0 ? (
+                <div className="space-y-6">
+                  {sessionGroups.map((group) => (
+                    <div key={group.label} className="space-y-2">
+                      <p className="px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
+                        {group.label}
+                      </p>
+                      <div className="space-y-0.5">
+                        {group.sessions.map((session) => (
+                          <SessionListItem
+                            key={session.id}
+                            active={session.id === sessionId}
+                            pending={session.id === pendingSessionId}
+                            session={session}
+                            onSelect={handleSessionSelect}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-4 py-12 text-center">
+                  <History className="mx-auto mb-3 size-8 text-muted-foreground/25" />
+                  <p className="text-sm text-muted-foreground">No conversations yet.</p>
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <div className="relative flex h-[min(84vh,780px)] min-h-0 flex-col overflow-hidden rounded-[inherit] bg-background/80 font-sans">
+            <header className="border-b border-border/60 bg-card/75 px-4 py-3 backdrop-blur-sm sm:px-6">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="rounded-xl border border-border/70 bg-background/85 text-muted-foreground hover:bg-muted/45 hover:text-foreground"
+                    onClick={() => setHistoryOpen((current) => !current)}
+                  >
+                    <History className="size-[18px]" />
+                  </Button>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-muted-foreground/80">
+                      Ask Docs
                     </p>
+                    <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">
+                      {activeSession ? getChatSessionTitle(activeSession.title) : 'New conversation'}
+                    </h2>
+                    {activeSession ? (
+                      <p className="text-[10px] font-mono tracking-tight text-muted-foreground uppercase">
+                        {formatChatSessionTimestamp(activeSession.updatedAt)}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] font-mono tracking-tight text-muted-foreground uppercase">
+                        New Conversation
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <CopyButton
+                    value={transcriptValue}
+                    title="Copy conversation"
+                    disabled={!transcriptValue}
+                    className="size-8 rounded-xl border border-border/70 bg-background/85 text-muted-foreground hover:bg-muted/45 hover:text-foreground"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="rounded-xl border border-border/70 bg-background/85 text-muted-foreground hover:bg-muted/45 hover:text-foreground"
+                    title="New chat"
+                    onClick={handleNewChat}
+                  >
+                    <Plus className="size-[18px]" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="rounded-xl border border-border/70 bg-background/85 text-muted-foreground hover:bg-muted/45 hover:text-foreground"
+                    title="Close chat"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    <X className="size-[18px]" />
+                  </Button>
+                </div>
+              </div>
+            </header>
+
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <AnimatePresence>
+                {historyOpen && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-10 bg-background/45 backdrop-blur-[1px] sm:hidden"
+                    onClick={() => setHistoryOpen(false)}
+                  />
+                )}
+              </AnimatePresence>
+
+              <div ref={scrollRef} className="h-full overflow-y-auto px-4 py-6 sm:px-8">
+                <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 pb-12">
+                  {visibleMessages.length === 0 ? (
+                    <EmptyState />
                   ) : (
-                    <p className="text-[10px] font-mono tracking-tight text-muted-foreground/70 uppercase">
-                      New Conversation
-                    </p>
+                    <>
+                      <AnimatePresence mode="popLayout" initial={false}>
+                        {visibleMessages.map((message, index) => (
+                          <motion.div
+                            key={message.id}
+                            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{
+                              duration: 0.4,
+                              ease: [0.16, 1, 0.3, 1],
+                              delay: index === visibleMessages.length - 1 ? 0 : index * 0.05,
+                            }}
+                          >
+                            <MessageItem
+                              message={message}
+                              onSourceSelect={handleSourceSelect}
+                            />
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                      {isStreaming && messages[messages.length - 1]?.content.trim() === '' ? (
+                        <ThinkingIndicator />
+                      ) : null}
+                    </>
                   )}
                 </div>
               </div>
-
-              <div className="flex items-center gap-1.5">
-                <CopyButton
-                  value={transcriptValue}
-                  title="Copy conversation"
-                  disabled={!transcriptValue}
-                  className="size-8 rounded-md"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="rounded-md hover:bg-muted/80"
-                  title="New chat"
-                  onClick={handleNewChat}
-                >
-                  <Plus className="size-[18px]" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="rounded-md hover:bg-muted/80"
-                  title="Close chat"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <X className="size-[18px]" />
-                </Button>
-              </div>
             </div>
-          </header>
 
-          <div className="relative min-h-0 flex-1 overflow-hidden">
-            <AnimatePresence>
-              {historyOpen && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="absolute inset-0 z-10 bg-black/5"
-                  onClick={() => setHistoryOpen(false)}
-                />
-              )}
-            </AnimatePresence>
-
-            <aside
-              className={cn(
-                'absolute inset-y-0 left-0 z-20 flex w-[min(340px,88%)] flex-col border-r border-border/40 bg-background transition-transform duration-300 ease-[0.16,1,0.3,1] sm:w-[min(340px,48%)]',
-                historyOpen ? 'translate-x-0 shadow-lg shadow-black/5' : '-translate-x-full',
-              )}
-            >
-              <div className="flex items-center justify-between border-b border-border/40 px-4 py-4">
-                <p className="text-sm font-bold tracking-tight text-foreground/90">History</p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="rounded-full"
-                  title="Close history"
-                  onClick={() => setHistoryOpen(false)}
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-              </div>
-
-              {sessionsError ? (
-                <div className="px-4 py-3 text-xs text-tone-error-text bg-tone-error-bg/20 border-b border-tone-error-border/20">
-                  {sessionsError}
-                </div>
-              ) : null}
-
-              <div className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
-                {isLoadingSessions && sessions.length === 0 ? (
-                  <SessionListSkeleton />
-                ) : sessionGroups.length > 0 ? (
-                  <div className="space-y-6">
-                    {sessionGroups.map((group) => (
-                      <div key={group.label} className="space-y-2">
-                        <p className="px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
-                          {group.label}
-                        </p>
-                        <div className="space-y-0.5">
-                          {group.sessions.map((session) => (
-                            <SessionListItem
-                              key={session.id}
-                              active={session.id === sessionId}
-                              pending={session.id === pendingSessionId}
-                              session={session}
-                              onSelect={handleSessionSelect}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="px-4 py-12 text-center">
-                    <History className="mx-auto size-8 text-muted-foreground/20 mb-3" />
-                    <p className="text-sm text-muted-foreground/60">No conversations yet.</p>
-                  </div>
-                )}
-              </div>
-            </aside>
-
-            <div ref={scrollRef} className="h-full overflow-y-auto px-4 py-6 sm:px-6">
-              <div className="mx-auto max-w-2xl w-full flex flex-col gap-8 pb-12">
-                {visibleMessages.length === 0 ? (
-                  <EmptyState />
-                ) : (
-                  <>
-                    <AnimatePresence mode="popLayout" initial={false}>
-                      {visibleMessages.map((message, index) => (
-                        <motion.div
-                          key={message.id}
-                          initial={{ opacity: 0, y: 12, scale: 0.98 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          transition={{
-                            duration: 0.4,
-                            ease: [0.16, 1, 0.3, 1],
-                            delay: index === visibleMessages.length - 1 ? 0 : index * 0.05,
-                          }}
-                        >
-                          <MessageItem
-                            message={message}
-                            onSourceSelect={handleSourceSelect}
-                          />
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                    {isStreaming && messages[messages.length - 1]?.content.trim() === '' ? (
-                      <ThinkingIndicator />
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="relative border-t border-border/40 px-4 py-4 sm:px-6 bg-background">
+            <div className="relative border-t border-border/60 bg-card/70 px-4 py-4 sm:px-8">
             {error ? (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -585,7 +538,7 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
 
             <form
               onSubmit={handleSubmit}
-              className="group relative rounded-lg border border-border/40 bg-card/60 p-2 ring-offset-background transition-colors focus-within:border-border/70 focus-within:bg-card/80"
+              className="group relative rounded-[1.5rem] border border-border/70 bg-background/90 p-2 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.18)] transition-colors focus-within:border-border focus-within:bg-card"
             >
               <label htmlFor="ai-chat-input" className="sr-only">
                 Ask the AI assistant
@@ -597,7 +550,7 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask anything..."
-                className="min-h-[72px] max-h-[220px] resize-none border-0 bg-transparent px-3 py-2 text-[14px] leading-relaxed shadow-none hover:bg-transparent focus-visible:border-transparent focus-visible:ring-0 placeholder:text-muted-foreground/40"
+                className="min-h-[84px] max-h-[220px] resize-none border-0 bg-transparent px-4 py-3 text-[15px] leading-7 text-foreground shadow-none hover:bg-transparent focus-visible:border-transparent focus-visible:ring-0 placeholder:text-muted-foreground"
                 rows={1}
                 disabled={isStreaming}
                 spellCheck={false}
@@ -612,7 +565,7 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-8 rounded-md border-border/40 text-[13px] font-medium px-3 hover:bg-muted/40"
+                      className="h-8 rounded-full border-border/70 bg-background/85 px-3 text-[13px] font-medium text-foreground hover:bg-muted/40"
                       onClick={handleResume}
                     >
                       Continue
@@ -623,7 +576,7 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-8 w-8 rounded-md border-border/40 p-0 hover:bg-muted/40"
+                      className="h-8 w-8 rounded-full border-border/70 bg-background/85 p-0 text-foreground hover:bg-muted/40"
                       onClick={stopStreaming}
                     >
                       <Square className="size-4 fill-foreground/20" />
@@ -634,7 +587,7 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
                       type="submit"
                       size="sm"
                       disabled={!input.trim()}
-                      className="h-8 rounded-md text-[13px] font-medium px-3 disabled:opacity-30"
+                      className="h-8 rounded-full px-4 text-[13px] font-medium"
                     >
                       <Send className="size-4" />
                       Send
@@ -643,13 +596,14 @@ export function AiChatPanel({ open, onOpenChange, documentId }: AiChatPanelProps
                 </div>
               </div>
             </form>
-            <p className="mt-3 text-center text-[10px] font-medium tracking-tight text-muted-foreground/50 uppercase">
+            <p className="mt-3 text-center text-[10px] font-medium tracking-tight text-muted-foreground uppercase">
               AI-generated content may be inaccurate
             </p>
+            </div>
           </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   )
 }
 
