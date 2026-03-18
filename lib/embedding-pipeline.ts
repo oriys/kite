@@ -2,14 +2,23 @@ import { eq, and, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { documents, documentChunks } from '@/lib/schema'
 import { chunkDocument, computeContentHash } from '@/lib/chunker'
+import type { DocumentChunk } from '@/lib/chunker'
 import {
   requestAiEmbedding,
   resolveEmbeddingProvider,
+  resolveWorkspaceAiProviders,
+  resolveAiModelSelection,
 } from '@/lib/ai-server'
+import type { ResolvedAiProviderConfig } from '@/lib/ai-server'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { insertDocumentChunkRowsInBatches } from '@/lib/document-chunk-storage'
 import { logServerError } from '@/lib/server-errors'
 import { EMBEDDING_BATCH_SIZE } from '@/lib/ai-config'
+import {
+  buildKnowledgeGraph,
+  embedKnowledgeGraphEntities,
+  removeDocumentFromKnowledgeGraph,
+} from '@/lib/kg/kg-pipeline'
 
 /**
  * Embed a single document: chunk it, generate embeddings, and store them.
@@ -29,6 +38,16 @@ export async function embedDocument(input: {
     await db
       .delete(documentChunks)
       .where(eq(documentChunks.documentId, input.documentId))
+    // Also clean up KG entities/relations for this document
+    removeDocumentFromKnowledgeGraph({
+      workspaceId: input.workspaceId,
+      documentId: input.documentId,
+    }).catch((error) => {
+      logServerError('KG cleanup failed for disabled RAG document', error, {
+        workspaceId: input.workspaceId,
+        documentId: input.documentId,
+      })
+    })
     return { status: 'skipped' as const, chunkCount: 0 }
   }
 
@@ -58,6 +77,15 @@ export async function embedDocument(input: {
     await db
       .delete(documentChunks)
       .where(eq(documentChunks.documentId, input.documentId))
+    removeDocumentFromKnowledgeGraph({
+      workspaceId: input.workspaceId,
+      documentId: input.documentId,
+    }).catch((error) => {
+      logServerError('KG cleanup failed for empty document', error, {
+        workspaceId: input.workspaceId,
+        documentId: input.documentId,
+      })
+    })
     return { status: 'empty' as const, chunkCount: 0 }
   }
 
@@ -86,6 +114,7 @@ export async function embedDocument(input: {
     sectionPath: chunk.sectionPath,
     heading: chunk.heading,
     embedding: allEmbeddings[i] ?? null,
+    embeddingModelId: resolved.modelId,
     tokenCount: chunk.tokenCount,
     contentHash,
   }))
@@ -97,6 +126,19 @@ export async function embedDocument(input: {
       .where(eq(documentChunks.documentId, input.documentId))
 
     await insertDocumentChunkRowsInBatches(tx, chunkRows)
+  })
+
+  // Trigger KG construction in background (non-blocking)
+  buildKnowledgeGraphForDocument({
+    workspaceId: input.workspaceId,
+    documentId: input.documentId,
+    chunks,
+    embeddingProvider: resolved,
+  }).catch((error) => {
+    logServerError('Knowledge graph construction failed', error, {
+      workspaceId: input.workspaceId,
+      documentId: input.documentId,
+    })
   })
 
   return { status: 'updated' as const, chunkCount: chunks.length }
@@ -205,4 +247,52 @@ export async function getEmbeddingStatus(workspaceId: string) {
     totalChunks,
     coverage: totalDocs > 0 ? embeddedDocs / totalDocs : 0,
   }
+}
+
+/**
+ * Build Knowledge Graph for a document after embedding.
+ * Resolves the chat model for entity extraction, removes stale KG data,
+ * then extracts entities/relations and generates their embeddings.
+ */
+async function buildKnowledgeGraphForDocument(input: {
+  workspaceId: string
+  documentId: string
+  chunks: DocumentChunk[]
+  embeddingProvider: { provider: ResolvedAiProviderConfig; modelId: string }
+}) {
+  const [providers, workspaceSettings] = await Promise.all([
+    resolveWorkspaceAiProviders(input.workspaceId),
+    getAiWorkspaceSettings(input.workspaceId),
+  ])
+
+  const modelSelection = resolveAiModelSelection({
+    defaultModelId: workspaceSettings?.defaultModelId ?? null,
+    enabledModelIds: workspaceSettings?.enabledModelIds ?? [],
+    providers,
+  })
+  if (!modelSelection) return
+
+  // Remove old KG data for this document (clean re-extraction)
+  await removeDocumentFromKnowledgeGraph({
+    workspaceId: input.workspaceId,
+    documentId: input.documentId,
+  })
+
+  // Extract entities and relations
+  await buildKnowledgeGraph({
+    workspaceId: input.workspaceId,
+    documentId: input.documentId,
+    chunks: input.chunks,
+    provider: modelSelection.provider,
+    modelId: modelSelection.modelId,
+    embeddingProvider: {
+      provider: input.embeddingProvider.provider,
+      modelId: input.embeddingProvider.modelId,
+    },
+  })
+
+  // Generate embeddings for new entities/relations
+  await embedKnowledgeGraphEntities({
+    workspaceId: input.workspaceId,
+  })
 }

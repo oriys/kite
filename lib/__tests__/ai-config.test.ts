@@ -7,6 +7,12 @@ import {
   MIN_VECTOR_SIMILARITY,
   MAX_CONTEXT_CHARS,
   SHOPLINE_DOCS_BASE_URL,
+  MAX_CONTEXT_TOKENS,
+  MAX_SECTION_TOKENS,
+  MAX_ENTITY_TOKENS,
+  MAX_RELATION_TOKENS,
+  MAX_CHUNK_TOKENS,
+  resolveContextLimits,
 } from '../ai-config'
 
 describe('ai-config', () => {
@@ -19,6 +25,14 @@ describe('ai-config', () => {
       expect(MIN_VECTOR_SIMILARITY).toBe(0.28)
       expect(MAX_CONTEXT_CHARS).toBe(20_000)
       expect(SHOPLINE_DOCS_BASE_URL).toBe('https://developer.shopline.com')
+    })
+
+    it('provides sensible default token budget values', () => {
+      expect(MAX_CONTEXT_TOKENS).toBe(8_000)
+      expect(MAX_SECTION_TOKENS).toBe(1_500)
+      expect(MAX_ENTITY_TOKENS).toBe(2_000)
+      expect(MAX_RELATION_TOKENS).toBe(2_000)
+      expect(MAX_CHUNK_TOKENS).toBe(4_000)
     })
   })
 
@@ -64,6 +78,65 @@ describe('ai-config', () => {
       process.env.AI_DEFAULT_EMBEDDING_MODEL = 'custom-model'
       const { envStr } = await getHelpers()
       expect(envStr('AI_DEFAULT_EMBEDDING_MODEL', 'text-embedding-3-small')).toBe('custom-model')
+    })
+  })
+
+  describe('resolveContextLimits', () => {
+    it('returns token-based fields alongside char-based fields', () => {
+      const limits = resolveContextLimits()
+      // Char-based (backward compat)
+      expect(limits.maxContextChars).toBeTypeOf('number')
+      expect(limits.maxSectionChars).toBeTypeOf('number')
+      expect(limits.maxCompressedBlocks).toBeTypeOf('number')
+      expect(limits.adjacentChunkRadius).toBeTypeOf('number')
+      // Token-based
+      expect(limits.maxContextTokens).toBeTypeOf('number')
+      expect(limits.maxSectionTokens).toBeTypeOf('number')
+      expect(limits.maxEntityTokens).toBeTypeOf('number')
+      expect(limits.maxRelationTokens).toBeTypeOf('number')
+      expect(limits.maxChunkTokens).toBeTypeOf('number')
+    })
+
+    it('uses base defaults when no modelId is provided', () => {
+      const limits = resolveContextLimits()
+      // scaleFactor = min(16_000 / 16_000, 4) = 1
+      expect(limits.maxContextChars).toBe(20_000)
+      expect(limits.maxSectionChars).toBe(2_500)
+      expect(limits.maxCompressedBlocks).toBe(4)
+      expect(limits.adjacentChunkRadius).toBe(1)
+      expect(limits.maxContextTokens).toBe(8_000)
+      expect(limits.maxSectionTokens).toBe(1_500)
+      expect(limits.maxEntityTokens).toBe(2_000)
+      expect(limits.maxRelationTokens).toBe(2_000)
+      expect(limits.maxChunkTokens).toBe(4_000)
+    })
+
+    it('scales limits up for large context window models', () => {
+      const limits = resolveContextLimits('gpt-4o')
+      // gpt-4o has 128_000 context → scaleFactor = min(128_000 / 16_000, 4) = 4
+      expect(limits.maxContextChars).toBe(80_000)
+      expect(limits.maxSectionChars).toBe(8_000) // capped at 8_000
+      expect(limits.maxCompressedBlocks).toBe(12) // capped at 12
+      expect(limits.adjacentChunkRadius).toBe(2)
+      expect(limits.maxContextTokens).toBe(32_000)
+      expect(limits.maxSectionTokens).toBe(6_000)
+      expect(limits.maxEntityTokens).toBe(8_000)
+      expect(limits.maxRelationTokens).toBe(8_000)
+      expect(limits.maxChunkTokens).toBe(16_000)
+    })
+
+    it('caps scale factor at 4 for very large context windows', () => {
+      const limits = resolveContextLimits('claude-sonnet-4-20250514')
+      // 200_000 context → scaleFactor = min(200_000 / 16_000, 4) = 4
+      expect(limits.maxContextTokens).toBe(32_000) // 8_000 * 4, capped at 32_000
+      expect(limits.maxSectionTokens).toBe(6_000)
+    })
+
+    it('falls back to base scale for unknown models', () => {
+      const limits = resolveContextLimits('unknown-model-xyz')
+      // Unknown model → 16_000 default → scaleFactor = 1
+      expect(limits.maxContextTokens).toBe(8_000)
+      expect(limits.maxSectionTokens).toBe(1_500)
     })
   })
 })

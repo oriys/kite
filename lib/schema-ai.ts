@@ -101,6 +101,8 @@ export const documentChunks = pgTable(
       { onDelete: 'cascade' },
     ),
     embedding: vector1536('embedding'),
+    /** Tracks which embedding model generated the vector (for space isolation) */
+    embeddingModelId: text('embedding_model_id'),
     tokenCount: integer('token_count').notNull().default(0),
     contentHash: text('content_hash').notNull(),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),

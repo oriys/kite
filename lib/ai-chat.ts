@@ -41,6 +41,8 @@ import {
   MAX_CONTEXT_SECTIONS,
   MAX_SECTION_CHARS,
   MAX_COMPRESSED_BLOCKS,
+  MAX_CONTEXT_TOKENS,
+  MAX_SECTION_TOKENS,
   MAX_HISTORY_MESSAGES,
   MAX_KEYWORD_SNIPPET_CHARS,
   MIN_VECTOR_SIMILARITY,
@@ -65,6 +67,9 @@ import {
   AI_DEFAULT_QUERY_EXPANSION_RULES,
   type QueryExpansionRule,
 } from '@/lib/ai-config'
+import { estimateTokens } from '@/lib/chunker'
+import { extractQueryKeywords } from '@/lib/kg/query-keywords'
+import { retrieveKgContext } from '@/lib/kg/kg-retrieval'
 
 type MemberRole = 'owner' | 'admin' | 'member' | 'guest'
 
@@ -127,7 +132,13 @@ export interface RetrievalDiagnostics {
     neighborhoodMs: number
     rerankMs: number
     referenceExpansionMs: number
+    kgRetrievalMs: number
     totalMs: number
+  }
+  kgResults?: {
+    entityCount: number
+    relationCount: number
+    keywords: { highLevel: string[]; lowLevel: string[] }
   }
   semanticChunks: Array<{
     chunkId: string
@@ -1546,18 +1557,64 @@ async function searchKeywordDocuments(input: {
 function buildContextFromSections(
   sections: RetrievedContextSection[],
   limits?: ContextLimits,
+  kgContext?: { entityContext: string; relationContext: string },
 ) {
   const maxContextChars = limits?.maxContextChars ?? MAX_CONTEXT_CHARS
   const maxSectionChars = limits?.maxSectionChars ?? MAX_SECTION_CHARS
+  const maxContextTokens = limits?.maxContextTokens ?? MAX_CONTEXT_TOKENS
+  const maxSectionTokens = limits?.maxSectionTokens ?? MAX_SECTION_TOKENS
   const sources: ChatSource[] = []
   const contextParts: string[] = []
   let totalChars = 0
+  let totalTokens = 0
+
+  // Prepend KG entity context
+  if (kgContext?.entityContext) {
+    const entityTokens = estimateTokens(kgContext.entityContext)
+    if (totalTokens + entityTokens <= maxContextTokens) {
+      contextParts.push(`## Knowledge Graph — Entities\n\n${kgContext.entityContext}`)
+      totalChars += kgContext.entityContext.length
+      totalTokens += entityTokens
+    }
+  }
+
+  // Prepend KG relation context
+  if (kgContext?.relationContext) {
+    const relationTokens = estimateTokens(kgContext.relationContext)
+    if (totalTokens + relationTokens <= maxContextTokens) {
+      contextParts.push(`## Knowledge Graph — Relations\n\n${kgContext.relationContext}`)
+      totalChars += kgContext.relationContext.length
+      totalTokens += relationTokens
+    }
+  }
 
   for (const section of sections) {
     const remainingChars = maxContextChars - totalChars
-    if (remainingChars <= 0) break
+    const remainingTokens = maxContextTokens - totalTokens
+    if (remainingChars <= 0 || remainingTokens <= 0) break
 
-    const content = section.content.slice(0, Math.min(remainingChars, maxSectionChars)).trim()
+    let content = section.content.slice(0, Math.min(remainingChars, maxSectionChars)).trim()
+    if (!content) continue
+
+    // Token-based enforcement: trim content if it exceeds section token budget
+    let contentTokens = estimateTokens(content)
+    if (contentTokens > maxSectionTokens) {
+      // Binary search for the right char cutoff
+      let lo = 0
+      let hi = content.length
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1
+        if (estimateTokens(content.slice(0, mid)) <= maxSectionTokens) {
+          lo = mid
+        } else {
+          hi = mid - 1
+        }
+      }
+      content = content.slice(0, lo).trim()
+      contentTokens = estimateTokens(content)
+    }
+
+    if (totalTokens + contentTokens > maxContextTokens) break
     if (!content) continue
 
     const label = `[${sources.length + 1}]`
@@ -1575,6 +1632,7 @@ function buildContextFromSections(
       ].join('\n'),
     )
     totalChars += content.length
+    totalTokens += contentTokens
 
     sources.push(section.source)
   }
@@ -1595,6 +1653,15 @@ async function retrieveChatContext(input: {
   const limits = resolveContextLimits(input.chatModelId)
   const expansionRules = await loadQueryExpansionRules(input.workspaceId)
   const queryVariants = buildRetrievalQueries(input.query, expansionRules)
+
+  // KG keyword extraction (runs in parallel with semantic search)
+  const kgKeywordsPromise = extractQueryKeywords({
+    workspaceId: input.workspaceId,
+    query: input.query,
+  }).catch((error) => {
+    logServerError('KG keyword extraction failed', error, { workspaceId: input.workspaceId })
+    return { highLevel: [] as string[], lowLevel: [] as string[] }
+  })
 
   const semanticStart = performance.now()
   const [semanticChunks, keywordDocuments] = await Promise.all([
@@ -1637,6 +1704,22 @@ async function retrieveChatContext(input: {
       }),
   ])
   const semanticMs = performance.now() - semanticStart
+
+  // KG retrieval: use extracted keywords for entity/relation search
+  const kgStart = performance.now()
+  const kgKeywords = await kgKeywordsPromise
+  const kgContext = await retrieveKgContext({
+    workspaceId: input.workspaceId,
+    query: input.query,
+    highLevelKeywords: kgKeywords.highLevel,
+    lowLevelKeywords: kgKeywords.lowLevel,
+    entityTokenBudget: limits.maxEntityTokens,
+    relationTokenBudget: limits.maxRelationTokens,
+  }).catch((error) => {
+    logServerError('KG retrieval failed', error, { workspaceId: input.workspaceId })
+    return { entityContext: '', relationContext: '', entityCount: 0, relationCount: 0, sourceChunkIds: [] as string[] }
+  })
+  const kgMs = performance.now() - kgStart
 
   const neighborhoodStart = performance.now()
   const neighborhoodMap = await loadChunkNeighborhoods({
@@ -1717,7 +1800,10 @@ async function retrieveChatContext(input: {
   })
   const rerankMs = performance.now() - rerankStart
 
-  const result = buildContextFromSections(rerankedSections, limits)
+  const result = buildContextFromSections(rerankedSections, limits, {
+    entityContext: kgContext.entityContext,
+    relationContext: kgContext.relationContext,
+  })
   const totalMs = performance.now() - totalStart
 
   const diagnostics: RetrievalDiagnostics | undefined = input.debug
@@ -1729,7 +1815,13 @@ async function retrieveChatContext(input: {
           neighborhoodMs: Math.round(neighborhoodMs),
           rerankMs: Math.round(rerankMs),
           referenceExpansionMs: Math.round(refMs),
+          kgRetrievalMs: Math.round(kgMs),
           totalMs: Math.round(totalMs),
+        },
+        kgResults: {
+          entityCount: kgContext.entityCount,
+          relationCount: kgContext.relationCount,
+          keywords: kgKeywords,
         },
         semanticChunks: semanticChunks.map((c) => ({
           chunkId: c.chunkId,
