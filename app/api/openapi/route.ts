@@ -16,6 +16,7 @@ function serializeOpenapiSourceSummary(source: {
   id: string
   name: string
   sourceType: 'upload' | 'url'
+  sourceUrl?: string | null
   parsedVersion: string | null
   openapiVersion?: string | null
   createdAt: Date
@@ -25,6 +26,7 @@ function serializeOpenapiSourceSummary(source: {
     id: source.id,
     name: source.name,
     sourceType: source.sourceType,
+    sourceUrl: source.sourceUrl ?? null,
     currentVersion: source.parsedVersion,
     parsedVersion: source.parsedVersion,
     openapiVersion: source.openapiVersion ?? null,
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest) {
     parsedVersion: spec.version,
     openapiVersion: spec.openapiVersion,
     checksum,
-  })
+  }, spec.endpoints)
 
   return NextResponse.json(
     {

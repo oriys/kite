@@ -7,6 +7,7 @@ import {
   resolveEmbeddingProvider,
 } from '@/lib/ai-server'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
+import { insertDocumentChunkRowsInBatches } from '@/lib/document-chunk-storage'
 import { logServerError } from '@/lib/server-errors'
 import { EMBEDDING_BATCH_SIZE } from '@/lib/ai-config'
 
@@ -77,27 +78,25 @@ export async function embedDocument(input: {
     }
   }
 
+  const chunkRows = chunks.map((chunk, i) => ({
+    documentId: input.documentId,
+    workspaceId: input.workspaceId,
+    chunkIndex: chunk.chunkIndex,
+    chunkText: chunk.chunkText,
+    sectionPath: chunk.sectionPath,
+    heading: chunk.heading,
+    embedding: allEmbeddings[i] ?? null,
+    tokenCount: chunk.tokenCount,
+    contentHash,
+  }))
+
   // Replace existing chunks atomically
   await db.transaction(async (tx) => {
     await tx
       .delete(documentChunks)
       .where(eq(documentChunks.documentId, input.documentId))
 
-    if (chunks.length > 0) {
-      await tx.insert(documentChunks).values(
-        chunks.map((chunk, i) => ({
-          documentId: input.documentId,
-          workspaceId: input.workspaceId,
-          chunkIndex: chunk.chunkIndex,
-          chunkText: chunk.chunkText,
-          sectionPath: chunk.sectionPath,
-          heading: chunk.heading,
-          embedding: allEmbeddings[i] ?? null,
-          tokenCount: chunk.tokenCount,
-          contentHash,
-        })),
-      )
-    }
+    await insertDocumentChunkRowsInBatches(tx, chunkRows)
   })
 
   return { status: 'updated' as const, chunkCount: chunks.length }

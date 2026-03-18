@@ -488,6 +488,42 @@ function ResponseStatusBadge({ status }: { status: number }) {
 function generateExampleFromSchema(schema: Record<string, unknown>): unknown {
   if (schema.example !== undefined) return schema.example
   if (schema.default !== undefined) return schema.default
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0]
+
+  const allOf = schema.allOf as Record<string, unknown>[] | undefined
+  if (Array.isArray(allOf) && allOf.length > 0) {
+    return allOf.reduce<unknown>((merged, subSchema) => {
+      const nextExample = generateExampleFromSchema(subSchema)
+      if (isRecord(merged) && isRecord(nextExample)) {
+        return { ...merged, ...nextExample }
+      }
+
+      return nextExample ?? merged
+    }, {})
+  }
+
+  const variants =
+    (schema.oneOf as Record<string, unknown>[] | undefined) ??
+    (schema.anyOf as Record<string, unknown>[] | undefined)
+  if (Array.isArray(variants) && variants.length > 0) {
+    return generateExampleFromSchema(variants[0])
+  }
+
+  const properties = schema.properties as
+    | Record<string, Record<string, unknown>>
+    | undefined
+  if (properties) {
+    const obj: Record<string, unknown> = {}
+    for (const [key, propSchema] of Object.entries(properties)) {
+      obj[key] = generateExampleFromSchema(propSchema)
+    }
+    return obj
+  }
+
+  const items = schema.items as Record<string, unknown> | undefined
+  if (items) {
+    return [generateExampleFromSchema(items)]
+  }
 
   const type = schema.type as string | undefined
   switch (type) {
@@ -499,20 +535,16 @@ function generateExampleFromSchema(schema: Record<string, unknown>): unknown {
     case 'boolean':
       return true
     case 'array': {
-      const items = schema.items as Record<string, unknown> | undefined
       if (items) return [generateExampleFromSchema(items)]
       return []
     }
-    case 'object': {
-      const properties = schema.properties as Record<string, Record<string, unknown>> | undefined
-      if (!properties) return {}
-      const obj: Record<string, unknown> = {}
-      for (const [key, propSchema] of Object.entries(properties)) {
-        obj[key] = generateExampleFromSchema(propSchema)
-      }
-      return obj
-    }
+    case 'object':
+      return {}
     default:
       return null
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
 }

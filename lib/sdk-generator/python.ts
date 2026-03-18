@@ -1,76 +1,376 @@
 import {
+  buildNestedModelName,
   extractOperations,
-  toPythonType,
+  getComponentSchemas,
+  getOperationRequestModelName,
+  getOperationResponseModelName,
+  getPrimaryServerUrl,
+  getSpecTitle,
+  resolveRefName,
   toPascalCase,
   toSnakeCase,
+  type OpenApiDocument,
+  type OpenApiSchema,
   type OperationInfo,
 } from './shared'
 
-function generateDataclasses(spec: Record<string, unknown>): string {
-  const components = spec.components as Record<string, unknown> | undefined
-  const schemas = (components?.schemas || {}) as Record<string, Record<string, unknown>>
-  const lines: string[] = [
-    'from __future__ import annotations',
-    'from dataclasses import dataclass, field',
-    'from typing import Any, Dict, List, Optional, Union',
-    '',
-  ]
+interface PythonRegistry {
+  namesBySchema: Map<OpenApiSchema, string>
+  schemasByName: Map<string, OpenApiSchema>
+}
 
-  for (const [name, schema] of Object.entries(schemas)) {
-    const className = toPascalCase(name)
+function createPythonRegistry(spec: OpenApiDocument, operations: OperationInfo[]): PythonRegistry {
+  const registry: PythonRegistry = {
+    namesBySchema: new Map(),
+    schemasByName: new Map(),
+  }
 
-    if (schema.enum) {
-      lines.push(`# ${className} enum values: ${(schema.enum as unknown[]).join(', ')}`)
-      lines.push(`${className} = str`)
-      lines.push('')
-      continue
+  for (const [name, schema] of Object.entries(getComponentSchemas(spec))) {
+    registerNamedSchema(schema, toPascalCase(name), registry)
+  }
+
+  for (const operation of operations) {
+    if (operation.requestBody?.schema && shouldRegisterPythonRootSchema(operation.requestBody.schema)) {
+      registerNamedSchema(operation.requestBody.schema, getOperationRequestModelName(operation), registry)
     }
-
-    if (schema.type === 'object' || schema.properties) {
-      const props = (schema.properties || {}) as Record<string, Record<string, unknown>>
-      const required = new Set((schema.required || []) as string[])
-      lines.push('@dataclass')
-      lines.push(`class ${className}:`)
-      if (schema.description) lines.push(`    """${schema.description}"""`)
-
-      const entries = Object.entries(props)
-      if (entries.length === 0) {
-        lines.push('    pass')
-      } else {
-        const requiredFields: string[] = []
-        const optionalFields: string[] = []
-        for (const [propName, propSchema] of entries) {
-          const pyName = toSnakeCase(propName)
-          const pyType = toPythonType(propSchema)
-          if (required.has(propName)) {
-            requiredFields.push(`    ${pyName}: ${pyType}`)
-          } else {
-            optionalFields.push(`    ${pyName}: Optional[${pyType}] = None`)
-          }
-        }
-        lines.push(...requiredFields, ...optionalFields)
-      }
-      lines.push('')
-    } else {
-      lines.push(`${className} = ${toPythonType(schema)}`)
-      lines.push('')
+    if (operation.responseSchema && shouldRegisterPythonRootSchema(operation.responseSchema)) {
+      registerNamedSchema(operation.responseSchema, getOperationResponseModelName(operation), registry)
     }
   }
 
-  return lines.join('\n')
+  return registry
+}
+
+function shouldRegisterPythonRootSchema(schema: OpenApiSchema | undefined): boolean {
+  if (!schema || schema.$ref) return false
+  return Boolean(
+    schema.type === 'object' ||
+      schema.properties ||
+      schema.type === 'array' ||
+      schema.enum?.length ||
+      schema.oneOf?.length ||
+      schema.anyOf?.length ||
+      schema.allOf?.length,
+  )
+}
+
+function shouldRegisterPythonNestedSchema(schema: OpenApiSchema | undefined): boolean {
+  if (!schema || schema.$ref) return false
+  return Boolean(schema.type === 'object' || schema.properties || schema.oneOf?.length || schema.anyOf?.length || schema.allOf?.length)
+}
+
+function makeUniqueSchemaName(preferredName: string, registry: PythonRegistry): string {
+  let candidate = preferredName
+  let index = 2
+  while (registry.schemasByName.has(candidate)) {
+    candidate = `${preferredName}${index}`
+    index += 1
+  }
+  return candidate
+}
+
+function registerNamedSchema(
+  schema: OpenApiSchema,
+  preferredName: string,
+  registry: PythonRegistry,
+): string {
+  const existingName = registry.namesBySchema.get(schema)
+  if (existingName) return existingName
+
+  const name = makeUniqueSchemaName(preferredName, registry)
+  registry.namesBySchema.set(schema, name)
+  registry.schemasByName.set(name, schema)
+  collectNestedPythonSchemas(name, schema, registry)
+  return name
+}
+
+function collectNestedPythonSchemas(
+  parentName: string,
+  schema: OpenApiSchema | undefined,
+  registry: PythonRegistry,
+): void {
+  if (!schema || schema.$ref) return
+
+  if (schema.type === 'array') {
+    const itemSchema = schema.items
+    const itemName = buildNestedModelName(parentName, 'Item')
+    if (shouldRegisterPythonNestedSchema(itemSchema) && itemSchema) {
+      registerNamedSchema(itemSchema, itemName, registry)
+    } else {
+      collectNestedPythonSchemas(itemName, itemSchema, registry)
+    }
+    return
+  }
+
+  for (const [index, variant] of (schema.allOf ?? []).entries()) {
+    const variantName = buildNestedModelName(parentName, `AllOf${index + 1}`)
+    if (shouldRegisterPythonNestedSchema(variant)) {
+      registerNamedSchema(variant, variantName, registry)
+    } else {
+      collectNestedPythonSchemas(variantName, variant, registry)
+    }
+  }
+
+  for (const [index, variant] of (schema.oneOf ?? []).entries()) {
+    const variantName = buildNestedModelName(parentName, `Variant${index + 1}`)
+    if (shouldRegisterPythonNestedSchema(variant)) {
+      registerNamedSchema(variant, variantName, registry)
+    } else {
+      collectNestedPythonSchemas(variantName, variant, registry)
+    }
+  }
+
+  for (const [index, variant] of (schema.anyOf ?? []).entries()) {
+    const variantName = buildNestedModelName(parentName, `Option${index + 1}`)
+    if (shouldRegisterPythonNestedSchema(variant)) {
+      registerNamedSchema(variant, variantName, registry)
+    } else {
+      collectNestedPythonSchemas(variantName, variant, registry)
+    }
+  }
+
+  for (const [propName, propSchema] of Object.entries(schema.properties ?? {})) {
+    const nestedName = buildNestedModelName(parentName, propName)
+    if (shouldRegisterPythonNestedSchema(propSchema)) {
+      registerNamedSchema(propSchema, nestedName, registry)
+    } else {
+      collectNestedPythonSchemas(nestedName, propSchema, registry)
+    }
+  }
+
+  if (typeof schema.additionalProperties === 'object') {
+    const valueName = buildNestedModelName(parentName, 'Value')
+    if (shouldRegisterPythonNestedSchema(schema.additionalProperties)) {
+      registerNamedSchema(schema.additionalProperties, valueName, registry)
+    } else {
+      collectNestedPythonSchemas(valueName, schema.additionalProperties, registry)
+    }
+  }
+}
+
+function toPythonLiteral(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '0'
+  if (typeof value === 'boolean') return value ? 'True' : 'False'
+  if (value === null) return 'None'
+  return JSON.stringify(String(value))
+}
+
+function wrapPythonOptional(type: string, schema: OpenApiSchema): string {
+  return schema.nullable ? `Optional[${type}]` : type
+}
+
+function renderPythonType(
+  schema: OpenApiSchema | undefined,
+  registry: PythonRegistry,
+  currentName?: string,
+): string {
+  if (!schema) return 'JSONValue'
+  if (schema.$ref) return toPascalCase(resolveRefName(schema.$ref))
+
+  const namedType = registry.namesBySchema.get(schema)
+  if (namedType && namedType !== currentName) {
+    return wrapPythonOptional(namedType, schema)
+  }
+
+  if (schema.enum?.length) {
+    return wrapPythonOptional(
+      `Literal[${schema.enum.map((value) => toPythonLiteral(value)).join(', ')}]`,
+      schema,
+    )
+  }
+
+  const unionVariants = schema.oneOf ?? schema.anyOf
+  if (unionVariants?.length) {
+    return wrapPythonOptional(
+      `Union[${Array.from(new Set(unionVariants.map((variant) => renderPythonType(variant, registry)))).join(', ')}]`,
+      schema,
+    )
+  }
+
+  if (schema.allOf?.length) {
+    return namedType && namedType !== currentName ? wrapPythonOptional(namedType, schema) : 'JSONValue'
+  }
+
+  switch (schema.type) {
+    case 'string':
+      return wrapPythonOptional('str', schema)
+    case 'integer':
+      return wrapPythonOptional('int', schema)
+    case 'number':
+      return wrapPythonOptional('float', schema)
+    case 'boolean':
+      return wrapPythonOptional('bool', schema)
+    case 'array':
+      return wrapPythonOptional(`List[${renderPythonType(schema.items, registry)}]`, schema)
+    case 'object':
+    default:
+      if (schema.properties && Object.keys(schema.properties).length > 0) {
+        return namedType && namedType !== currentName
+          ? wrapPythonOptional(namedType, schema)
+          : wrapPythonOptional('Dict[str, JSONValue]', schema)
+      }
+      if (typeof schema.additionalProperties === 'object') {
+        return wrapPythonOptional(`Dict[str, ${renderPythonType(schema.additionalProperties, registry)}]`, schema)
+      }
+      if (schema.type === 'object' || schema.additionalProperties === true) {
+        return wrapPythonOptional('Dict[str, JSONValue]', schema)
+      }
+      return 'JSONValue'
+  }
+}
+
+function mergeAllOfObjectSchema(schema: OpenApiSchema): OpenApiSchema | null {
+  const mergedProperties: Record<string, OpenApiSchema> = {}
+  const required = new Set<string>()
+  let additionalProperties: boolean | OpenApiSchema | undefined
+  let hasObjectPart = false
+
+  for (const part of schema.allOf ?? []) {
+    if (part.$ref) continue
+    if (part.type === 'object' || part.properties) {
+      hasObjectPart = true
+      Object.assign(mergedProperties, part.properties ?? {})
+      for (const propName of part.required ?? []) required.add(propName)
+      if (part.additionalProperties !== undefined) additionalProperties = part.additionalProperties
+    }
+  }
+
+  if (!hasObjectPart) return null
+
+  return {
+    type: 'object',
+    properties: mergedProperties,
+    required: Array.from(required),
+    additionalProperties,
+  }
+}
+
+function buildPythonTypedDictBlock(
+  name: string,
+  schema: OpenApiSchema,
+  registry: PythonRegistry,
+  baseTypes: string[] = [],
+): string {
+  const properties = Object.entries(schema.properties ?? {})
+  if (properties.length === 0) {
+    if (baseTypes.length > 0) {
+      return `class ${name}(${baseTypes.join(', ')}):\n    pass`
+    }
+    if (typeof schema.additionalProperties === 'object') {
+      return `${name} = Dict[str, ${renderPythonType(schema.additionalProperties, registry)}]`
+    }
+    return `${name} = Dict[str, JSONValue]`
+  }
+
+  const required = new Set(schema.required ?? [])
+  const requiredEntries = properties
+    .filter(([propName]) => required.has(propName))
+    .map(([propName, propSchema]) => `    ${JSON.stringify(propName)}: ${renderPythonType(propSchema, registry)},`)
+  const optionalEntries = properties
+    .filter(([propName]) => !required.has(propName))
+    .map(([propName, propSchema]) => `    ${JSON.stringify(propName)}: ${renderPythonType(propSchema, registry)},`)
+
+  const blocks: string[] = []
+  const helperTypes: string[] = []
+
+  if (requiredEntries.length > 0) {
+    const requiredHelper = `_${name}Required`
+    blocks.push(`${requiredHelper} = TypedDict(${JSON.stringify(requiredHelper)}, {\n${requiredEntries.join('\n')}\n})`)
+    helperTypes.push(requiredHelper)
+  }
+
+  if (optionalEntries.length > 0) {
+    const optionalHelper = `_${name}Optional`
+    blocks.push(`${optionalHelper} = TypedDict(${JSON.stringify(optionalHelper)}, {\n${optionalEntries.join('\n')}\n}, total=False)`)
+    helperTypes.push(optionalHelper)
+  }
+
+  const parents = [...baseTypes, ...helperTypes]
+  const parentList = parents.length > 0 ? parents.join(', ') : 'TypedDict'
+  blocks.push(`class ${name}(${parentList}):\n    pass`)
+
+  return blocks.join('\n\n')
+}
+
+function generatePythonDefinition(
+  name: string,
+  schema: OpenApiSchema,
+  registry: PythonRegistry,
+): string {
+  if (schema.allOf?.length) {
+    const baseTypes = schema.allOf
+      .filter((part) => Boolean(part.$ref))
+      .map((part) => renderPythonType(part, registry))
+    const mergedObject = mergeAllOfObjectSchema(schema)
+    if (mergedObject) {
+      return buildPythonTypedDictBlock(name, mergedObject, registry, baseTypes)
+    }
+    return `${name} = JSONValue`
+  }
+
+  if (schema.type === 'object' || schema.properties) {
+    return buildPythonTypedDictBlock(name, schema, registry)
+  }
+
+  return `${name} = ${renderPythonType(schema, registry, name)}`
+}
+
+function generateTypeModule(
+  spec: OpenApiDocument,
+  operations: OperationInfo[],
+  registry: PythonRegistry,
+): string {
+  const lines: string[] = [
+    'from __future__ import annotations',
+    'from typing import Dict, List, Literal, Optional, TypedDict, Union',
+    '',
+    'JSONPrimitive = Union[str, int, float, bool, None]',
+    'JSONValue = Union[JSONPrimitive, Dict[str, "JSONValue"], List["JSONValue"]]',
+    '',
+  ]
+
+  const knownSchemas = new Set(Object.keys(getComponentSchemas(spec)).map((name) => toPascalCase(name)))
+  for (const operation of operations) {
+    if (operation.requestBody?.schema && shouldRegisterPythonRootSchema(operation.requestBody.schema)) {
+      knownSchemas.add(getOperationRequestModelName(operation))
+    }
+    if (operation.responseSchema && shouldRegisterPythonRootSchema(operation.responseSchema)) {
+      knownSchemas.add(getOperationResponseModelName(operation))
+    }
+  }
+
+  for (const [name, schema] of registry.schemasByName) {
+    if (!knownSchemas.has(name)) continue
+    lines.push(generatePythonDefinition(name, schema, registry))
+    lines.push('')
+  }
+
+  for (const [name, schema] of registry.schemasByName) {
+    if (knownSchemas.has(name)) continue
+    lines.push(generatePythonDefinition(name, schema, registry))
+    lines.push('')
+  }
+
+  return lines.join('\n').trimEnd() + '\n'
 }
 
 function buildPathTemplate(path: string): string {
   return path.replace(/\{([^}]+)\}/g, (_, name) => `{${toSnakeCase(name)}}`)
 }
 
-function generateEndpointClass(tag: string, ops: OperationInfo[], pkgName: string): string {
+function generateEndpointClass(
+  tag: string,
+  ops: OperationInfo[],
+  packageDir: string,
+  registry: PythonRegistry,
+): string {
   const className = `${toPascalCase(tag)}Api`
   const lines: string[] = [
     'from __future__ import annotations',
-    'from typing import Any, Dict, List, Optional',
-    `from ${pkgName}.client import Client`,
-    `from ${pkgName}.types import *`,
+    'from typing import Dict, Optional, cast',
+    `from ${packageDir}.client import Client, stringify_query_value`,
+    `from ${packageDir}.types import *`,
     '',
     '',
     `class ${className}:`,
@@ -81,23 +381,25 @@ function generateEndpointClass(tag: string, ops: OperationInfo[], pkgName: strin
 
   for (const op of ops) {
     const methodName = toSnakeCase(op.operationId)
-    const pathParams = op.parameters.filter((p) => p.in === 'path')
-    const queryParams = op.parameters.filter((p) => p.in === 'query')
-    const returnType = op.responseSchema ? toPythonType(op.responseSchema) : 'None'
+    const pathParams = op.parameters.filter((param) => param.in === 'path')
+    const queryParams = op.parameters.filter((param) => param.in === 'query')
+    const requestType = op.requestBody ? renderPythonType(op.requestBody.schema, registry) : null
+    const returnType = op.responseSchema ? renderPythonType(op.responseSchema, registry) : 'None'
 
     const args: string[] = ['self']
-    for (const p of pathParams) {
-      args.push(`${toSnakeCase(p.name)}: ${toPythonType(p.schema)}`)
+    for (const param of pathParams) {
+      args.push(`${toSnakeCase(param.name)}: ${renderPythonType(param.schema, registry)}`)
     }
-    if (op.requestBody) {
-      args.push(`body: ${toPythonType(op.requestBody.schema)}`)
+    if (requestType) {
+      args.push(`body: ${requestType}`)
     }
-    for (const q of queryParams) {
-      const pyType = toPythonType(q.schema)
-      if (q.required) {
-        args.push(`${toSnakeCase(q.name)}: ${pyType}`)
+    for (const param of queryParams) {
+      const argName = toSnakeCase(param.name)
+      const paramType = renderPythonType(param.schema, registry)
+      if (param.required) {
+        args.push(`${argName}: ${paramType}`)
       } else {
-        args.push(`${toSnakeCase(q.name)}: Optional[${pyType}] = None`)
+        args.push(`${argName}: Optional[${paramType}] = None`)
       }
     }
 
@@ -112,196 +414,91 @@ function generateEndpointClass(tag: string, ops: OperationInfo[], pkgName: strin
     }
 
     if (queryParams.length > 0) {
-      lines.push('        params: Dict[str, Any] = {}')
-      for (const q of queryParams) {
-        const pyName = toSnakeCase(q.name)
-        if (q.required) {
-          lines.push(`        params["${q.name}"] = ${pyName}`)
+      lines.push('        params: Dict[str, str] = {}')
+      for (const param of queryParams) {
+        const argName = toSnakeCase(param.name)
+        if (param.required) {
+          lines.push(`        params[${JSON.stringify(param.name)}] = stringify_query_value(${argName})`)
         } else {
-          lines.push(`        if ${pyName} is not None:`)
-          lines.push(`            params["${q.name}"] = ${pyName}`)
+          lines.push(`        if ${argName} is not None:`)
+          lines.push(`            params[${JSON.stringify(param.name)}] = stringify_query_value(${argName})`)
         }
       }
     }
 
-    const httpMethod = op.method.toLowerCase()
-    const reqArgs: string[] = [`"${httpMethod}"`, 'path']
-    if (queryParams.length > 0) reqArgs.push('params=params')
-    if (op.requestBody) reqArgs.push('json=body')
+    const requestArgs: string[] = [`"${op.method.toLowerCase()}"`, 'path']
+    if (queryParams.length > 0) requestArgs.push('params=params')
+    if (requestType) requestArgs.push('json=body')
 
-    lines.push(`        return self._client.request(${reqArgs.join(', ')})`)
+    if (returnType === 'None') {
+      lines.push(`        self._client.request(${requestArgs.join(', ')})`)
+      lines.push('        return None')
+    } else {
+      lines.push(`        return cast(${returnType}, self._client.request(${requestArgs.join(', ')}))`)
+    }
     lines.push('')
   }
 
   return lines.join('\n')
 }
 
-export function generatePythonSdk(spec: Record<string, unknown>, packageName: string, version: string): Map<string, string> {
+export function generatePythonSdk(
+  spec: OpenApiDocument,
+  packageName: string,
+  version: string,
+): Map<string, string> {
   const files = new Map<string, string>()
   const operations = extractOperations(spec)
-  const pkgDir = toSnakeCase(packageName.replace(/-/g, '_'))
+  const registry = createPythonRegistry(spec, operations)
+  const packageDir = toSnakeCase(packageName.replace(/-/g, '_'))
 
-  // types.py
-  files.set(`${pkgDir}/types.py`, generateDataclasses(spec))
+  files.set(`${packageDir}/types.py`, generateTypeModule(spec, operations, registry))
 
-  // client.py
-  files.set(`${pkgDir}/client.py`, `from __future__ import annotations
-from typing import Any, Dict, Optional
-import httpx
+  files.set(
+    `${packageDir}/client.py`,
+    `from __future__ import annotations\nfrom typing import Dict, Optional, TypeVar, cast\nimport httpx\n\n\nT = TypeVar("T")\n\n\ndef stringify_query_value(value: object) -> str:\n    if isinstance(value, bool):\n        return "true" if value else "false"\n    return str(value)\n\n\nclass ApiError(Exception):\n    def __init__(self, status_code: int, message: str, body: str) -> None:\n        self.status_code = status_code\n        self.message = message\n        self.body = body\n        super().__init__(f"API Error {status_code}: {message}")\n\n\nclass Client:\n    def __init__(\n        self,\n        base_url: str,\n        api_key: Optional[str] = None,\n        headers: Optional[Dict[str, str]] = None,\n        timeout: float = 30.0,\n    ) -> None:\n        self.base_url = base_url.rstrip("/")\n        self._headers: Dict[str, str] = {"Content-Type": "application/json"}\n        if api_key:\n            self._headers["Authorization"] = f"Bearer {api_key}"\n        if headers:\n            self._headers.update(headers)\n        self._http = httpx.Client(\n            base_url=self.base_url,\n            headers=self._headers,\n            timeout=timeout,\n        )\n\n    def request(\n        self,\n        method: str,\n        path: str,\n        params: Optional[Dict[str, str]] = None,\n        json: object = None,\n    ) -> T:\n        response = self._http.request(method, path, params=params, json=json)\n        if not response.is_success:\n            raise ApiError(response.status_code, response.reason_phrase, response.text)\n        if response.status_code == 204:\n            return cast(T, None)\n        return cast(T, response.json())\n\n    def close(self) -> None:\n        self._http.close()\n\n    def __enter__(self) -> "Client":\n        return self\n\n    def __exit__(self, *args: object) -> None:\n        self.close()\n`,
+  )
 
-
-class ApiError(Exception):
-    def __init__(self, status_code: int, message: str, body: str) -> None:
-        self.status_code = status_code
-        self.message = message
-        self.body = body
-        super().__init__(f"API Error {status_code}: {message}")
-
-
-class Client:
-    def __init__(
-        self,
-        base_url: str,
-        api_key: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: float = 30.0,
-    ) -> None:
-        self.base_url = base_url.rstrip("/")
-        self._headers: Dict[str, str] = {"Content-Type": "application/json"}
-        if api_key:
-            self._headers["Authorization"] = f"Bearer {api_key}"
-        if headers:
-            self._headers.update(headers)
-        self._http = httpx.Client(
-            base_url=self.base_url,
-            headers=self._headers,
-            timeout=timeout,
-        )
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        params: Optional[Dict[str, Any]] = None,
-        json: Any = None,
-    ) -> Any:
-        response = self._http.request(method, path, params=params, json=json)
-        if not response.is_success:
-            raise ApiError(response.status_code, response.reason_phrase, response.text)
-        if response.status_code == 204:
-            return None
-        return response.json()
-
-    def close(self) -> None:
-        self._http.close()
-
-    def __enter__(self) -> "Client":
-        return self
-
-    def __exit__(self, *args: Any) -> None:
-        self.close()
-`)
-
-  // Group by tag
   const byTag = new Map<string, OperationInfo[]>()
-  for (const op of operations) {
-    const tag = op.tags[0] || 'default'
+  for (const operation of operations) {
+    const tag = operation.tags[0] || 'default'
     if (!byTag.has(tag)) byTag.set(tag, [])
-    byTag.get(tag)!.push(op)
+    byTag.get(tag)?.push(operation)
   }
 
   const endpointImports: string[] = []
-  const endpointAttrs: string[] = []
-  const endpointInits: string[] = []
-
+  const endpointAssignments: string[] = []
   for (const [tag, ops] of byTag) {
     const fileName = toSnakeCase(tag)
     const className = `${toPascalCase(tag)}Api`
-    files.set(`${pkgDir}/endpoints/${fileName}.py`, generateEndpointClass(tag, ops, pkgDir))
-    endpointImports.push(`from ${pkgDir}.endpoints.${fileName} import ${className}`)
-    endpointAttrs.push(`        self.${toSnakeCase(tag)}: ${className} = ${className}(self._client)`)
-    endpointInits.push(`        self.${toSnakeCase(tag)} = ${className}(self._client)`)
+    files.set(`${packageDir}/endpoints/${fileName}.py`, generateEndpointClass(tag, ops, packageDir, registry))
+    endpointImports.push(`from ${packageDir}.endpoints.${fileName} import ${className}`)
+    endpointAssignments.push(`        self.${toSnakeCase(tag)} = ${className}(self._client)`)
   }
 
-  // endpoints/__init__.py
-  files.set(`${pkgDir}/endpoints/__init__.py`, '')
+  files.set(`${packageDir}/endpoints/__init__.py`, '')
 
-  // __init__.py
-  files.set(`${pkgDir}/__init__.py`, `from ${pkgDir}.client import Client, ApiError
-${endpointImports.join('\n')}
+  const wrapperName = toPascalCase(packageName)
+  files.set(
+    `${packageDir}/__init__.py`,
+    `from typing import Optional\n\nfrom ${packageDir}.client import ApiError, Client\n${endpointImports.join('\n')}\n\n\nclass ${wrapperName}:\n    def __init__(self, base_url: str, api_key: Optional[str] = None, **kwargs) -> None:\n        self._client = Client(base_url=base_url, api_key=api_key, **kwargs)\n${endpointAssignments.join('\n')}\n\n    def close(self) -> None:\n        self._client.close()\n\n    def __enter__(self) -> "${wrapperName}":\n        return self\n\n    def __exit__(self, *args: object) -> None:\n        self.close()\n\n\n__all__ = ["${wrapperName}", "Client", "ApiError"]\n`,
+  )
 
+  files.set(
+    'setup.py',
+    `from setuptools import find_packages, setup\n\nsetup(\n    name="${packageName}",\n    version="${version}",\n    packages=find_packages(),\n    install_requires=["httpx>=0.24"],\n    python_requires=">=3.8",\n    description="Python SDK for ${getSpecTitle(spec)}",\n)\n`,
+  )
 
-class ${toPascalCase(packageName)}:
-    def __init__(self, base_url: str, api_key: str | None = None, **kwargs) -> None:
-        self._client = Client(base_url=base_url, api_key=api_key, **kwargs)
-${endpointAttrs.join('\n')}
-
-    def close(self) -> None:
-        self._client.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()
-
-
-__all__ = ["${toPascalCase(packageName)}", "Client", "ApiError"]
-`)
-
-  // setup.py
-  files.set('setup.py', `from setuptools import setup, find_packages
-
-setup(
-    name="${packageName}",
-    version="${version}",
-    packages=find_packages(),
-    install_requires=["httpx>=0.24"],
-    python_requires=">=3.8",
-    description="Python SDK for ${(spec.info as Record<string, unknown>)?.title || 'the API'}",
-)
-`)
-
-  // requirements.txt
   files.set('requirements.txt', 'httpx>=0.24\n')
 
-  // README.md
   const firstTag = Array.from(byTag.keys())[0] || 'default'
-  const firstOp = operations[0]
-  const exampleMethod = firstOp ? toSnakeCase(firstOp.operationId) : 'list_items'
+  const firstOperation = operations[0]
+  const exampleMethod = firstOperation ? toSnakeCase(firstOperation.operationId) : 'list_items'
 
-  files.set('README.md', `# ${packageName}
-
-Python SDK for ${(spec.info as Record<string, unknown>)?.title || 'the API'} (v${version}).
-
-## Installation
-
-\`\`\`bash
-pip install ${packageName}
-\`\`\`
-
-## Usage
-
-\`\`\`python
-from ${pkgDir} import ${toPascalCase(packageName)}
-
-client = ${toPascalCase(packageName)}(
-    base_url="${((spec.servers as Record<string, unknown>[] | undefined)?.[0] as Record<string, unknown> | undefined)?.url || 'https://api.example.com'}",
-    api_key="your-api-key",
-)
-
-# Example
-result = client.${toSnakeCase(firstTag)}.${exampleMethod}()
-print(result)
-\`\`\`
-
-## Context Manager
-
-\`\`\`python
-with ${toPascalCase(packageName)}(base_url="...", api_key="...") as client:
-    result = client.${toSnakeCase(firstTag)}.${exampleMethod}()
-\`\`\`
-`)
+  files.set(
+    'README.md',
+    `# ${packageName}\n\nPython SDK for ${getSpecTitle(spec)} (v${version}).\n\n## Installation\n\n\`\`\`bash\npip install ${packageName}\n\`\`\`\n\n## Usage\n\n\`\`\`python\nfrom ${packageDir} import ${wrapperName}\n\nclient = ${wrapperName}(\n    base_url="${getPrimaryServerUrl(spec)}",\n    api_key="your-api-key",\n)\n\nresult = client.${toSnakeCase(firstTag)}.${exampleMethod}()\nprint(result)\n\`\`\`\n\n## Context Manager\n\n\`\`\`python\nwith ${wrapperName}(base_url="...", api_key="...") as client:\n    result = client.${toSnakeCase(firstTag)}.${exampleMethod}()\n\`\`\`\n`,
+  )
 
   return files
 }

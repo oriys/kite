@@ -1,12 +1,114 @@
+export interface OpenApiSchema {
+  $ref?: string
+  allOf?: OpenApiSchema[]
+  anyOf?: OpenApiSchema[]
+  oneOf?: OpenApiSchema[]
+  enum?: readonly unknown[]
+  type?: string
+  format?: string
+  description?: string
+  nullable?: boolean
+  properties?: Record<string, OpenApiSchema>
+  required?: string[]
+  items?: OpenApiSchema
+  additionalProperties?: boolean | OpenApiSchema
+}
+
+export interface OpenApiInfo {
+  title?: string
+}
+
+export interface OpenApiServer {
+  url?: string
+}
+
+export interface OpenApiMediaType {
+  schema?: OpenApiSchema
+}
+
+export interface OpenApiRequestBody {
+  required?: boolean
+  description?: string
+  content?: Record<string, OpenApiMediaType>
+}
+
+export interface OpenApiResponse {
+  description?: string
+  content?: Record<string, OpenApiMediaType>
+}
+
+export interface OpenApiParameter {
+  name?: string
+  in?: string
+  required?: boolean
+  description?: string
+  schema?: OpenApiSchema
+}
+
+export interface OpenApiOperation {
+  operationId?: string
+  summary?: string
+  tags?: string[]
+  parameters?: OpenApiParameter[]
+  requestBody?: OpenApiRequestBody
+  responses?: Record<string, OpenApiResponse>
+}
+
+export type OpenApiPathItem = Record<string, OpenApiOperation | OpenApiParameter[] | undefined> & {
+  parameters?: OpenApiParameter[]
+}
+
+export interface OpenApiDocument {
+  info?: OpenApiInfo
+  servers?: OpenApiServer[]
+  paths?: Record<string, OpenApiPathItem>
+  components?: {
+    schemas?: Record<string, OpenApiSchema>
+  }
+}
+
+export interface ParameterInfo {
+  name: string
+  in: string
+  required: boolean
+  description?: string
+  schema: OpenApiSchema
+}
+
+export interface RequestBodyInfo {
+  contentType: string
+  description?: string
+  required: boolean
+  schema: OpenApiSchema
+}
+
+export interface ResponseInfo {
+  statusCode: string
+  contentType: string
+  description?: string
+  schema: OpenApiSchema
+}
+
 export interface OperationInfo {
   operationId: string
   method: string
   path: string
   summary: string
-  parameters: { name: string; in: string; required: boolean; schema: Record<string, unknown> }[]
-  requestBody?: { contentType: string; schema: Record<string, unknown> }
-  responseSchema?: Record<string, unknown>
+  parameters: ParameterInfo[]
+  requestBody?: RequestBodyInfo
+  response?: ResponseInfo
+  responseSchema?: OpenApiSchema
   tags: string[]
+}
+
+const JS_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
+export function isValidJsIdentifier(name: string): boolean {
+  return JS_IDENTIFIER.test(name)
+}
+
+export function toTypescriptPropertyKey(name: string): string {
+  return isValidJsIdentifier(name) ? name : JSON.stringify(name)
 }
 
 export function toCamelCase(str: string): string {
@@ -31,97 +133,146 @@ export function toPascalCase(str: string): string {
     .join('')
 }
 
-function resolveRefName(ref: string): string {
+export function resolveRefName(ref: string): string {
   const parts = ref.split('/')
-  return parts[parts.length - 1]
+  return parts[parts.length - 1] || ref
 }
 
-export function toTypescriptType(schema: Record<string, unknown>): string {
+export function getComponentSchemas(spec: OpenApiDocument): Record<string, OpenApiSchema> {
+  return spec.components?.schemas ?? {}
+}
+
+export function getSpecTitle(spec: OpenApiDocument): string {
+  return spec.info?.title || 'the API'
+}
+
+export function getPrimaryServerUrl(spec: OpenApiDocument): string {
+  return spec.servers?.[0]?.url || 'https://api.example.com'
+}
+
+export function getOperationRequestModelName(op: OperationInfo): string {
+  return `${toPascalCase(op.operationId)}Request`
+}
+
+export function getOperationResponseModelName(op: OperationInfo): string {
+  return `${toPascalCase(op.operationId)}Response`
+}
+
+export function buildNestedModelName(parentName: string, segment: string): string {
+  return `${parentName}${toPascalCase(segment)}`
+}
+
+export function isObjectSchema(schema: OpenApiSchema | undefined): boolean {
+  return Boolean(schema && (schema.type === 'object' || schema.properties))
+}
+
+export function isArraySchema(schema: OpenApiSchema | undefined): boolean {
+  return Boolean(schema?.type === 'array')
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)))
+}
+
+function wrapTypescriptNullable(type: string, schema: OpenApiSchema): string {
+  if (!schema.nullable) return type
+  if (type.includes(' | ') || type.includes(' & ')) {
+    return `(${type}) | null`
+  }
+  return `${type} | null`
+}
+
+export function toTypescriptType(schema: OpenApiSchema | undefined): string {
   if (!schema) return 'unknown'
-  if (schema.$ref) return toPascalCase(resolveRefName(schema.$ref as string))
-  if (schema.allOf) {
-    return (schema.allOf as Record<string, unknown>[]).map((s) => toTypescriptType(s)).join(' & ')
+  if (schema.$ref) return toPascalCase(resolveRefName(schema.$ref))
+
+  if (schema.allOf?.length) {
+    return wrapTypescriptNullable(
+      uniqueStrings(schema.allOf.map((part) => toTypescriptType(part))).join(' & '),
+      schema,
+    )
   }
-  if (schema.oneOf || schema.anyOf) {
-    const items = (schema.oneOf || schema.anyOf) as Record<string, unknown>[]
-    return items.map((s) => toTypescriptType(s)).join(' | ')
+
+  const variants = schema.oneOf ?? schema.anyOf
+  if (variants?.length) {
+    return wrapTypescriptNullable(
+      uniqueStrings(variants.map((part) => toTypescriptType(part))).join(' | '),
+      schema,
+    )
   }
-  if (schema.enum) {
-    return (schema.enum as unknown[]).map((v: unknown) => typeof v === 'string' ? `'${v}'` : String(v)).join(' | ')
+
+  if (schema.enum?.length) {
+    const values = schema.enum
+      .map((value) => (typeof value === 'string' ? JSON.stringify(value) : String(value)))
+      .join(' | ')
+    return wrapTypescriptNullable(values, schema)
   }
+
   switch (schema.type) {
-    case 'string': return 'string'
+    case 'string':
+      return wrapTypescriptNullable('string', schema)
     case 'integer':
-    case 'number': return 'number'
-    case 'boolean': return 'boolean'
+    case 'number':
+      return wrapTypescriptNullable('number', schema)
+    case 'boolean':
+      return wrapTypescriptNullable('boolean', schema)
     case 'array': {
-      const itemType = toTypescriptType(schema.items as Record<string, unknown>)
-      return `${itemType}[]`
+      const itemType = toTypescriptType(schema.items)
+      const result = itemType.includes(' | ') || itemType.includes(' & ')
+        ? `(${itemType})[]`
+        : `${itemType}[]`
+      return wrapTypescriptNullable(result, schema)
     }
-    case 'object': {
-      if (schema.properties) {
-        const props = Object.entries(schema.properties as Record<string, unknown>).map(([k, v]) => {
-          const required = Array.isArray(schema.required) && (schema.required as string[]).includes(k)
-          return `  ${k}${required ? '' : '?'}: ${toTypescriptType(v as Record<string, unknown>)}`
+    case 'object':
+    default: {
+      if (schema.properties && Object.keys(schema.properties).length > 0) {
+        const required = new Set(schema.required ?? [])
+        const lines = Object.entries(schema.properties).map(([propName, propSchema]) => {
+          const optional = required.has(propName) ? '' : '?'
+          return `  ${toTypescriptPropertyKey(propName)}${optional}: ${toTypescriptType(propSchema)}`
         })
-        return `{\n${props.join('\n')}\n}`
+        return wrapTypescriptNullable(`{\n${lines.join('\n')}\n}`, schema)
       }
-      if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-        return `Record<string, ${toTypescriptType(schema.additionalProperties as Record<string, unknown>)}>`
+
+      if (typeof schema.additionalProperties === 'object') {
+        return wrapTypescriptNullable(
+          `Record<string, ${toTypescriptType(schema.additionalProperties)}>`,
+          schema,
+        )
       }
-      return 'Record<string, unknown>'
+
+      if (schema.type === 'object' || schema.additionalProperties === true) {
+        return wrapTypescriptNullable('Record<string, unknown>', schema)
+      }
+
+      return 'unknown'
     }
-    default: return 'unknown'
   }
 }
 
-export function toPythonType(schema: Record<string, unknown>): string {
-  if (!schema) return 'Any'
-  if (schema.$ref) return toPascalCase(resolveRefName(schema.$ref as string))
-  if (schema.allOf) return (schema.allOf as Record<string, unknown>[]).map((s) => toPythonType(s)).join(', ')
-  if (schema.oneOf || schema.anyOf) {
-    const items = (schema.oneOf || schema.anyOf) as Record<string, unknown>[]
-    return `Union[${items.map((s) => toPythonType(s)).join(', ')}]`
+export function collectSchemaRefs(
+  schema: OpenApiSchema | undefined,
+  refs = new Set<string>(),
+): Set<string> {
+  if (!schema) return refs
+  if (schema.$ref) {
+    refs.add(toPascalCase(resolveRefName(schema.$ref)))
+    return refs
   }
-  if (schema.enum) {
-    return (schema.enum as unknown[]).map((v: unknown) => typeof v === 'string' ? `"${v}"` : String(v)).join(' | ')
-  }
-  switch (schema.type) {
-    case 'string': return 'str'
-    case 'integer': return 'int'
-    case 'number': return 'float'
-    case 'boolean': return 'bool'
-    case 'array': return `List[${toPythonType(schema.items as Record<string, unknown>)}]`
-    case 'object': {
-      if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-        return `Dict[str, ${toPythonType(schema.additionalProperties as Record<string, unknown>)}]`
-      }
-      return 'Dict[str, Any]'
-    }
-    default: return 'Any'
-  }
-}
 
-export function toGoType(schema: Record<string, unknown>): string {
-  if (!schema) return 'interface{}'
-  if (schema.$ref) return toPascalCase(resolveRefName(schema.$ref as string))
-  if (schema.allOf) return toPascalCase(resolveRefName(((schema.allOf as Record<string, unknown>[])[0]?.$ref as string) || 'Object'))
-  if (schema.oneOf || schema.anyOf) return 'interface{}'
-  if (schema.enum) return 'string'
-  switch (schema.type) {
-    case 'string': return 'string'
-    case 'integer': return schema.format === 'int64' ? 'int64' : 'int'
-    case 'number': return schema.format === 'float' ? 'float32' : 'float64'
-    case 'boolean': return 'bool'
-    case 'array': return `[]${toGoType(schema.items as Record<string, unknown>)}`
-    case 'object': {
-      if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-        return `map[string]${toGoType(schema.additionalProperties as Record<string, unknown>)}`
-      }
-      return 'map[string]interface{}'
-    }
-    default: return 'interface{}'
+  if (schema.items) collectSchemaRefs(schema.items, refs)
+  if (typeof schema.additionalProperties === 'object') {
+    collectSchemaRefs(schema.additionalProperties, refs)
   }
+
+  for (const variant of schema.allOf ?? []) collectSchemaRefs(variant, refs)
+  for (const variant of schema.oneOf ?? []) collectSchemaRefs(variant, refs)
+  for (const variant of schema.anyOf ?? []) collectSchemaRefs(variant, refs)
+  for (const propSchema of Object.values(schema.properties ?? {})) {
+    collectSchemaRefs(propSchema, refs)
+  }
+
+  return refs
 }
 
 function methodPathToOperationId(method: string, path: string): string {
@@ -134,63 +285,95 @@ function methodPathToOperationId(method: string, path: string): string {
   return toCamelCase(`${method.toLowerCase()}_${cleaned}`)
 }
 
-export function extractOperations(spec: Record<string, unknown>): OperationInfo[] {
+function pickJsonMediaSchema(
+  content: Record<string, OpenApiMediaType> | undefined,
+): { contentType: string; schema: OpenApiSchema } | undefined {
+  if (!content) return undefined
+
+  for (const [contentType, mediaType] of Object.entries(content)) {
+    if (
+      mediaType?.schema &&
+      (contentType === 'application/json' || contentType.endsWith('+json') || contentType === '*/*')
+    ) {
+      return { contentType, schema: mediaType.schema }
+    }
+  }
+
+  return undefined
+}
+
+function pickResponse(
+  responses: Record<string, OpenApiResponse> | undefined,
+): ResponseInfo | undefined {
+  if (!responses) return undefined
+
+  const preferredCodes = ['200', '201', '202', '203', '204', 'default']
+
+  for (const statusCode of preferredCodes) {
+    const response = responses[statusCode]
+    const match = pickJsonMediaSchema(response?.content)
+    if (match) {
+      return {
+        statusCode,
+        contentType: match.contentType,
+        description: response?.description,
+        schema: match.schema,
+      }
+    }
+  }
+
+  return undefined
+}
+
+export function extractOperations(spec: OpenApiDocument): OperationInfo[] {
   const operations: OperationInfo[] = []
-  const paths = (spec.paths || {}) as Record<string, Record<string, unknown>>
+  const paths = spec.paths ?? {}
 
   for (const [path, pathItem] of Object.entries(paths)) {
-    const pathParams = (pathItem.parameters || []) as Record<string, unknown>[]
-    const httpMethods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']
+    const pathParams = Array.isArray(pathItem.parameters) ? pathItem.parameters : []
+    const httpMethods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'] as const
 
     for (const method of httpMethods) {
-      const op = pathItem[method] as Record<string, unknown> | undefined
-      if (!op) continue
+      const op = pathItem[method]
+      if (!op || Array.isArray(op)) continue
 
-      const opParams = (op.parameters || []) as Record<string, unknown>[]
-      const allParams = [...pathParams, ...opParams]
-      const deduped = new Map<string, Record<string, unknown>>()
-      for (const p of allParams) {
-        deduped.set(`${p.name}:${p.in}`, p)
+      const opParams = Array.isArray(op.parameters) ? op.parameters : []
+      const deduped = new Map<string, OpenApiParameter>()
+      for (const param of [...pathParams, ...opParams]) {
+        if (!param?.name || !param.in) continue
+        deduped.set(`${param.name}:${param.in}`, param)
       }
 
-      const parameters = Array.from(deduped.values()).map((p) => ({
-        name: p.name as string,
-        in: p.in as string,
-        required: Boolean(p.required),
-        schema: (p.schema || { type: 'string' }) as Record<string, unknown>,
+      const parameters = Array.from(deduped.values()).map((param) => ({
+        name: param.name ?? 'param',
+        in: param.in ?? 'query',
+        required: Boolean(param.required || param.in === 'path'),
+        description: param.description,
+        schema: param.schema ?? { type: 'string' },
       }))
 
-      let requestBody: { contentType: string; schema: Record<string, unknown> } | undefined
-      if (op.requestBody) {
-        const rb = op.requestBody as Record<string, unknown>
-        const content = (rb.content || {}) as Record<string, Record<string, unknown>>
-        const jsonContent = content['application/json']
-        if (jsonContent?.schema) {
-          requestBody = { contentType: 'application/json', schema: jsonContent.schema as Record<string, unknown> }
-        }
-      }
+      const requestMatch = pickJsonMediaSchema(op.requestBody?.content)
+      const requestBody = requestMatch
+        ? {
+            contentType: requestMatch.contentType,
+            description: op.requestBody?.description,
+            required: Boolean(op.requestBody?.required),
+            schema: requestMatch.schema,
+          }
+        : undefined
 
-      let responseSchema: Record<string, unknown> | undefined
-      const responses = (op.responses || {}) as Record<string, Record<string, unknown>>
-      for (const code of ['200', '201', '204']) {
-        const resp = responses[code]
-        const respContent = resp?.content as Record<string, Record<string, unknown>> | undefined
-        const jsonSchema = respContent?.['application/json']
-        if (jsonSchema?.schema) {
-          responseSchema = jsonSchema.schema as Record<string, unknown>
-          break
-        }
-      }
+      const response = pickResponse(op.responses)
 
       operations.push({
-        operationId: (op.operationId as string) || methodPathToOperationId(method, path),
+        operationId: op.operationId || methodPathToOperationId(method, path),
         method: method.toUpperCase(),
         path,
-        summary: (op.summary as string) || '',
+        summary: op.summary || '',
         parameters,
         requestBody,
-        responseSchema,
-        tags: (op.tags as string[]) || ['default'],
+        response,
+        responseSchema: response?.schema,
+        tags: op.tags?.length ? op.tags : ['default'],
       })
     }
   }

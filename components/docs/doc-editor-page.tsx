@@ -426,6 +426,25 @@ export function DocEditorPageClient() {
     )
   }, [])
 
+  const clearPendingAutosave = React.useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+
+    pendingSaveRef.current = null
+    retryCountRef.current = 0
+    setSaveState((current) =>
+      current === 'saving' || current === 'error' || current === 'offline'
+        ? 'idle'
+        : current,
+    )
+  }, [])
+
   React.useEffect(() => {
     if (doc && initializedDocId !== doc.id) {
       applySnapshot({
@@ -640,6 +659,11 @@ export function DocEditorPageClient() {
 
   const performSave = React.useCallback(
     async (snapshot: EditorSnapshot): Promise<Doc | true | false> => {
+      if (!isSnapshotDirty(snapshot)) {
+        clearPendingAutosave()
+        return true
+      }
+
       if (!navigator.onLine) {
         pendingSaveRef.current = snapshot
         setSaveState('offline')
@@ -709,7 +733,7 @@ export function DocEditorPageClient() {
         return false
       }
     },
-    [update],
+    [clearPendingAutosave, isSnapshotDirty, update],
   )
 
   // ── Online/offline detection ────────────────────────────────────────────
@@ -751,23 +775,30 @@ export function DocEditorPageClient() {
       pendingSaveRef.current = snapshot
 
       if (!isSnapshotDirty(snapshot)) {
-        pendingSaveRef.current = null
+        clearPendingAutosave()
         return true as const
       }
 
       return performSave(snapshot)
     },
-    [buildSnapshot, isSnapshotDirty, performSave],
+    [buildSnapshot, clearPendingAutosave, isSnapshotDirty, performSave],
   )
 
   const scheduleAutoSave = React.useCallback(
     (newTitle: string, newContent: string) => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      if (savedFeedbackRef.current) clearTimeout(savedFeedbackRef.current)
-      pendingSaveRef.current = buildSnapshot({
+      const snapshot = buildSnapshot({
         title: newTitle,
         content: newContent,
       })
+
+      if (!isSnapshotDirty(snapshot)) {
+        clearPendingAutosave()
+        return
+      }
+
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      if (savedFeedbackRef.current) clearTimeout(savedFeedbackRef.current)
+      pendingSaveRef.current = snapshot
       setSaveState('saving')
       saveTimerRef.current = setTimeout(() => {
         if (pendingSaveRef.current) {
@@ -775,7 +806,7 @@ export function DocEditorPageClient() {
         }
       }, 800)
     },
-    [buildSnapshot, performSave],
+    [buildSnapshot, clearPendingAutosave, isSnapshotDirty, performSave],
   )
 
   React.useEffect(() => {
@@ -816,15 +847,23 @@ export function DocEditorPageClient() {
     }
   }, [isEditorFullscreen])
 
-  const handleTitleChange = (newTitle: string) => {
+  const handleTitleChange = React.useCallback((newTitle: string) => {
+    if (newTitle === title) {
+      return
+    }
+
     setTitle(newTitle)
     scheduleAutoSave(newTitle, content)
-  }
+  }, [content, scheduleAutoSave, title])
 
-  const handleContentChange = (newContent: string) => {
+  const handleContentChange = React.useCallback((newContent: string) => {
+    if (newContent === content) {
+      return
+    }
+
     setContent(newContent)
     scheduleAutoSave(title, newContent)
-  }
+  }, [content, scheduleAutoSave, title])
 
   const handleCategorySave = React.useCallback(
     async (nextCategory: string) => {

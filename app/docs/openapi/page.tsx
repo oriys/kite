@@ -381,12 +381,12 @@ export default function OpenApiPage() {
                 </Card>
               </TabsContent>
 
-              <TabsContent value="generate">
-                <SpecDocGenerator
-                  sourceId={selected.id}
-                  endpoints={endpoints}
-                />
-              </TabsContent>
+                <TabsContent value="generate">
+                  <SpecDocGenerator
+                    sourceId={selected.id}
+                    endpoints={endpoints}
+                  />
+                </TabsContent>
             </Tabs>
           )}
         </div>

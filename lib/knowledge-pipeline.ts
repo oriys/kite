@@ -8,6 +8,7 @@ import {
 } from '@/lib/ai-server'
 import { logServerError } from '@/lib/server-errors'
 import { EMBEDDING_BATCH_SIZE } from '@/lib/ai-config'
+import { insertDocumentChunkRowsInBatches } from '@/lib/document-chunk-storage'
 import {
   extractOpenApiContent,
   extractGraphQlContent,
@@ -99,7 +100,10 @@ export async function processKnowledgeSource(input: {
   }
 
   // Preserve user metadata, strip any stale _processing key
-  const { _processing: _, ...userMetadata } = (source.metadata ?? {}) as Record<string, unknown> & { _processing?: unknown }
+  const userMetadata = {
+    ...((source.metadata ?? {}) as Record<string, unknown> & { _processing?: unknown }),
+  }
+  delete userMetadata._processing
 
   async function writeProgress(progress: number, stage: string, detail?: string) {
     await db
@@ -187,6 +191,19 @@ export async function processKnowledgeSource(input: {
 
     await writeProgress(0.9, 'storing')
 
+    const chunkRows = chunks.map((chunk, i) => ({
+      workspaceId: input.workspaceId,
+      documentId: null,
+      knowledgeSourceId: source.id,
+      chunkIndex: chunk.chunkIndex,
+      chunkText: chunk.chunkText,
+      sectionPath: chunk.sectionPath,
+      heading: chunk.heading,
+      embedding: allEmbeddings[i] ?? null,
+      tokenCount: chunk.tokenCount,
+      contentHash,
+    }))
+
     // Replace existing chunks atomically
     await db.transaction(async (tx) => {
       await tx
@@ -195,20 +212,7 @@ export async function processKnowledgeSource(input: {
           eq(documentChunks.knowledgeSourceId, source.id),
         )
 
-      await tx.insert(documentChunks).values(
-        chunks.map((chunk, i) => ({
-          workspaceId: input.workspaceId,
-          documentId: null,
-          knowledgeSourceId: source.id,
-          chunkIndex: chunk.chunkIndex,
-          chunkText: chunk.chunkText,
-          sectionPath: chunk.sectionPath,
-          heading: chunk.heading,
-          embedding: allEmbeddings[i] ?? null,
-          tokenCount: chunk.tokenCount,
-          contentHash,
-        })),
-      )
+      await insertDocumentChunkRowsInBatches(tx, chunkRows)
     })
 
     await db

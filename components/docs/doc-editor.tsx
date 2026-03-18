@@ -187,6 +187,16 @@ export function DocEditor({
     : null
   const aiSplitDividerPosition = aiPreviewOnLeft ? resize.aiSplitRatio : 1 - resize.aiSplitRatio
 
+  const emitMarkdownChange = React.useCallback((nextContent: string) => {
+    if (nextContent === latestMdRef.current) {
+      return false
+    }
+
+    latestMdRef.current = nextContent
+    onChange(nextContent)
+    return true
+  }, [onChange])
+
   // ── Tiptap Editor ────────────────────────────────────────────────────────
 
   const editor = useEditor({
@@ -277,8 +287,7 @@ export function DocEditor({
       htmlToMdTimerRef.current = setTimeout(() => {
         const html = ed.getHTML()
         const md = htmlToMd(html)
-        latestMdRef.current = md
-        onChange(md)
+        emitMarkdownChange(md)
       }, 150)
     },
     onSelectionUpdate: ({ editor: ed }) => {
@@ -313,10 +322,9 @@ export function DocEditor({
       htmlToMdTimerRef.current = null
       const html = editor.getHTML()
       const md = htmlToMd(html)
-      latestMdRef.current = md
-      onChange(md)
+      emitMarkdownChange(md)
     }
-  }, [editor, onChange])
+  }, [editor, emitMarkdownChange])
 
   // Clean up debounce timer on unmount
   React.useEffect(() => {
@@ -438,14 +446,15 @@ export function DocEditor({
   }, [announce, editor, flushHtmlToMd])
 
   const handleSourceChange = React.useCallback((newContent: string) => {
-    latestMdRef.current = newContent
-    onChange(newContent)
+    if (!emitMarkdownChange(newContent)) {
+      return
+    }
 
     if (hasRichEditor(mode) && editor) {
       const html = mdToHtml(newContent)
       editor.commands.setContent(html, { emitUpdate: false })
     }
-  }, [editor, mode, onChange])
+  }, [editor, emitMarkdownChange, mode])
 
   const handleSourceInputChange = React.useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -595,8 +604,7 @@ export function DocEditor({
           }
 
           editor.commands.setContent(mdToHtml(data.result), { emitUpdate: false })
-          latestMdRef.current = data.result
-          onChange(data.result)
+          emitMarkdownChange(data.result)
           setSelectionInfo(null)
           toast.success('Markdown formatting applied')
           announce('Markdown formatting applied')
@@ -691,7 +699,7 @@ export function DocEditor({
         }
       }
     },
-    [aiPrompts, announce, editor, onChange, suggestionReview],
+    [aiPrompts, announce, editor, emitMarkdownChange, suggestionReview],
   )
 
   const handleAiAction = React.useCallback(
@@ -839,8 +847,7 @@ export function DocEditor({
 
         const html = mdToHtml(nextContent)
         editor.commands.setContent(html, { emitUpdate: false })
-        latestMdRef.current = nextContent
-        onChange(nextContent)
+        emitMarkdownChange(nextContent)
         setSelectionInfo(null)
         return
       }
@@ -874,11 +881,10 @@ export function DocEditor({
 
       const html = editor.getHTML()
       const md = htmlToMd(html)
-      latestMdRef.current = md
-      onChange(md)
+      emitMarkdownChange(md)
       setSelectionInfo(null)
     })
-  }, [ai.preview, editor, handleAiPreviewOpenChange, onChange, readOnly])
+  }, [ai.preview, editor, emitMarkdownChange, handleAiPreviewOpenChange, readOnly])
 
   const handleCancelAiLoading = React.useCallback(() => {
     aiAbortControllerRef.current?.abort()
@@ -1018,10 +1024,9 @@ export function DocEditor({
 
       const newHtml = editor.getHTML()
       const md = htmlToMd(newHtml)
-      latestMdRef.current = md
-      onChange(md)
+      emitMarkdownChange(md)
     },
-    [editor, onChange],
+    [editor, emitMarkdownChange],
   )
 
   // ── Snippet insertion ────────────────────────────────────────────────────
@@ -1033,10 +1038,9 @@ export function DocEditor({
       editor.chain().focus().insertContent(html).run()
       const newHtml = editor.getHTML()
       const md = htmlToMd(newHtml)
-      latestMdRef.current = md
-      onChange(md)
+      emitMarkdownChange(md)
     },
-    [editor, onChange],
+    [editor, emitMarkdownChange],
   )
 
   const handleInsertCodeBlock = React.useCallback(
@@ -1067,10 +1071,9 @@ export function DocEditor({
       setHeatmapEditorOpen(false)
       const newHtml = editor.getHTML()
       const md = htmlToMd(newHtml)
-      latestMdRef.current = md
-      onChange(md)
+      emitMarkdownChange(md)
     },
-    [editor, onChange],
+    [editor, emitMarkdownChange],
   )
 
   // ── Source keyboard shortcuts ────────────────────────────────────────────
@@ -1128,9 +1131,8 @@ export function DocEditor({
     if (!editor) return
     const html = editor.getHTML()
     const md = htmlToMd(html)
-    latestMdRef.current = md
-    onChange(md)
-  }, [editor, onChange])
+    emitMarkdownChange(md)
+  }, [editor, emitMarkdownChange])
 
   const handleAiDocumentActionWrapper = React.useCallback(
     (action: AiTransformAction, options?: AiActionOptions) => {

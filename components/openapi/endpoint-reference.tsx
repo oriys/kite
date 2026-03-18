@@ -457,14 +457,38 @@ function SchemaTree({
   schema: Record<string, unknown>
   depth?: number
 }) {
+  const ref = schema.$ref as string | undefined
   const type = schema.type as string | undefined
   const properties = schema.properties as Record<string, Record<string, unknown>> | undefined
   const items = schema.items as Record<string, unknown> | undefined
   const required = (schema.required as string[]) ?? []
   const enumValues = schema.enum as unknown[] | undefined
+  const allOf = schema.allOf as Record<string, unknown>[] | undefined
+  const oneOf = schema.oneOf as Record<string, unknown>[] | undefined
+  const anyOf = schema.anyOf as Record<string, unknown>[] | undefined
+
+  if (typeof ref === 'string') {
+    return (
+      <span className="font-mono text-xs text-muted-foreground">
+        {ref.replace(/^#\/components\/schemas\//, '')}
+      </span>
+    )
+  }
 
   // Simple type with no children
   if (!properties && !items && type !== 'object' && type !== 'array') {
+    if (Array.isArray(allOf) && allOf.length > 0) {
+      return <SchemaComposition label="all of" schemas={allOf} depth={depth} />
+    }
+
+    if (Array.isArray(oneOf) && oneOf.length > 0) {
+      return <SchemaComposition label="one of" schemas={oneOf} depth={depth} />
+    }
+
+    if (Array.isArray(anyOf) && anyOf.length > 0) {
+      return <SchemaComposition label="any of" schemas={anyOf} depth={depth} />
+    }
+
     return (
       <span className="font-mono text-xs text-muted-foreground">
         {type || 'any'}
@@ -496,6 +520,31 @@ function SchemaTree({
     <span className="font-mono text-xs text-muted-foreground">
       {type || 'any'}
     </span>
+  )
+}
+
+function SchemaComposition({
+  label,
+  schemas,
+  depth,
+}: {
+  label: string
+  schemas: Record<string, unknown>[]
+  depth: number
+}) {
+  return (
+    <div>
+      <span className="font-mono text-xs text-muted-foreground">{label}:</span>
+      <div className="ml-3 mt-1 space-y-2 border-l border-border/50 pl-3">
+        {schemas.map((subSchema, index) => (
+          <SchemaTree
+            key={`${label}-${index}`}
+            schema={subSchema}
+            depth={depth + 1}
+          />
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -585,9 +634,19 @@ function SchemaProperties({
 
 function renderContentBlock(obj: Record<string, unknown>) {
   const content = (obj.content as Record<string, unknown>) ?? {}
+  const entries = Object.entries(content)
+
+  if (entries.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No schema details available.
+      </p>
+    )
+  }
+
   return (
     <div className="space-y-2">
-      {Object.entries(content).map(([mediaType, mediaObj]) => {
+      {entries.map(([mediaType, mediaObj]) => {
         const schema = (mediaObj as Record<string, unknown>).schema as
           | Record<string, unknown>
           | undefined

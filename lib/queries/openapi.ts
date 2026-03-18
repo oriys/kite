@@ -10,6 +10,26 @@ import type { ParsedEndpoint } from '@/lib/openapi/parser'
 
 type NewOpenapiSource = typeof openapiSources.$inferInsert
 type OpenapiSource = typeof openapiSources.$inferSelect
+type NewApiEndpoint = typeof apiEndpoints.$inferInsert
+
+function buildApiEndpointValues(
+  sourceId: string,
+  endpoints: ParsedEndpoint[],
+): NewApiEndpoint[] {
+  return endpoints.map((ep) => ({
+    sourceId,
+    path: ep.path,
+    method: ep.method,
+    operationId: ep.operationId ?? null,
+    summary: ep.summary ?? null,
+    description: ep.description ?? null,
+    tags: ep.tags,
+    parameters: ep.parameters,
+    requestBody: ep.requestBody,
+    responses: ep.responses,
+    deprecated: ep.deprecated,
+  }))
+}
 
 async function hasOpenapiSource(id: string) {
   const [source] = await db
@@ -23,12 +43,20 @@ async function hasOpenapiSource(id: string) {
 
 export async function createOpenapiSource(
   data: Omit<NewOpenapiSource, 'id' | 'createdAt' | 'lastSyncedAt'>,
+  endpoints: ParsedEndpoint[] = [],
 ): Promise<OpenapiSource> {
-  const [source] = await db
-    .insert(openapiSources)
-    .values(data)
-    .returning()
-  return source
+  return db.transaction(async (tx) => {
+    const [source] = await tx
+      .insert(openapiSources)
+      .values(data)
+      .returning()
+
+    if (endpoints.length > 0) {
+      await tx.insert(apiEndpoints).values(buildApiEndpointValues(source.id, endpoints))
+    }
+
+    return source
+  })
 }
 
 export async function getOpenapiSource(id: string) {
@@ -73,6 +101,7 @@ export async function listOpenapiSources(workspaceId: string) {
       id: openapiSources.id,
       name: openapiSources.name,
       sourceType: openapiSources.sourceType,
+      sourceUrl: openapiSources.sourceUrl,
       parsedVersion: openapiSources.parsedVersion,
       openapiVersion: openapiSources.openapiVersion,
       createdAt: openapiSources.createdAt,
@@ -135,21 +164,9 @@ export async function syncOpenapiSource(
       .where(eq(apiEndpoints.sourceId, id))
 
     if (spec.endpoints.length > 0) {
-      await tx.insert(apiEndpoints).values(
-        spec.endpoints.map((ep: ParsedEndpoint) => ({
-          sourceId: id,
-          path: ep.path,
-          method: ep.method,
-          operationId: ep.operationId ?? null,
-          summary: ep.summary ?? null,
-          description: ep.description ?? null,
-          tags: ep.tags,
-          parameters: ep.parameters,
-          requestBody: ep.requestBody,
-          responses: ep.responses,
-          deprecated: ep.deprecated,
-        })),
-      )
+      await tx
+        .insert(apiEndpoints)
+        .values(buildApiEndpointValues(id, spec.endpoints))
     }
 
     // Fetch and return updated source
@@ -177,6 +194,28 @@ export async function getEndpointsBySource(sourceId: string) {
   return db.query.apiEndpoints.findMany({
     where: eq(apiEndpoints.sourceId, sourceId),
     orderBy: [apiEndpoints.path, apiEndpoints.method],
+  })
+}
+
+export async function replaceOpenapiSourceEndpoints(
+  sourceId: string,
+  endpoints: ParsedEndpoint[],
+) {
+  if (!(await hasOpenapiSource(sourceId))) return []
+
+  return db.transaction(async (tx) => {
+    await tx
+      .delete(apiEndpoints)
+      .where(eq(apiEndpoints.sourceId, sourceId))
+
+    if (endpoints.length > 0) {
+      await tx.insert(apiEndpoints).values(buildApiEndpointValues(sourceId, endpoints))
+    }
+
+    return tx.query.apiEndpoints.findMany({
+      where: eq(apiEndpoints.sourceId, sourceId),
+      orderBy: [apiEndpoints.path, apiEndpoints.method],
+    })
   })
 }
 

@@ -1,11 +1,12 @@
 import { generateTypescriptSdk } from './typescript'
 import { generatePythonSdk } from './python'
 import { generateGoSdk } from './go'
+import type { OpenApiDocument } from './shared'
 
 export type SdkLanguage = 'typescript' | 'python' | 'go'
 
 export function generateSdk(
-  spec: Record<string, unknown>,
+  spec: OpenApiDocument,
   language: SdkLanguage,
   packageName: string,
   version: string,

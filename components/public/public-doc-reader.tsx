@@ -3,30 +3,8 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { renderMarkdown } from '@/lib/markdown'
+import { extractMarkdownHeadings } from '@/lib/markdown-outline'
 import { sanitizeHtml } from '@/lib/sanitize'
-
-interface Heading {
-  id: string
-  text: string
-  level: number
-}
-
-function extractHeadings(content: string): Heading[] {
-  const headings: Heading[] = []
-  const regex = /^(#{1,4})\s+(.+)$/gm
-  let match: RegExpExecArray | null
-
-  while ((match = regex.exec(content)) !== null) {
-    const text = match[2].replace(/[*_`#]/g, '').trim()
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
-    headings.push({ id, text, level: match[1].length })
-  }
-
-  return headings
-}
 
 interface PublicDocReaderProps {
   title: string
@@ -36,7 +14,10 @@ interface PublicDocReaderProps {
 
 export function PublicDocReader({ title, content, updatedAt }: PublicDocReaderProps) {
   const [activeId, setActiveId] = React.useState<string>('')
-  const headings = React.useMemo(() => extractHeadings(content), [content])
+  const headings = React.useMemo(
+    () => extractMarkdownHeadings(content),
+    [content],
+  )
   const html = React.useMemo(() => {
     if (!content.trim()) return '<p class="text-muted-foreground italic">No content.</p>'
     return sanitizeHtml(renderMarkdown(content))

@@ -1,6 +1,27 @@
 import { parse as openapiParse } from '@readme/openapi-parser'
 import YAML from 'yaml'
 import { createHash } from 'crypto'
+import { resolveLocalOpenApiRefs } from './ref-resolver'
+
+export interface ParsedSecurityScheme {
+  type?: string
+  description?: string
+  name?: string
+  in?: string
+  scheme?: string
+  bearerFormat?: string
+  openIdConnectUrl?: string
+  flows?: Record<string, unknown>
+}
+
+export interface ParsedSecurityRequirement {
+  [schemeName: string]: string[]
+}
+
+export interface ParsedServer {
+  url: string
+  description?: string
+}
 
 export interface ParsedEndpoint {
   path: string
@@ -13,6 +34,7 @@ export interface ParsedEndpoint {
   requestBody: Record<string, unknown> | null
   responses: Record<string, unknown>
   deprecated: boolean
+  security?: ParsedSecurityRequirement[] | null
 }
 
 export interface ParsedSpec {
@@ -21,6 +43,9 @@ export interface ParsedSpec {
   openapiVersion: string
   endpoints: ParsedEndpoint[]
   rawSchemas: Record<string, unknown>
+  servers: ParsedServer[]
+  security: ParsedSecurityRequirement[] | null
+  securitySchemes: Record<string, ParsedSecurityScheme>
 }
 
 /**
@@ -54,6 +79,26 @@ export async function parseOpenAPISpec(content: string): Promise<ParsedSpec> {
 
   const endpoints: ParsedEndpoint[] = []
   const paths = (api.paths ?? {}) as Record<string, Record<string, unknown>>
+  const servers = Array.isArray(api.servers)
+    ? (api.servers as Record<string, unknown>[])
+        .filter(
+          (server): server is Record<string, unknown> =>
+            typeof server.url === 'string' && server.url.length > 0,
+        )
+        .map((server) => ({
+          url: server.url as string,
+          description:
+            typeof server.description === 'string'
+              ? server.description
+              : undefined,
+        }))
+    : []
+  const topLevelSecurity = Array.isArray(api.security)
+    ? (resolveLocalOpenApiRefs(
+        api.security as ParsedSecurityRequirement[],
+        api,
+      ) as ParsedSecurityRequirement[])
+    : null
 
   const httpMethods = [
     'get',
@@ -67,7 +112,14 @@ export async function parseOpenAPISpec(content: string): Promise<ParsedSpec> {
   ]
 
   for (const [path, pathItem] of Object.entries(paths)) {
-    const pathParameters = (pathItem.parameters ?? []) as Record<
+    const pathParameters = resolveLocalOpenApiRefs(
+      (pathItem.parameters ?? []) as Record<
+        string,
+        unknown
+      >[],
+      api,
+    )
+    const resolvedPathParameters = pathParameters as Record<
       string,
       unknown
     >[]
@@ -76,26 +128,35 @@ export async function parseOpenAPISpec(content: string): Promise<ParsedSpec> {
       const operation = pathItem[method] as Record<string, unknown> | undefined
       if (!operation) continue
 
-      const opParameters = (operation.parameters ?? []) as Record<
+      const resolvedOperation = resolveLocalOpenApiRefs(operation, api) as Record<
+        string,
+        unknown
+      >
+      const opParameters = (resolvedOperation.parameters ?? []) as Record<
         string,
         unknown
       >[]
+      const endpointSecurity = Array.isArray(resolvedOperation.security)
+        ? (resolvedOperation.security as ParsedSecurityRequirement[])
+        : topLevelSecurity
       const mergedParameters = deduplicateParameters([
-        ...pathParameters,
+        ...resolvedPathParameters,
         ...opParameters,
       ])
 
       endpoints.push({
         path,
         method: method.toUpperCase(),
-        operationId: (operation.operationId as string) || undefined,
-        summary: (operation.summary as string) || null,
-        description: (operation.description as string) || undefined,
-        tags: (operation.tags as string[]) ?? [],
+        operationId: (resolvedOperation.operationId as string) || undefined,
+        summary: (resolvedOperation.summary as string) || null,
+        description: (resolvedOperation.description as string) || undefined,
+        tags: (resolvedOperation.tags as string[]) ?? [],
         parameters: mergedParameters,
-        requestBody: (operation.requestBody as Record<string, unknown>) ?? null,
-        responses: (operation.responses as Record<string, unknown>) ?? {},
-        deprecated: Boolean(operation.deprecated),
+        requestBody:
+          (resolvedOperation.requestBody as Record<string, unknown>) ?? null,
+        responses: (resolvedOperation.responses as Record<string, unknown>) ?? {},
+        deprecated: Boolean(resolvedOperation.deprecated),
+        security: endpointSecurity,
       })
     }
   }
@@ -103,8 +164,20 @@ export async function parseOpenAPISpec(content: string): Promise<ParsedSpec> {
   const rawSchemas = ((
     (api.components as Record<string, unknown>) ?? {}
   ).schemas ?? {}) as Record<string, unknown>
+  const securitySchemes = ((
+    (api.components as Record<string, unknown>) ?? {}
+  ).securitySchemes ?? {}) as Record<string, ParsedSecurityScheme>
 
-  return { title, version, openapiVersion, endpoints, rawSchemas }
+  return {
+    title,
+    version,
+    openapiVersion,
+    endpoints,
+    rawSchemas,
+    servers,
+    security: topLevelSecurity,
+    securitySchemes,
+  }
 }
 
 /**

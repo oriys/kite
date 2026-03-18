@@ -72,6 +72,22 @@ export async function getTemplate(id: string, workspaceId: string) {
   })) ?? null
 }
 
+export async function incrementTemplateUsage(
+  id: string,
+  workspaceId: string,
+) {
+  await db
+    .update(documentTemplates)
+    .set({ usageCount: sql`${documentTemplates.usageCount} + 1` })
+    .where(
+      and(
+        eq(documentTemplates.id, id),
+        eq(documentTemplates.workspaceId, workspaceId),
+        isNull(documentTemplates.deletedAt),
+      ),
+    )
+}
+
 export async function updateTemplate(
   id: string,
   workspaceId: string,
@@ -141,10 +157,7 @@ export async function createDocumentFromTemplate(
   if (!tpl) return null
 
   // Increment usage count
-  await db
-    .update(documentTemplates)
-    .set({ usageCount: sql`${documentTemplates.usageCount} + 1` })
-    .where(and(eq(documentTemplates.id, templateId), isNull(documentTemplates.deletedAt)))
+  await incrementTemplateUsage(templateId, workspaceId)
 
   return createDocument(
     workspaceId,

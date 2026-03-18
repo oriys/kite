@@ -1,54 +1,67 @@
 import {
+  collectSchemaRefs,
   extractOperations,
-  toTypescriptType,
-  toPascalCase,
+  getComponentSchemas,
+  getPrimaryServerUrl,
+  getSpecTitle,
+  isValidJsIdentifier,
   toCamelCase,
+  toPascalCase,
+  toTypescriptPropertyKey,
+  toTypescriptType,
+  type OpenApiDocument,
   type OperationInfo,
 } from './shared'
 
-function generateInterfaces(spec: Record<string, unknown>): string {
-  const components = spec.components as Record<string, unknown> | undefined
-  const schemas = (components?.schemas || {}) as Record<string, Record<string, unknown>>
+function generateInterfaces(spec: OpenApiDocument): string {
+  const schemas = getComponentSchemas(spec)
   const lines: string[] = []
 
   for (const [name, schema] of Object.entries(schemas)) {
     const typeName = toPascalCase(name)
 
-    if (schema.enum) {
-      const values = (schema.enum as unknown[]).map((v: unknown) => typeof v === 'string' ? `'${v}'` : String(v)).join(' | ')
+    if (schema.enum?.length) {
+      const values = schema.enum
+        .map((value) => (typeof value === 'string' ? JSON.stringify(value) : String(value)))
+        .join(' | ')
       lines.push(`export type ${typeName} = ${values}\n`)
       continue
     }
 
     if (schema.type === 'object' || schema.properties) {
-      const props = (schema.properties || {}) as Record<string, Record<string, unknown>>
-      const required = new Set((schema.required || []) as string[])
+      const required = new Set(schema.required ?? [])
       lines.push(`export interface ${typeName} {`)
-      for (const [propName, propSchema] of Object.entries(props)) {
-        const opt = required.has(propName) ? '' : '?'
+      for (const [propName, propSchema] of Object.entries(schema.properties ?? {})) {
+        const optional = required.has(propName) ? '' : '?'
         if (propSchema.description) lines.push(`  /** ${propSchema.description} */`)
-        lines.push(`  ${propName}${opt}: ${toTypescriptType(propSchema)}`)
+        lines.push(`  ${toTypescriptPropertyKey(propName)}${optional}: ${toTypescriptType(propSchema)}`)
       }
       lines.push('}\n')
-    } else {
-      lines.push(`export type ${typeName} = ${toTypescriptType(schema)}\n`)
+      continue
     }
+
+    lines.push(`export type ${typeName} = ${toTypescriptType(schema)}\n`)
   }
 
   return lines.join('\n')
 }
 
+function getTypescriptAccess(base: string, propertyName: string): string {
+  return isValidJsIdentifier(propertyName)
+    ? `${base}.${propertyName}`
+    : `${base}[${JSON.stringify(propertyName)}]`
+}
+
 function generateParamType(op: OperationInfo): string | null {
-  const params = op.parameters.filter((p) => p.in === 'path' || p.in === 'query')
+  const params = op.parameters.filter((param) => param.in === 'path' || param.in === 'query')
   if (params.length === 0 && !op.requestBody) return null
 
-  const lines: string[] = []
   const typeName = `${toPascalCase(op.operationId)}Params`
-  lines.push(`export interface ${typeName} {`)
+  const lines: string[] = [`export interface ${typeName} {`]
 
-  for (const p of params) {
-    const opt = p.required ? '' : '?'
-    lines.push(`  ${p.name}${opt}: ${toTypescriptType(p.schema)}`)
+  for (const param of params) {
+    const optional = param.required ? '' : '?'
+    lines.push(`  ${toTypescriptPropertyKey(param.name)}${optional}: ${toTypescriptType(param.schema)}`)
   }
 
   if (op.requestBody) {
@@ -65,7 +78,18 @@ function generateReturnType(op: OperationInfo): string {
 }
 
 function buildUrlTemplate(path: string): string {
-  return path.replace(/\{([^}]+)\}/g, '${params.$1}')
+  return path.replace(/\{([^}]+)\}/g, (_, name) => {
+    const access = getTypescriptAccess('params', name)
+    return `\${encodeURIComponent(String(${access}))}`
+  })
+}
+
+function collectOperationRefs(op: OperationInfo): string[] {
+  const refs = new Set<string>()
+  for (const param of op.parameters) collectSchemaRefs(param.schema, refs)
+  if (op.requestBody) collectSchemaRefs(op.requestBody.schema, refs)
+  if (op.responseSchema) collectSchemaRefs(op.responseSchema, refs)
+  return Array.from(refs).sort()
 }
 
 function generateEndpointMethods(ops: OperationInfo[]): string {
@@ -73,46 +97,43 @@ function generateEndpointMethods(ops: OperationInfo[]): string {
 
   for (const op of ops) {
     const methodName = toCamelCase(op.operationId)
-    const hasParams = op.parameters.length > 0 || op.requestBody
+    const hasParams = op.parameters.length > 0 || Boolean(op.requestBody)
     const paramType = `${toPascalCase(op.operationId)}Params`
     const returnType = generateReturnType(op)
     const paramArg = hasParams ? `params: ${paramType}` : ''
-    const pathParams = op.parameters.filter((p) => p.in === 'path')
-    const queryParams = op.parameters.filter((p) => p.in === 'query')
+    const pathParams = op.parameters.filter((param) => param.in === 'path')
+    const queryParams = op.parameters.filter((param) => param.in === 'query')
 
     if (op.summary) lines.push(`  /** ${op.summary} */`)
     lines.push(`  async ${methodName}(${paramArg}): Promise<${returnType}> {`)
 
-    let urlExpr: string
-    if (pathParams.length > 0) {
-      urlExpr = `\`${buildUrlTemplate(op.path)}\``
-    } else {
-      urlExpr = `'${op.path}'`
-    }
+    const urlExpr = pathParams.length > 0 ? `\`${buildUrlTemplate(op.path)}\`` : `'${op.path}'`
 
     if (queryParams.length > 0) {
-      lines.push(`    const query = new URLSearchParams()`)
-      for (const q of queryParams) {
-        if (q.required) {
-          lines.push(`    query.set('${q.name}', String(params.${q.name}))`)
+      lines.push('    const query = new URLSearchParams()')
+      for (const queryParam of queryParams) {
+        const access = getTypescriptAccess('params', queryParam.name)
+        if (queryParam.required) {
+          lines.push(`    query.set(${JSON.stringify(queryParam.name)}, String(${access}))`)
         } else {
-          lines.push(`    if (params.${q.name} !== undefined) query.set('${q.name}', String(params.${q.name}))`)
+          lines.push(`    if (${access} !== undefined) query.set(${JSON.stringify(queryParam.name)}, String(${access}))`)
         }
       }
-      lines.push(`    const qs = query.toString()`)
+      lines.push('    const qs = query.toString()')
       lines.push(`    const url = qs ? ${urlExpr} + '?' + qs : ${urlExpr}`)
     } else {
       lines.push(`    const url = ${urlExpr}`)
     }
 
-    const fetchOpts: string[] = [`method: '${op.method}'`]
-    if (op.requestBody) fetchOpts.push('body: JSON.stringify(params.body)')
+    const fetchOptions: string[] = [`method: '${op.method}'`]
+    if (op.requestBody) fetchOptions.push('body: JSON.stringify(params.body)')
 
     if (returnType === 'void') {
-      lines.push(`    await this.request(url, { ${fetchOpts.join(', ')} })`)
+      lines.push(`    await this.request(url, { ${fetchOptions.join(', ')} })`)
     } else {
-      lines.push(`    return this.request<${returnType}>(url, { ${fetchOpts.join(', ')} })`)
+      lines.push(`    return this.request<${returnType}>(url, { ${fetchOptions.join(', ')} })`)
     }
+
     lines.push('  }')
     lines.push('')
   }
@@ -120,216 +141,125 @@ function generateEndpointMethods(ops: OperationInfo[]): string {
   return lines.join('\n')
 }
 
-export function generateTypescriptSdk(spec: Record<string, unknown>, packageName: string, version: string): Map<string, string> {
+export function generateTypescriptSdk(
+  spec: OpenApiDocument,
+  packageName: string,
+  version: string,
+): Map<string, string> {
   const files = new Map<string, string>()
   const operations = extractOperations(spec)
 
-  // src/types.ts
-  files.set('src/types.ts', `// Auto-generated types for ${packageName}
-// Do not edit manually
+  files.set(
+    'src/types.ts',
+    `// Auto-generated types for ${packageName}\n// Do not edit manually\n\n${generateInterfaces(spec)}`,
+  )
 
-${generateInterfaces(spec)}`)
-
-  // Group operations by tag
   const byTag = new Map<string, OperationInfo[]>()
-  for (const op of operations) {
-    const tag = op.tags[0] || 'default'
+  for (const operation of operations) {
+    const tag = operation.tags[0] || 'default'
     if (!byTag.has(tag)) byTag.set(tag, [])
-    byTag.get(tag)!.push(op)
+    byTag.get(tag)?.push(operation)
   }
 
-  // src/endpoints/[tag].ts
   const endpointExports: string[] = []
   for (const [tag, ops] of byTag) {
     const fileName = toCamelCase(tag)
     const className = `${toPascalCase(tag)}Api`
+    const paramTypes = ops
+      .map((operation) => generateParamType(operation))
+      .filter((value): value is string => Boolean(value))
 
-    const paramTypes: string[] = []
-    for (const op of ops) {
-      const pt = generateParamType(op)
-      if (pt) paramTypes.push(pt)
+    const typeRefs = new Set<string>()
+    for (const operation of ops) {
+      for (const ref of collectOperationRefs(operation)) typeRefs.add(ref)
     }
 
     const imports: string[] = []
-    const typeRefs = new Set<string>()
-    for (const op of ops) {
-      if (op.responseSchema?.$ref) typeRefs.add(toPascalCase((op.responseSchema.$ref as string).split('/').pop()!))
-      if (op.requestBody?.schema?.$ref) typeRefs.add(toPascalCase((op.requestBody.schema.$ref as string).split('/').pop()!))
-    }
     if (typeRefs.size > 0) {
       imports.push(`import type { ${Array.from(typeRefs).join(', ')} } from '../types'`)
     }
     imports.push(`import type { ApiClient } from '../client'`)
 
-    const content = `${imports.join('\n')}
+    files.set(
+      `src/endpoints/${fileName}.ts`,
+      `${imports.join('\n')}\n\n${paramTypes.join('\n\n')}\n\nexport class ${className} {\n  constructor(private client: ApiClient) {}\n\n  private request<T = void>(path: string, init?: RequestInit): Promise<T> {\n    return this.client.request<T>(path, init)\n  }\n\n${generateEndpointMethods(ops)}}\n`,
+    )
 
-${paramTypes.join('\n\n')}
-
-export class ${className} {
-  constructor(private client: ApiClient) {}
-
-  private request<T = void>(path: string, init?: RequestInit): Promise<T> {
-    return this.client.request<T>(path, init)
-  }
-
-${generateEndpointMethods(ops)}}
-`
-    files.set(`src/endpoints/${fileName}.ts`, content)
     endpointExports.push(`export { ${className} } from './endpoints/${fileName}'`)
   }
 
-  // src/client.ts
-  const clientImports = Array.from(byTag.entries())
-    .map(([tag]) => `import { ${toPascalCase(tag)}Api } from './endpoints/${toCamelCase(tag)}'`)
+  const clientImports = Array.from(byTag.keys())
+    .map((tag) => `import { ${toPascalCase(tag)}Api } from './endpoints/${toCamelCase(tag)}'`)
     .join('\n')
-  const clientProps = Array.from(byTag.entries())
-    .map(([tag]) => `  readonly ${toCamelCase(tag)}: ${toPascalCase(tag)}Api`)
+  const clientProps = Array.from(byTag.keys())
+    .map((tag) => `  readonly ${toCamelCase(tag)}: ${toPascalCase(tag)}Api`)
     .join('\n')
-  const clientInit = Array.from(byTag.entries())
-    .map(([tag]) => `    this.${toCamelCase(tag)} = new ${toPascalCase(tag)}Api(this)`)
+  const clientInit = Array.from(byTag.keys())
+    .map((tag) => `    this.${toCamelCase(tag)} = new ${toPascalCase(tag)}Api(this)`)
     .join('\n')
 
-  files.set('src/client.ts', `${clientImports}
+  files.set(
+    'src/client.ts',
+    `${clientImports}\n\nexport interface ClientOptions {\n  baseUrl: string\n  apiKey?: string\n  headers?: Record<string, string>\n}\n\nexport class ApiClient {\n  private baseUrl: string\n  private apiKey?: string\n  private headers: Record<string, string>\n\n${clientProps}\n\n  constructor(options: ClientOptions) {\n    this.baseUrl = options.baseUrl.replace(/\\\/$/, '')\n    this.apiKey = options.apiKey\n    this.headers = options.headers ?? {}\n${clientInit}\n  }\n\n  async request<T = void>(path: string, init?: RequestInit): Promise<T> {\n    const headers: Record<string, string> = {\n      'Content-Type': 'application/json',\n      ...this.headers,\n    }\n    if (this.apiKey) {\n      headers.Authorization = \`Bearer \${this.apiKey}\`\n    }\n\n    const response = await fetch(\`\${this.baseUrl}\${path}\`, {\n      ...init,\n      headers: { ...headers, ...Object.fromEntries(new Headers(init?.headers).entries()) },\n    })\n\n    if (!response.ok) {\n      const body = await response.text().catch(() => '')\n      throw new ApiError(response.status, response.statusText, body)\n    }\n\n    if (response.status === 204) return undefined as T\n    return response.json() as Promise<T>\n  }\n}\n\nexport class ApiError extends Error {\n  constructor(\n    public readonly status: number,\n    public readonly statusText: string,\n    public readonly body: string,\n  ) {\n    super(\`API Error \${status}: \${statusText}\`)\n    this.name = 'ApiError'\n  }\n}\n`,
+  )
 
-export interface ClientOptions {
-  baseUrl: string
-  apiKey?: string
-  headers?: Record<string, string>
-}
+  files.set(
+    'src/index.ts',
+    `export { ApiClient, ApiError } from './client'\nexport type { ClientOptions } from './client'\nexport * from './types'\n${endpointExports.join('\n')}\n`,
+  )
 
-export class ApiClient {
-  private baseUrl: string
-  private apiKey?: string
-  private headers: Record<string, string>
+  files.set(
+    'package.json',
+    JSON.stringify(
+      {
+        name: packageName,
+        version,
+        description: `SDK client for ${getSpecTitle(spec)}`,
+        main: 'dist/index.js',
+        types: 'dist/index.d.ts',
+        scripts: {
+          build: 'tsc',
+          clean: 'rm -rf dist',
+        },
+        files: ['dist'],
+        license: 'MIT',
+      },
+      null,
+      2,
+    ),
+  )
 
-${clientProps}
+  files.set(
+    'tsconfig.json',
+    JSON.stringify(
+      {
+        compilerOptions: {
+          target: 'ES2020',
+          module: 'commonjs',
+          lib: ['ES2020'],
+          declaration: true,
+          strict: true,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          outDir: 'dist',
+          rootDir: 'src',
+          moduleResolution: 'node',
+        },
+        include: ['src'],
+      },
+      null,
+      2,
+    ),
+  )
 
-  constructor(options: ClientOptions) {
-    this.baseUrl = options.baseUrl.replace(/\\/$/, '')
-    this.apiKey = options.apiKey
-    this.headers = options.headers ?? {}
-${clientInit}
-  }
-
-  async request<T = void>(path: string, init?: RequestInit): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...this.headers,
-    }
-    if (this.apiKey) {
-      headers['Authorization'] = \`Bearer \${this.apiKey}\`
-    }
-
-    const response = await fetch(\`\${this.baseUrl}\${path}\`, {
-      ...init,
-      headers: { ...headers, ...Object.fromEntries(new Headers(init?.headers).entries()) },
-    })
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '')
-      throw new ApiError(response.status, response.statusText, body)
-    }
-
-    if (response.status === 204) return undefined as T
-    return response.json() as Promise<T>
-  }
-}
-
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly statusText: string,
-    public readonly body: string,
-  ) {
-    super(\`API Error \${status}: \${statusText}\`)
-    this.name = 'ApiError'
-  }
-}
-`)
-
-  // src/index.ts
-  files.set('src/index.ts', `export { ApiClient, ApiError } from './client'
-export type { ClientOptions } from './client'
-export * from './types'
-${endpointExports.join('\n')}
-`)
-
-  // package.json
-  files.set('package.json', JSON.stringify({
-    name: packageName,
-    version,
-    description: `SDK client for ${(spec.info as Record<string, unknown>)?.title || 'API'}`,
-    main: 'dist/index.js',
-    types: 'dist/index.d.ts',
-    scripts: {
-      build: 'tsc',
-      clean: 'rm -rf dist',
-    },
-    files: ['dist'],
-    license: 'MIT',
-  }, null, 2))
-
-  // tsconfig.json
-  files.set('tsconfig.json', JSON.stringify({
-    compilerOptions: {
-      target: 'ES2020',
-      module: 'commonjs',
-      lib: ['ES2020'],
-      declaration: true,
-      strict: true,
-      esModuleInterop: true,
-      skipLibCheck: true,
-      outDir: 'dist',
-      rootDir: 'src',
-      moduleResolution: 'node',
-    },
-    include: ['src'],
-  }, null, 2))
-
-  // README.md
   const firstTag = byTag.keys().next().value || 'default'
-  const firstOp = operations[0]
-  const exampleMethod = firstOp ? toCamelCase(firstOp.operationId) : 'listItems'
+  const firstOperation = operations[0]
+  const exampleMethod = firstOperation ? toCamelCase(firstOperation.operationId) : 'listItems'
 
-  files.set('README.md', `# ${packageName}
-
-TypeScript SDK for ${(spec.info as Record<string, unknown>)?.title || 'the API'} (v${version}).
-
-## Installation
-
-\`\`\`bash
-npm install ${packageName}
-\`\`\`
-
-## Usage
-
-\`\`\`typescript
-import { ApiClient } from '${packageName}'
-
-const client = new ApiClient({
-  baseUrl: '${((spec.servers as Record<string, unknown>[] | undefined)?.[0] as Record<string, unknown> | undefined)?.url || 'https://api.example.com'}',
-  apiKey: 'your-api-key',
-})
-
-// Example: call an endpoint
-const result = await client.${toCamelCase(firstTag)}.${exampleMethod}()
-console.log(result)
-\`\`\`
-
-## Error Handling
-
-\`\`\`typescript
-import { ApiClient, ApiError } from '${packageName}'
-
-try {
-  await client.${toCamelCase(firstTag)}.${exampleMethod}()
-} catch (error) {
-  if (error instanceof ApiError) {
-    console.error(\`Status: \${error.status}, Body: \${error.body}\`)
-  }
-}
-\`\`\`
-`)
+  files.set(
+    'README.md',
+    `# ${packageName}\n\nTypeScript SDK for ${getSpecTitle(spec)} (v${version}).\n\n## Installation\n\n\`\`\`bash\nnpm install ${packageName}\n\`\`\`\n\n## Usage\n\n\`\`\`typescript\nimport { ApiClient } from '${packageName}'\n\nconst client = new ApiClient({\n  baseUrl: '${getPrimaryServerUrl(spec)}',\n  apiKey: 'your-api-key',\n})\n\nconst result = await client.${toCamelCase(firstTag)}.${exampleMethod}()\nconsole.log(result)\n\`\`\`\n\n## Error Handling\n\n\`\`\`typescript\nimport { ApiClient, ApiError } from '${packageName}'\n\ntry {\n  await client.${toCamelCase(firstTag)}.${exampleMethod}()\n} catch (error) {\n  if (error instanceof ApiError) {\n    console.error(\`Status: \${error.status}, Body: \${error.body}\`)\n  }\n}\n\`\`\`\n`,
+  )
 
   return files
 }

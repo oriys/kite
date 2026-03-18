@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { openapiSources } from '@/lib/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import { generateSdk, packageSdk, type SdkLanguage } from '@/lib/sdk-generator'
+import type { OpenApiDocument } from '@/lib/sdk-generator/shared'
 import YAML from 'yaml'
 
 const VALID_LANGUAGES: SdkLanguage[] = ['typescript', 'python', 'go']
@@ -47,10 +48,18 @@ export async function POST(request: NextRequest) {
   })
 }
 
-function rebuildSpec(rawContent: string): Record<string, unknown> {
-  try {
-    return JSON.parse(rawContent)
-  } catch {
-    return YAML.parse(rawContent)
+function rebuildSpec(rawContent: string): OpenApiDocument {
+  const parsed: unknown = (() => {
+    try {
+      return JSON.parse(rawContent)
+    } catch {
+      return YAML.parse(rawContent)
+    }
+  })()
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Invalid OpenAPI document')
   }
+
+  return parsed as OpenApiDocument
 }
