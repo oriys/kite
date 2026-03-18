@@ -1,0 +1,18 @@
+<svg width="220" height="64" viewBox="0 0 220 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .ink-fill { fill: #171717; }
+    .ink-stroke { stroke: #171717; }
+    @media (prefers-color-scheme: dark) {
+      .ink-fill { fill: #f5f4ef; }
+      .ink-stroke { stroke: #f5f4ef; }
+    }
+  </style>
+  <g transform="translate(2 0)">
+    <path class="ink-fill" opacity="0.12" d="M33.5 7.5L52.5 24.5L33.5 41.5L14.5 24.5L33.5 7.5Z" />
+    <path class="ink-stroke" d="M33.5 7.5L52.5 24.5L33.5 41.5L14.5 24.5L33.5 7.5Z" stroke-width="3.25" stroke-linejoin="round" />
+    <path class="ink-stroke" d="M33.5 7.5V41.5" stroke-width="3.25" stroke-linecap="round" />
+    <path class="ink-stroke" d="M14.5 24.5H52.5" stroke-width="3.25" stroke-linecap="round" opacity="0.72" />
+    <path class="ink-stroke" d="M33.5 41.5C29.6 46.1 26.1 49.5 21.6 51.6C18 53.3 15 55.9 13.2 59.2" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round" />
+    <circle class="ink-fill" cx="12" cy="60" r="2.25" />
+  </g>
+  <path class="ink-fill" d="M91.5835 17.52V46H84.0235V17.52H91.5835ZM120.263 46L111.911 33.904L104.063 46H95.3874L107.527 30.664L95.9274 17.52H104.603L112.207 28.736L119.527 17.52H128.203L116.643 30.38L129.019 46H120.263ZM140.897 17.52V46H133.337V17.52H140.897ZM154.159 24.348V46H146.887V24.348H154.159ZM150.543 14.96C149.247 14.96 148.167 14.564 147.303 13.772C146.439 12.98 146.007 12.008 146.007 10.856C146.007 9.704 146.439 8.732 147.303 7.94C148.167 7.148 149.247 6.752 150.543 6.752C151.839 6.752 152.919 7.148 153.783 7.94C154.647 8.732 155.079 9.704 155.079 10.856C155.079 12.008 154.647 12.98 153.783 13.772C152.919 14.564 151.839 14.96 150.543 14.96ZM164.876 46V17.52H172.436V46H164.876ZM213.246 17.52L203.202 46H194.566L184.486 17.52H192.526L198.974 38.472L205.458 17.52H213.246Z" />

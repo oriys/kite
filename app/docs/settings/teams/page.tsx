@@ -31,6 +31,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -77,6 +78,10 @@ export default function TeamsPage() {
   const [selectedTeam, setSelectedTeam] = React.useState<
     (Team & { members: TeamMember[] }) | null
   >(null)
+  const [deleteTeamTarget, setDeleteTeamTarget] = React.useState<{
+    id: string
+    name: string
+  } | null>(null)
   const [wsMembers, setWsMembers] = React.useState<WorkspaceMember[]>([])
 
   const fetchTeams = React.useCallback(async () => {
@@ -119,9 +124,8 @@ export default function TeamsPage() {
     if (selectedTeamId) fetchTeamDetail(selectedTeamId)
   }, [selectedTeamId, fetchTeamDetail])
 
-  const handleDeleteTeam = async (teamId: string, name: string) => {
+  const handleDeleteTeam = async (teamId: string) => {
     if (!workspaceId) return
-    if (!confirm(`Delete team "${name}"?`)) return
     const res = await fetch(
       `/api/workspaces/${workspaceId}/teams/${teamId}`,
       { method: 'DELETE' },
@@ -262,7 +266,10 @@ export default function TeamsPage() {
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
                         onClick={() =>
-                          handleDeleteTeam(selectedTeam.id, selectedTeam.name)
+                          setDeleteTeamTarget({
+                            id: selectedTeam.id,
+                            name: selectedTeam.name,
+                          })
                         }
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -350,6 +357,27 @@ export default function TeamsPage() {
           )}
         </div>
       </div>
+
+      <ConfirmActionDialog
+        open={Boolean(deleteTeamTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTeamTarget(null)
+          }
+        }}
+        title="Delete team?"
+        description={
+          deleteTeamTarget
+            ? `The team “${deleteTeamTarget.name}” will be deleted. Members stay in the workspace, but the team structure is removed.`
+            : 'This team will be deleted. Members stay in the workspace, but the team structure is removed.'
+        }
+        actionLabel="Delete team"
+        destructive
+        onAction={() => {
+          if (!deleteTeamTarget) return
+          void handleDeleteTeam(deleteTeamTarget.id)
+        }}
+      />
     </div>
   )
 }

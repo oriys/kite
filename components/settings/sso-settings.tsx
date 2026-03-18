@@ -12,6 +12,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog'
 import {
   Dialog,
   DialogContent,
@@ -74,11 +75,16 @@ const EMPTY_FORM: FormData = {
   enabled: true,
 }
 
-export function SsoSettings({ workspaceId: _workspaceId }: { workspaceId: string }) {
+export function SsoSettings({ workspaceId }: { workspaceId: string }) {
+  void workspaceId
   const [configs, setConfigs] = React.useState<SsoConfig[]>([])
   const [loading, setLoading] = React.useState(true)
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [editingId, setEditingId] = React.useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = React.useState<{
+    id: string
+    displayName: string
+  } | null>(null)
   const [form, setForm] = React.useState<FormData>(EMPTY_FORM)
   const [saving, setSaving] = React.useState(false)
 
@@ -152,7 +158,6 @@ export function SsoSettings({ workspaceId: _workspaceId }: { workspaceId: string
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this SSO configuration? Users will no longer be able to sign in with it.')) return
     try {
       const res = await fetch(`/api/sso/configs/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete')
@@ -467,7 +472,12 @@ export function SsoSettings({ workspaceId: _workspaceId }: { workspaceId: string
                     variant="ghost"
                     size="icon"
                     className="size-8 text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(config.id)}
+                    onClick={() =>
+                      setDeleteTarget({
+                        id: config.id,
+                        displayName: config.displayName,
+                      })
+                    }
                   >
                     <Trash2 className="size-4" />
                   </Button>
@@ -493,6 +503,27 @@ export function SsoSettings({ workspaceId: _workspaceId }: { workspaceId: string
           ))}
         </div>
       )}
+
+      <ConfirmActionDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null)
+          }
+        }}
+        title="Delete SSO configuration?"
+        description={
+          deleteTarget
+            ? `“${deleteTarget.displayName}” will be removed, and users will no longer be able to sign in with this provider.`
+            : 'This SSO configuration will be removed, and users will no longer be able to sign in with this provider.'
+        }
+        actionLabel="Delete configuration"
+        destructive
+        onAction={() => {
+          if (!deleteTarget) return
+          void handleDelete(deleteTarget.id)
+        }}
+      />
     </div>
   )
 }

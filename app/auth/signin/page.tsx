@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { SsoSignInSection } from '@/components/auth/sso-signin-section'
+import { KiteLogo } from '@/components/brand/kite-logo'
 
 function isSafeCallbackUrl(url: string): boolean {
   return url.startsWith('/') && !url.startsWith('//')
@@ -45,9 +46,12 @@ export default async function SignInPage(props: {
     <div className="flex min-h-dvh items-center justify-center px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <p className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
-            Kite
-          </p>
+          <div className="mb-4 flex justify-center">
+            <KiteLogo
+              markClassName="size-7"
+              wordmarkClassName="text-[1.75rem] font-semibold tracking-[-0.06em]"
+            />
+          </div>
           <CardTitle className="text-lg font-semibold tracking-tight">
             Sign in
           </CardTitle>

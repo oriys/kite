@@ -42,6 +42,7 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { UserMenu } from '@/components/auth/user-menu'
 import { GlobalSearch } from '@/components/global-search'
 import { NotificationBell } from '@/components/notification-bell'
+import { KiteLogo } from '@/components/brand/kite-logo'
 
 const NAV_ITEMS: ReadonlyArray<{
   key: NavItemKey
@@ -242,7 +243,7 @@ export function DocsTopNav() {
           <SheetContent side="left" className="w-72 p-0">
             <SheetHeader className="px-5 pt-5 pb-3">
               <SheetTitle className="text-sm font-semibold tracking-tight">
-                Kite
+                <KiteLogo markClassName="size-5" wordmarkClassName="text-base font-semibold tracking-[-0.05em]" />
               </SheetTitle>
             </SheetHeader>
             <Separator />
@@ -273,9 +274,9 @@ export function DocsTopNav() {
         {/* Logo */}
         <Link
           href="/docs"
-          className="text-sm font-semibold tracking-tight text-foreground"
+          className="shrink-0"
         >
-          Kite
+          <KiteLogo markClassName="size-4.5" wordmarkClassName="text-[0.95rem] font-semibold tracking-[-0.05em]" />
         </Link>
 
         <div className="hidden flex-1 items-center gap-3 md:flex">

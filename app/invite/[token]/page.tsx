@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { InviteAcceptActions } from '@/components/invite/invite-accept-actions'
+import { KiteLogo } from '@/components/brand/kite-logo'
 
 interface InvitePageProps {
   params: Promise<{ token: string }>
@@ -41,9 +42,12 @@ export default async function InvitePage({ params }: InvitePageProps) {
     <div className="flex min-h-dvh items-center justify-center px-4 py-10">
       <Card className="w-full max-w-lg">
         <CardHeader className="text-center">
-          <p className="mb-3 text-2xl font-semibold tracking-tight text-foreground">
-            Kite
-          </p>
+          <div className="mb-4 flex justify-center">
+            <KiteLogo
+              markClassName="size-7"
+              wordmarkClassName="text-[1.75rem] font-semibold tracking-[-0.06em]"
+            />
+          </div>
           <CardTitle className="text-lg font-semibold tracking-tight">
             {invite
               ? isAccepted

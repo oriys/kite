@@ -37,6 +37,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -80,14 +81,32 @@ interface Invite {
 }
 
 const ROLE_META: Record<MemberRole, { label: string; icon: React.ElementType; color: string }> = {
-  owner: { label: 'Owner', icon: Crown, color: 'text-amber-600 dark:text-amber-400' },
-  admin: { label: 'Admin', icon: ShieldAlert, color: 'text-blue-600 dark:text-blue-400' },
+  owner: { label: 'Owner', icon: Crown, color: 'text-tone-caution-text' },
+  admin: { label: 'Admin', icon: ShieldAlert, color: 'text-tone-info-text' },
   member: { label: 'Member', icon: Shield, color: 'text-foreground' },
   guest: { label: 'Guest', icon: User, color: 'text-muted-foreground' },
 }
 
 function getInviteUrl(token: string, origin: string) {
   return `${origin || ''}/invite/${token}`
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function getInitials(value: string | null) {
+  return (value ?? '?')
+    .split(/[\s@]/)
+    .map((segment) => segment[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
 }
 
 export default function MembersPage() {
@@ -101,6 +120,10 @@ export default function MembersPage() {
   const [debouncedSearch, setDebouncedSearch] = React.useState('')
   const [origin, setOrigin] = React.useState('')
   const [copiedInviteId, setCopiedInviteId] = React.useState<string | null>(null)
+  const [removeTarget, setRemoveTarget] = React.useState<{
+    userId: string
+    name: string | null
+  } | null>(null)
   const hasLoadedMembersRef = React.useRef(false)
 
   React.useEffect(() => {
@@ -177,9 +200,8 @@ export default function MembersPage() {
     }
   }
 
-  const handleRemove = async (userId: string, name: string | null) => {
+  const handleRemove = async (userId: string) => {
     if (!workspaceId) return
-    if (!confirm(`Remove ${name ?? 'this member'} from workspace?`)) return
     const res = await fetch(
       `/api/workspaces/${workspaceId}/members/${userId}`,
       { method: 'DELETE' },
@@ -230,59 +252,60 @@ export default function MembersPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight">Members</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Manage who has access to this workspace and their roles.
-        </p>
+      {/* Page header */}
+      <div className="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">Members</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Manage workspace access and roles.
+          </p>
+        </div>
+        {canManageMembers && (
+          <InviteDialog workspaceId={workspaceId} onSuccess={() => fetchInvites()} />
+        )}
       </div>
 
       {!canManageMembers ? (
-        <Alert className="mb-6 border-border/70 bg-muted/20">
+        <Alert className="mb-6 border-border/60">
           <ShieldAlert className="size-4" />
-          <AlertTitle>Read-only access</AlertTitle>
-          <AlertDescription>
-            You can review workspace members here, but only admins and owners can invite people,
-            change roles, or remove access.
+          <AlertTitle>Read-only</AlertTitle>
+          <AlertDescription className="text-xs">
+            Only admins and owners can invite, change roles, or remove members.
           </AlertDescription>
         </Alert>
       ) : null}
 
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      {/* Search */}
+      <div className="mb-4">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search members…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
+            className="h-8 rounded-md border-border/60 bg-background pl-8 text-sm shadow-none"
           />
         </div>
-        {canManageMembers && (
-          <InviteDialog
-            workspaceId={workspaceId}
-            onSuccess={() => fetchInvites()}
-          />
-        )}
       </div>
 
-      {/* Members list */}
-      <div className="rounded-lg border border-border bg-card">
+      {/* Members table */}
+      <div className="overflow-hidden rounded-lg border border-border/60">
+        {/* Table header */}
         <div
           className={cn(
-            'items-center gap-4 border-b border-border px-4 py-2.5',
+            'hidden items-center gap-4 border-b border-border/60 bg-muted/30 px-4 py-2 md:grid',
             canManageMembers
-              ? 'grid grid-cols-[1fr_120px_120px_40px]'
-              : 'grid grid-cols-[1fr_120px_120px]',
+              ? 'grid-cols-[minmax(0,2fr)_140px_100px_32px]'
+              : 'grid-cols-[minmax(0,2fr)_140px_100px]',
           )}
         >
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Member
           </span>
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Role
           </span>
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Joined
           </span>
           {canManageMembers ? <span /> : null}
@@ -295,12 +318,7 @@ export default function MembersPage() {
         )}
 
         {members.map((member) => {
-          const initials = (member.name ?? member.email ?? '?')
-            .split(/[\s@]/)
-            .map((s) => s[0])
-            .slice(0, 2)
-            .join('')
-            .toUpperCase()
+          const initials = getInitials(member.name ?? member.email)
           const roleMeta = ROLE_META[member.role]
           const RoleIcon = roleMeta.icon
 
@@ -308,94 +326,118 @@ export default function MembersPage() {
             <div
               key={member.userId}
               className={cn(
-                'items-center gap-4 border-b border-border/50 px-4 py-3 last:border-0',
+                'grid gap-4 border-b border-border/40 px-4 py-3 last:border-0 md:items-center',
                 canManageMembers
-                  ? 'grid grid-cols-[1fr_120px_120px_40px]'
-                  : 'grid grid-cols-[1fr_120px_120px]',
+                  ? 'md:grid-cols-[minmax(0,2fr)_140px_100px_32px]'
+                  : 'md:grid-cols-[minmax(0,2fr)_140px_100px]',
               )}
             >
+              {/* Member info */}
               <div className="flex items-center gap-3 overflow-hidden">
-                <Avatar className="h-8 w-8 shrink-0">
+                <Avatar className="size-8 shrink-0 border border-border/60">
                   <AvatarImage src={member.image ?? undefined} />
-                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                  <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
-                    {member.name ?? 'Unnamed'}
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {member.name ?? 'Unnamed'}
+                    </p>
                     {member.status === 'disabled' && (
-                      <Badge variant="secondary" className="ml-2 text-[10px]">
+                      <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
                         Disabled
                       </Badge>
                     )}
-                  </p>
+                  </div>
                   <p className="truncate text-xs text-muted-foreground">
                     {member.email}
                   </p>
                 </div>
               </div>
 
+              {/* Role */}
               {canManageMembers ? (
                 <div>
-                  <Select
-                    value={member.role}
-                    onValueChange={(v) =>
-                      handleRoleChange(member.userId, v as MemberRole)
-                    }
-                    disabled={member.role === 'owner'}
-                  >
-                    <SelectTrigger className="h-7 w-[110px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(ROLE_META).map(([key, m]) => (
-                        <SelectItem key={key} value={key}>
-                          <span className={cn('flex items-center gap-1.5', m.color)}>
-                            <m.icon className="h-3 w-3" />
-                            {m.label}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground md:hidden">
+                    Role
+                  </p>
+                  {member.role === 'owner' ? (
+                    <div className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2.5 text-xs font-medium text-foreground">
+                      <RoleIcon className={cn('size-3.5', roleMeta.color)} />
+                      {roleMeta.label}
+                    </div>
+                  ) : (
+                    <Select
+                      value={member.role}
+                      onValueChange={(v) =>
+                        handleRoleChange(member.userId, v as MemberRole)
+                      }
+                    >
+                      <SelectTrigger className="h-8 w-full rounded-md border-border/60 bg-background px-2.5 text-xs font-medium shadow-none sm:w-[140px]">
+                        <SelectValue aria-label={roleMeta.label} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(ROLE_META).map(([key, m]) => (
+                          <SelectItem key={key} value={key}>
+                            <span className="flex items-center gap-1.5">
+                              <m.icon className={cn('size-3.5', m.color)} />
+                              {m.label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               ) : (
-                <div
-                  className={cn(
-                    'inline-flex items-center gap-1.5 text-xs font-medium',
-                    roleMeta.color,
-                  )}
-                >
-                  <RoleIcon className="h-3.5 w-3.5" />
-                  {roleMeta.label}
+                <div>
+                  <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground md:hidden">
+                    Role
+                  </p>
+                  <div className={cn('inline-flex items-center gap-1.5 text-xs font-medium', roleMeta.color)}>
+                    <RoleIcon className="size-3.5" />
+                    {roleMeta.label}
+                  </div>
                 </div>
               )}
 
-              <span className="text-xs text-muted-foreground">
-                {new Date(member.joinedAt).toLocaleDateString()}
-              </span>
+              {/* Joined */}
+              <div>
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground md:hidden">
+                  Joined
+                </p>
+                <span className="text-xs text-muted-foreground">
+                  {formatDate(member.joinedAt)}
+                </span>
+              </div>
 
+              {/* Actions */}
               {canManageMembers ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      disabled={member.role === 'owner'}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => handleRemove(member.userId, member.name)}
-                    >
-                      <UserX className="mr-2 h-4 w-4" />
-                      Remove
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <div className="flex items-center md:justify-end">
+                  {member.role !== 'owner' ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="size-7">
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() =>
+                            setRemoveTarget({
+                              userId: member.userId,
+                              name: member.name,
+                            })
+                          }
+                        >
+                          <UserX className="mr-1.5 size-3.5" />
+                          Remove
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           )
@@ -405,58 +447,66 @@ export default function MembersPage() {
       {/* Pending invites */}
       {canManageMembers && invites.length > 0 && (
         <div className="mt-8">
-          <h2 className="mb-3 text-sm font-semibold">
-            Pending invites
-            <Badge variant="secondary" className="ml-2">
-              {invites.length}
-            </Badge>
-          </h2>
-          <div className="rounded-lg border border-border bg-card">
-            {invites.map((invite) => (
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-foreground">
+              Pending invites
+              <span className="ml-2 text-xs text-muted-foreground">({invites.length})</span>
+            </h2>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border/60">
+            {invites.map((invite, idx) => (
               <div
                 key={invite.id}
-                className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3 last:border-0"
+                className={cn(
+                  'flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between',
+                  idx < invites.length - 1 && 'border-b border-border/40',
+                )}
               >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted/50 text-muted-foreground">
                     {invite.type === 'email' ? (
-                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      <Mail className="size-3.5" />
                     ) : (
-                      <Link2 className="h-4 w-4 text-muted-foreground" />
+                      <Link2 className="size-3.5" />
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {invite.type === 'link'
-                        ? getInviteUrl(invite.token, origin)
-                        : invite.email ?? 'Invite email'}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {invite.type === 'link' ? 'Share link' : invite.email ?? 'Invite'}
+                      </p>
+                      <span className={cn(
+                        'inline-flex items-center gap-1 text-[10px] font-medium',
+                        ROLE_META[invite.role].color,
+                      )}>
+                        {ROLE_META[invite.role].label}
+                      </span>
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      {ROLE_META[invite.role].label} · Expires{' '}
-                      {new Date(invite.expiresAt).toLocaleDateString()}
+                      Expires {formatDate(invite.expiresAt)}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1.5">
                   {invite.type === 'link' && (
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
                       onClick={() => handleCopyInviteLink(invite.id, invite.token)}
-                      aria-label="Copy invite link"
                     >
                       {copiedInviteId === invite.id ? (
-                        <Check className="h-4 w-4 text-emerald-500" />
+                        <Check className="mr-1 size-3 text-tone-success-text" />
                       ) : (
-                        <Copy className="h-4 w-4" />
+                        <Copy className="mr-1 size-3" />
                       )}
+                      {copiedInviteId === invite.id ? 'Copied' : 'Copy'}
                     </Button>
                   )}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-destructive hover:text-destructive"
+                    className="h-7 text-xs text-destructive hover:text-destructive"
                     onClick={() => handleRevokeInvite(invite.id)}
                   >
                     Revoke
@@ -467,6 +517,27 @@ export default function MembersPage() {
           </div>
         </div>
       )}
+
+      <ConfirmActionDialog
+        open={Boolean(removeTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRemoveTarget(null)
+          }
+        }}
+        title="Remove member?"
+        description={
+          removeTarget
+            ? `${removeTarget.name ?? 'This member'} will lose access to this workspace immediately.`
+            : 'This member will lose access to this workspace immediately.'
+        }
+        actionLabel="Remove member"
+        destructive
+        onAction={() => {
+          if (!removeTarget) return
+          void handleRemove(removeTarget.userId)
+        }}
+      />
     </div>
   )
 }
@@ -541,8 +612,8 @@ function InviteDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm">
-          <UserPlus className="mr-1.5 h-4 w-4" />
+        <Button size="sm" className="h-8">
+          <UserPlus className="mr-1.5 size-3.5" />
           Invite
         </Button>
       </DialogTrigger>
@@ -550,7 +621,7 @@ function InviteDialog({
         <DialogHeader>
           <DialogTitle>Invite to workspace</DialogTitle>
           <DialogDescription>
-            Add new members by email or generate a shareable invite link.
+            Add members by email or generate a shareable link.
           </DialogDescription>
         </DialogHeader>
 
@@ -563,23 +634,23 @@ function InviteDialog({
         >
           <TabsList className="w-full">
             <TabsTrigger value="email" className="flex-1">
-              <Mail className="mr-1.5 h-4 w-4" />
+              <Mail className="mr-1.5 size-3.5" />
               Email
             </TabsTrigger>
             <TabsTrigger value="link" className="flex-1">
-              <Link2 className="mr-1.5 h-4 w-4" />
+              <Link2 className="mr-1.5 size-3.5" />
               Link
             </TabsTrigger>
           </TabsList>
 
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
-              <Label>Role</Label>
+              <Label className="text-xs">Role</Label>
               <Select
                 value={role}
                 onValueChange={(v) => setRole(v as MemberRole)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -592,30 +663,31 @@ function InviteDialog({
 
             <TabsContent value="email" className="mt-0 space-y-4">
               <div className="space-y-2">
-                <Label>Email address</Label>
+                <Label className="text-xs">Email address</Label>
                 <Input
                   type="email"
                   placeholder="colleague@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  className="h-8 text-sm"
                 />
               </div>
             </TabsContent>
 
             <TabsContent value="link" className="mt-0">
               {linkToken && (
-                <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2">
-                  <code className="flex-1 truncate text-xs">{linkToken}</code>
+                <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 p-2">
+                  <code className="flex-1 truncate font-mono text-xs text-muted-foreground">{linkToken}</code>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 shrink-0"
+                    className="size-7 shrink-0"
                     onClick={copyLink}
                   >
                     {copied ? (
-                      <Check className="h-4 w-4 text-emerald-500" />
+                      <Check className="size-3.5 text-tone-success-text" />
                     ) : (
-                      <Copy className="h-4 w-4" />
+                      <Copy className="size-3.5" />
                     )}
                   </Button>
                 </div>
@@ -625,7 +697,11 @@ function InviteDialog({
         </Tabs>
 
         <DialogFooter>
-          <Button onClick={handleInvite} disabled={loading || (tab === 'email' && !email)}>
+          <Button
+            size="sm"
+            onClick={handleInvite}
+            disabled={loading || (tab === 'email' && !email)}
+          >
             {loading
               ? 'Creating…'
               : tab === 'email'
