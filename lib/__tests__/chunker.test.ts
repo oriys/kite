@@ -69,6 +69,22 @@ describe('chunker', () => {
         expect(chunk.chunkIndex).toBe(i)
       })
     })
+
+    it('continues making progress on very long ordered lists', () => {
+      const content = [
+        '# Migration checklist',
+        '',
+        ...Array.from(
+          { length: 600 },
+          (_, index) => `${index + 1}. ${'Review the recursive ZIP entry carefully. '.repeat(16)}`,
+        ),
+      ].join('\n')
+
+      const chunks = chunkDocument('Checklist', content)
+      expect(chunks.length).toBeGreaterThan(1)
+      expect(chunks[0].chunkIndex).toBe(0)
+      expect(chunks.at(-1)?.chunkIndex).toBe(chunks.length - 1)
+    })
   })
 
   describe('computeContentHash', () => {

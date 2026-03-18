@@ -1,5 +1,12 @@
 import DOMPurify from 'isomorphic-dompurify'
 
+/** Sanitize plain text before storage or downstream processing. */
+export function sanitizePlainText(value: string): string {
+  return value
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u0000/g, '')
+}
+
 /**
  * Sanitize HTML to prevent XSS. Allows safe markup like <mark>, <em>, <strong>
  * but strips scripts, event handlers, and dangerous elements.

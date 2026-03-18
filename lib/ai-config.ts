@@ -1,3 +1,9 @@
+import {
+  DEFAULT_RAG_QUERY_MODE as DEFAULT_SHARED_RAG_QUERY_MODE,
+  normalizeRagQueryMode,
+  type RagQueryMode,
+} from '@/lib/rag/types'
+
 /**
  * Centralized AI / RAG configuration.
  *
@@ -43,6 +49,27 @@ export const DEFAULT_RERANKER_MODEL = envStr(
 export const TARGET_CHUNK_TOKENS = envInt('AI_TARGET_CHUNK_TOKENS', 500)
 export const OVERLAP_TOKENS = envInt('AI_OVERLAP_TOKENS', 50)
 export const EMBEDDING_BATCH_SIZE = envInt('AI_EMBEDDING_BATCH_SIZE', 20)
+
+// ---------------------------------------------------------------------------
+// RAG query modes & cache
+// ---------------------------------------------------------------------------
+export const DEFAULT_SERVER_RAG_QUERY_MODE: RagQueryMode = normalizeRagQueryMode(
+  envStr('AI_DEFAULT_RAG_QUERY_MODE', DEFAULT_SHARED_RAG_QUERY_MODE),
+  DEFAULT_SHARED_RAG_QUERY_MODE,
+)
+
+export const RAG_KEYWORD_CACHE_TTL_SECONDS = envInt(
+  'AI_RAG_KEYWORD_CACHE_TTL_SECONDS',
+  24 * 60 * 60,
+)
+export const RAG_QUERY_CONTEXT_CACHE_TTL_SECONDS = envInt(
+  'AI_RAG_QUERY_CONTEXT_CACHE_TTL_SECONDS',
+  5 * 60,
+)
+export const RAG_SUMMARY_CACHE_TTL_SECONDS = envInt(
+  'AI_RAG_SUMMARY_CACHE_TTL_SECONDS',
+  30 * 24 * 60 * 60,
+)
 
 // ---------------------------------------------------------------------------
 // Retrieval

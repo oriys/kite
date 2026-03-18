@@ -14,8 +14,9 @@ import {
   resolveAiModelSelection,
   type ResolvedAiProviderConfig,
 } from '@/lib/ai-server'
+import { RAG_KEYWORD_CACHE_TTL_SECONDS, TEMPERATURE_QUERY_REWRITE } from '@/lib/ai-config'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
-import { TEMPERATURE_QUERY_REWRITE } from '@/lib/ai-config'
+import { createRagCacheKey, getRagCacheEntry, setRagCacheEntry } from '@/lib/rag/cache'
 import { logServerError } from '@/lib/server-errors'
 
 export interface ExtractedKeywords {
@@ -108,11 +109,30 @@ export async function extractQueryKeywords(input: {
 }): Promise<ExtractedKeywords> {
   const queryHash = computeQueryHash(input.query)
   const cacheKey = `${input.workspaceId}:${queryHash}`
+  const persistentCacheKey = createRagCacheKey([
+    'keywords',
+    input.workspaceId,
+    input.query.trim().toLowerCase(),
+  ])
 
   // Check cache
   const cached = _keywordCache.get(cacheKey)
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
     return cached.keywords
+  }
+
+  const persisted = await getRagCacheEntry<{ keywords?: ExtractedKeywords }>({
+    workspaceId: input.workspaceId,
+    cacheType: 'keywords',
+    cacheKey: persistentCacheKey,
+  })
+  if (persisted?.keywords) {
+    evictStaleEntries()
+    _keywordCache.set(cacheKey, {
+      keywords: persisted.keywords,
+      ts: Date.now(),
+    })
+    return persisted.keywords
   }
 
   // Resolve provider if not provided
@@ -139,7 +159,17 @@ export async function extractQueryKeywords(input: {
   }
 
   if (!provider) {
-    return heuristicKeywordExtraction(input.query)
+    const keywords = heuristicKeywordExtraction(input.query)
+    evictStaleEntries()
+    _keywordCache.set(cacheKey, { keywords, ts: Date.now() })
+    void setRagCacheEntry({
+      workspaceId: input.workspaceId,
+      cacheType: 'keywords',
+      cacheKey: persistentCacheKey,
+      payload: { keywords },
+      ttlSeconds: RAG_KEYWORD_CACHE_TTL_SECONDS,
+    })
+    return keywords
   }
 
   try {
@@ -156,6 +186,13 @@ export async function extractQueryKeywords(input: {
     // Cache result
     evictStaleEntries()
     _keywordCache.set(cacheKey, { keywords, ts: Date.now() })
+    void setRagCacheEntry({
+      workspaceId: input.workspaceId,
+      cacheType: 'keywords',
+      cacheKey: persistentCacheKey,
+      payload: { keywords },
+      ttlSeconds: RAG_KEYWORD_CACHE_TTL_SECONDS,
+    })
 
     return keywords
   } catch (error) {
@@ -163,7 +200,17 @@ export async function extractQueryKeywords(input: {
       workspaceId: input.workspaceId,
       query: input.query,
     })
-    return heuristicKeywordExtraction(input.query)
+    const keywords = heuristicKeywordExtraction(input.query)
+    evictStaleEntries()
+    _keywordCache.set(cacheKey, { keywords, ts: Date.now() })
+    void setRagCacheEntry({
+      workspaceId: input.workspaceId,
+      cacheType: 'keywords',
+      cacheKey: persistentCacheKey,
+      payload: { keywords },
+      ttlSeconds: RAG_KEYWORD_CACHE_TTL_SECONDS,
+    })
+    return keywords
   }
 }
 

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { requestAiEmbedding, resolveEmbeddingProvider } from '@/lib/ai-server'
+import { type RagQueryMode } from '@/lib/rag/types'
 import { estimateTokens } from '@/lib/chunker'
 import { logServerError } from '@/lib/server-errors'
 
@@ -81,7 +82,7 @@ export async function searchKgEntities(input: {
         e.name,
         e.entity_type,
         e.description,
-        e.source_chunk_ids,
+        COALESCE(NULLIF(e.all_source_chunk_ids, ''), e.source_chunk_ids) AS source_chunk_ids,
         e.source_document_ids,
         e.mention_count,
         1 - (e.embedding <=> ${queryVector}::vector) AS similarity
@@ -135,7 +136,7 @@ export async function searchKgRelations(input: {
         r.weight,
         r.source_entity_id,
         r.target_entity_id,
-        r.source_chunk_ids,
+        COALESCE(NULLIF(r.all_source_chunk_ids, ''), r.source_chunk_ids) AS source_chunk_ids,
         r.mention_count,
         src.name AS source_name,
         tgt.name AS target_name,
@@ -193,7 +194,7 @@ export async function expandEntityRelations(input: {
         r.weight,
         r.source_entity_id,
         r.target_entity_id,
-        r.source_chunk_ids,
+        COALESCE(NULLIF(r.all_source_chunk_ids, ''), r.source_chunk_ids) AS source_chunk_ids,
         src.name AS source_name,
         src.description AS source_description,
         tgt.name AS target_name,
@@ -290,6 +291,7 @@ export async function retrieveKgContext(input: {
   lowLevelKeywords?: string[]
   entityTokenBudget?: number
   relationTokenBudget?: number
+  mode?: RagQueryMode
 }): Promise<KgRetrievalResult> {
   const empty: KgRetrievalResult = {
     entityContext: '',
@@ -300,6 +302,11 @@ export async function retrieveKgContext(input: {
   }
 
   try {
+    const mode = input.mode ?? 'hybrid'
+    const shouldSearchEntities = mode !== 'naive' && mode !== 'global'
+    const shouldSearchRelations = mode !== 'naive' && mode !== 'local'
+    if (!shouldSearchEntities && !shouldSearchRelations) return empty
+
     /* ---- 1. Resolve embedding provider --------------------------------- */
     const config = await resolveEmbeddingProvider(input.workspaceId)
     if (!config) return empty
@@ -314,11 +321,15 @@ export async function retrieveKgContext(input: {
         ? input.highLevelKeywords.join(', ')
         : ''
 
-    const textsToEmbed = [
-      input.query,
-      lowText || input.query,
-      highText || input.query,
-    ]
+    const textsToEmbed: string[] = []
+    const lowLevelEmbeddingIndex = shouldSearchEntities
+      ? textsToEmbed.push(lowText || input.query) - 1
+      : -1
+    const highLevelEmbeddingIndex = shouldSearchRelations
+      ? textsToEmbed.push(highText || input.query) - 1
+      : -1
+
+    if (textsToEmbed.length === 0) return empty
 
     const { embeddings } = await requestAiEmbedding({
       provider: config.provider,
@@ -326,30 +337,36 @@ export async function retrieveKgContext(input: {
       model: config.modelId,
     })
 
-    if (embeddings.length < 3) return empty
-
-    // embeddings[0] = query, [1] = low-level keywords (or query fallback), [2] = high-level keywords (or query fallback)
-    const lowLevelEmbedding = embeddings[1]
-    const highLevelEmbedding = embeddings[2]
+    const lowLevelEmbedding =
+      lowLevelEmbeddingIndex >= 0 ? embeddings[lowLevelEmbeddingIndex] : null
+    const highLevelEmbedding =
+      highLevelEmbeddingIndex >= 0 ? embeddings[highLevelEmbeddingIndex] : null
 
     /* ---- 3 & 4. Entity search + Relation search (parallel) ------------- */
     const [entityHits, relationHits] = await Promise.all([
-      searchKgEntities({
-        workspaceId: input.workspaceId,
-        queryEmbedding: lowLevelEmbedding,
-      }),
-      searchKgRelations({
-        workspaceId: input.workspaceId,
-        queryEmbedding: highLevelEmbedding,
-      }),
+      shouldSearchEntities && lowLevelEmbedding
+        ? searchKgEntities({
+            workspaceId: input.workspaceId,
+            queryEmbedding: lowLevelEmbedding,
+          })
+        : Promise.resolve([]),
+      shouldSearchRelations && highLevelEmbedding
+        ? searchKgRelations({
+            workspaceId: input.workspaceId,
+            queryEmbedding: highLevelEmbedding,
+          })
+        : Promise.resolve([]),
     ])
 
     /* ---- 5. Graph expansion from top entity hits ----------------------- */
     const topEntityIds = entityHits.slice(0, 5).map((e) => e.id)
-    const expandedRelations = await expandEntityRelations({
-      workspaceId: input.workspaceId,
-      entityIds: topEntityIds,
-    })
+    const expandedRelations =
+      shouldSearchRelations && topEntityIds.length > 0
+        ? await expandEntityRelations({
+            workspaceId: input.workspaceId,
+            entityIds: topEntityIds,
+          })
+        : []
 
     /* ---- 6. Merge expanded + direct relation hits (deduplicate) -------- */
     const seenRelationIds = new Set(relationHits.map((r) => r.id))
@@ -370,8 +387,8 @@ export async function retrieveKgContext(input: {
       input.relationTokenBudget ?? DEFAULT_RELATION_TOKEN_BUDGET
 
     const { entityContext, relationContext } = buildKgContextSections({
-      entities: entityHits,
-      relations: mergedRelations,
+      entities: shouldSearchEntities ? entityHits : [],
+      relations: shouldSearchRelations ? mergedRelations : [],
       entityTokenBudget,
       relationTokenBudget,
     })
@@ -379,7 +396,7 @@ export async function retrieveKgContext(input: {
     /* ---- 8. Collect source chunk IDs for boosting ---------------------- */
     const chunkIdSet = new Set<string>()
 
-    for (const entity of entityHits) {
+    for (const entity of shouldSearchEntities ? entityHits : []) {
       if (entity.sourceChunkIds) {
         for (const id of entity.sourceChunkIds.split(';')) {
           const trimmed = id.trim()
@@ -388,7 +405,7 @@ export async function retrieveKgContext(input: {
       }
     }
 
-    for (const rel of mergedRelations) {
+    for (const rel of shouldSearchRelations ? mergedRelations : []) {
       if (rel.sourceChunkIds) {
         for (const id of rel.sourceChunkIds.split(';')) {
           const trimmed = id.trim()
@@ -400,8 +417,8 @@ export async function retrieveKgContext(input: {
     return {
       entityContext,
       relationContext,
-      entityCount: entityHits.length,
-      relationCount: mergedRelations.length,
+      entityCount: shouldSearchEntities ? entityHits.length : 0,
+      relationCount: shouldSearchRelations ? mergedRelations.length : 0,
       sourceChunkIds: Array.from(chunkIdSet),
     }
   } catch (error) {

@@ -86,8 +86,10 @@ export function buildOpenApiDocumentTitle(input: {
   documentType?: OpenApiDocumentType | null
   prompt?: string | null
   templateName?: string | null
+  supplementalTitleHint?: string | null
 }) {
   const promptTitle = normalizePromptTitle(input.prompt)
+  const supplementalTitle = normalizePromptTitle(input.supplementalTitleHint)
   const typeMeta = getOpenApiDocumentTypeMeta(input.documentType)
 
   if (
@@ -102,6 +104,17 @@ export function buildOpenApiDocumentTitle(input: {
 
   if (input.endpoints.length > 1 && typeMeta) {
     return `${input.sourceName} ${typeMeta.titleSuffix}`
+  }
+
+  if (
+    supplementalTitle &&
+    input.endpoints.length === 0 &&
+    !input.templateName &&
+    !promptTitle
+  ) {
+    return input.sourceName.trim()
+      ? `${input.sourceName} — ${supplementalTitle}`
+      : supplementalTitle
   }
 
   if (typeMeta && !input.templateName && input.endpoints.length === 0 && !promptTitle) {
@@ -135,7 +148,9 @@ export function buildOpenApiDocumentTitle(input: {
       : `${endpoint.method} ${endpoint.path}`
   }
 
-  return 'Untitled'
+  return input.sourceName.trim()
+    ? `${input.sourceName} API document`
+    : 'Untitled'
 }
 
 function normalizePromptTitle(prompt?: string | null) {

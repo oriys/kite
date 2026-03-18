@@ -253,10 +253,18 @@ function splitTextIntoChunks(
       end = text.length
     }
 
+    if (end <= start) {
+      end = Math.min(text.length, start + targetChars)
+      if (end <= start) {
+        break
+      }
+    }
+
     const chunk = text.slice(start, end).trim()
     if (chunk) chunks.push(chunk)
 
-    start = end - overlapChars
+    const nextStart = Math.max(start + 1, end - overlapChars)
+    start = nextStart
     if (start >= text.length) break
     if (end >= text.length) break
   }

@@ -64,8 +64,12 @@ export const kgEntities = pgTable(
     embeddingModelId: text('embedding_model_id'),
     /** Chunk IDs that reference this entity (semicolon-separated) */
     sourceChunkIds: text('source_chunk_ids').notNull().default(''),
+    /** Full chunk ID list before capping/truncation (semicolon-separated) */
+    allSourceChunkIds: text('all_source_chunk_ids').notNull().default(''),
     /** Document IDs that contain this entity (semicolon-separated) */
     sourceDocumentIds: text('source_document_ids').notNull().default(''),
+    /** Full document ID list before capping/truncation (semicolon-separated) */
+    allSourceDocumentIds: text('all_source_document_ids').notNull().default(''),
     /** Number of distinct chunks referencing this entity */
     mentionCount: integer('mention_count').notNull().default(1),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
@@ -113,6 +117,8 @@ export const kgRelations = pgTable(
     weight: real('weight').notNull().default(1.0),
     /** Chunk IDs that reference this relation (semicolon-separated) */
     sourceChunkIds: text('source_chunk_ids').notNull().default(''),
+    /** Full chunk ID list before capping/truncation (semicolon-separated) */
+    allSourceChunkIds: text('all_source_chunk_ids').notNull().default(''),
     mentionCount: integer('mention_count').notNull().default(1),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),

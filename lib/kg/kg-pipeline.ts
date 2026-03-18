@@ -13,7 +13,11 @@ import {
   normalizeEntityName,
   type ExtractionResult,
 } from './entity-extraction'
-import { mergeEntityDescriptions, mergeSourceIds } from './entity-merging'
+import {
+  mergeEntityDescriptions,
+  mergeRelationDescriptions,
+  mergeSourceIds,
+} from './entity-merging'
 import {
   requestAiEmbedding,
   resolveEmbeddingProvider,
@@ -23,6 +27,7 @@ import { logServerError } from '@/lib/server-errors'
 import type { DocumentChunk } from '@/lib/chunker'
 
 const KG_EXTRACTION_BATCH_SIZE = 4
+const PUBLIC_SOURCE_ID_LIMIT = 300
 
 /**
  * Extract entities/relations from document chunks and merge into knowledge graph.
@@ -141,31 +146,52 @@ export async function buildKnowledgeGraph(input: {
         )
         .limit(1)
 
-      if (existing.length > 0) {
-        const entity = existing[0]
-        const mergedDescription = await mergeEntityDescriptions({
-          existingDescription: entity.description,
-          newDescription: description,
-          entityName: data.name,
-          existingMentionCount: entity.mentionCount,
-          provider: input.embeddingProvider
+        if (existing.length > 0) {
+          const entity = existing[0]
+          const mergedDescription = await mergeEntityDescriptions({
+            workspaceId: input.workspaceId,
+            existingDescription: entity.description,
+            newDescription: description,
+            entityName: data.name,
+            existingMentionCount: entity.mentionCount,
+            provider: input.embeddingProvider
             ? {
                 provider: input.embeddingProvider.provider,
                 modelId: input.embeddingProvider.modelId,
               }
             : undefined,
-        })
-
-        await db
-          .update(kgEntities)
-          .set({
-            description: mergedDescription,
-            sourceChunkIds: mergeSourceIds(entity.sourceChunkIds, chunkIds),
-            sourceDocumentIds: mergeSourceIds(entity.sourceDocumentIds, documentIds),
-            mentionCount: entity.mentionCount + data.chunkIds.length,
-            updatedAt: new Date(),
           })
-          .where(eq(kgEntities.id, entity.id))
+          const mergedAllSourceChunkIds = mergeSourceIds(
+            entity.allSourceChunkIds || entity.sourceChunkIds,
+            chunkIds,
+            null,
+          )
+          const mergedAllSourceDocumentIds = mergeSourceIds(
+            entity.allSourceDocumentIds || entity.sourceDocumentIds,
+            documentIds,
+            null,
+          )
+
+          await db
+            .update(kgEntities)
+            .set({
+              description: mergedDescription,
+              sourceChunkIds: mergeSourceIds(
+                entity.sourceChunkIds,
+                chunkIds,
+                PUBLIC_SOURCE_ID_LIMIT,
+              ),
+              allSourceChunkIds: mergedAllSourceChunkIds,
+              sourceDocumentIds: mergeSourceIds(
+                entity.sourceDocumentIds,
+                documentIds,
+                PUBLIC_SOURCE_ID_LIMIT,
+              ),
+              allSourceDocumentIds: mergedAllSourceDocumentIds,
+              mentionCount: entity.mentionCount + data.chunkIds.length,
+              updatedAt: new Date(),
+            })
+            .where(eq(kgEntities.id, entity.id))
       } else {
         await db.insert(kgEntities).values({
           workspaceId: input.workspaceId,
@@ -174,7 +200,9 @@ export async function buildKnowledgeGraph(input: {
           entityType: data.entityType as (typeof kgEntityTypeEnum.enumValues)[number],
           description,
           sourceChunkIds: chunkIds,
+          allSourceChunkIds: chunkIds,
           sourceDocumentIds: documentIds,
+          allSourceDocumentIds: documentIds,
           mentionCount: data.chunkIds.length,
         })
       }
@@ -252,16 +280,39 @@ export async function buildKnowledgeGraph(input: {
 
       if (existing.length > 0) {
         const rel = existing[0]
+        const mergedDescription = await mergeRelationDescriptions({
+          workspaceId: input.workspaceId,
+          existingDescription: rel.description,
+          newDescription: description,
+          relationName: `${data.sourceEntityName} -> ${data.targetEntityName}`,
+          existingMentionCount: rel.mentionCount,
+          provider: input.embeddingProvider
+            ? {
+                provider: input.embeddingProvider.provider,
+                modelId: input.embeddingProvider.modelId,
+              }
+            : undefined,
+        })
+        const mergedAllSourceChunkIds = mergeSourceIds(
+          rel.allSourceChunkIds || rel.sourceChunkIds,
+          chunkIds,
+          null,
+        )
         await db
           .update(kgRelations)
           .set({
-            description: `${rel.description}\n---\n${description}`,
+            description: mergedDescription,
             keywords: [
               ...new Set(
                 [...rel.keywords.split(', '), ...keywords.split(', ')].filter(Boolean),
               ),
             ].join(', '),
-            sourceChunkIds: mergeSourceIds(rel.sourceChunkIds, chunkIds),
+            sourceChunkIds: mergeSourceIds(
+              rel.sourceChunkIds,
+              chunkIds,
+              PUBLIC_SOURCE_ID_LIMIT,
+            ),
+            allSourceChunkIds: mergedAllSourceChunkIds,
             mentionCount: rel.mentionCount + data.chunkIds.length,
             weight: rel.weight + data.chunkIds.length * 0.5,
             updatedAt: new Date(),
@@ -275,6 +326,7 @@ export async function buildKnowledgeGraph(input: {
           description,
           keywords,
           sourceChunkIds: chunkIds,
+          allSourceChunkIds: chunkIds,
           mentionCount: data.chunkIds.length,
           weight: 1.0 + data.chunkIds.length * 0.5,
         })
@@ -388,14 +440,16 @@ export async function removeDocumentFromKnowledgeGraph(input: {
     .select({
       id: kgEntities.id,
       sourceDocumentIds: kgEntities.sourceDocumentIds,
+      allSourceDocumentIds: kgEntities.allSourceDocumentIds,
       sourceChunkIds: kgEntities.sourceChunkIds,
+      allSourceChunkIds: kgEntities.allSourceChunkIds,
       mentionCount: kgEntities.mentionCount,
     })
     .from(kgEntities)
     .where(
       and(
         eq(kgEntities.workspaceId, input.workspaceId),
-        sql`${kgEntities.sourceDocumentIds} LIKE ${'%' + input.documentId + '%'}`,
+        sql`${kgEntities.allSourceDocumentIds} LIKE ${'%' + input.documentId + '%'}`,
       ),
     )
 
@@ -404,35 +458,93 @@ export async function removeDocumentFromKnowledgeGraph(input: {
 
   for (const entity of entities) {
     // Remove this document's chunk references
-    const remainingChunkIds = entity.sourceChunkIds
+    const remainingAllChunkIds = (entity.allSourceChunkIds || entity.sourceChunkIds)
       .split(';')
       .filter((id) => !id.startsWith(chunkPrefix))
       .join(';')
 
-    const remainingDocIds = entity.sourceDocumentIds
+    const remainingAllDocIds = (entity.allSourceDocumentIds || entity.sourceDocumentIds)
       .split(';')
       .filter((id) => id !== input.documentId)
       .join(';')
 
-    if (!remainingChunkIds && !remainingDocIds) {
+    if (!remainingAllChunkIds && !remainingAllDocIds) {
       // Entity is orphaned — mark for deletion
       orphanedEntityIds.push(entity.id)
     } else {
       // Update references
-      const removedCount = entity.sourceChunkIds
+      const removedCount = (entity.allSourceChunkIds || entity.sourceChunkIds)
         .split(';')
         .filter((id) => id.startsWith(chunkPrefix)).length
       await db
         .update(kgEntities)
         .set({
-          sourceChunkIds: remainingChunkIds,
-          sourceDocumentIds: remainingDocIds,
+          sourceChunkIds: mergeSourceIds(
+            '',
+            remainingAllChunkIds,
+            PUBLIC_SOURCE_ID_LIMIT,
+          ),
+          allSourceChunkIds: remainingAllChunkIds,
+          sourceDocumentIds: mergeSourceIds(
+            '',
+            remainingAllDocIds,
+            PUBLIC_SOURCE_ID_LIMIT,
+          ),
+          allSourceDocumentIds: remainingAllDocIds,
           mentionCount: Math.max(1, entity.mentionCount - removedCount),
           embedding: null, // Force re-embedding with updated description
           updatedAt: new Date(),
         })
         .where(eq(kgEntities.id, entity.id))
     }
+  }
+
+  const relations = await db
+    .select({
+      id: kgRelations.id,
+      sourceChunkIds: kgRelations.sourceChunkIds,
+      allSourceChunkIds: kgRelations.allSourceChunkIds,
+      mentionCount: kgRelations.mentionCount,
+    })
+    .from(kgRelations)
+    .where(
+      and(
+        eq(kgRelations.workspaceId, input.workspaceId),
+        sql`${kgRelations.allSourceChunkIds} LIKE ${'%' + chunkPrefix + '%'}`,
+      ),
+    )
+
+  for (const relation of relations) {
+    const remainingAllChunkIds = (
+      relation.allSourceChunkIds || relation.sourceChunkIds
+    )
+      .split(';')
+      .filter((id) => !id.startsWith(chunkPrefix))
+      .join(';')
+
+    if (!remainingAllChunkIds) {
+      await db.delete(kgRelations).where(eq(kgRelations.id, relation.id))
+      continue
+    }
+
+    const removedCount = (relation.allSourceChunkIds || relation.sourceChunkIds)
+      .split(';')
+      .filter((id) => id.startsWith(chunkPrefix)).length
+
+    await db
+      .update(kgRelations)
+      .set({
+        sourceChunkIds: mergeSourceIds(
+          '',
+          remainingAllChunkIds,
+          PUBLIC_SOURCE_ID_LIMIT,
+        ),
+        allSourceChunkIds: remainingAllChunkIds,
+        mentionCount: Math.max(1, relation.mentionCount - removedCount),
+        embedding: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(kgRelations.id, relation.id))
   }
 
   // Delete orphaned entities (cascades to relations via FK)
