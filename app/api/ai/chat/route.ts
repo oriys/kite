@@ -8,6 +8,7 @@ import {
   streamChatResponse,
 } from '@/lib/ai-chat'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
+import { isRagQueryMode } from '@/lib/rag/types'
 import { logServerError } from '@/lib/server-errors'
 
 const MAX_MESSAGE_LENGTH = 4000
@@ -28,6 +29,10 @@ export async function POST(request: NextRequest) {
   const documentId =
     typeof body.documentId === 'string' ? body.documentId : undefined
   const model = typeof body.model === 'string' ? body.model.trim() : undefined
+  const ragMode =
+    typeof body.ragMode === 'string' && isRagQueryMode(body.ragMode)
+      ? body.ragMode
+      : undefined
   const mcpPrompt =
     body.mcpPrompt &&
     typeof body.mcpPrompt === 'object' &&
@@ -77,11 +82,12 @@ export async function POST(request: NextRequest) {
       sessionId: activeSessionId,
       userMessage: message,
       documentId,
-      model,
-      userId: result.ctx.userId,
-      role: result.ctx.role,
-      mcpPrompt,
-    })
+        model,
+        userId: result.ctx.userId,
+        role: result.ctx.role,
+        ragMode,
+        mcpPrompt,
+      })
 
     const [browserStream, persistStream] = stream.tee()
 

@@ -28,6 +28,13 @@ export interface OpenApiDocumentTemplateContext {
   content: string
 }
 
+export interface OpenApiDocumentRetrievedContext {
+  contextText: string
+  materialCount?: number
+  materialTitles?: string[]
+  queryVariants?: string[]
+}
+
 export function buildEndpointDocUserPrompt(
   endpoint: ParsedEndpoint,
   options: EndpointDocPromptOptions = {},
@@ -557,6 +564,7 @@ export function buildOpenApiDocumentUserPrompt(input: {
   userPrompt?: string
   documentType?: OpenApiDocumentType | null
   template?: OpenApiDocumentTemplateContext | null
+  retrievedContext?: OpenApiDocumentRetrievedContext | null
 }) {
   const typeMeta = getOpenApiDocumentTypeMeta(input.documentType)
   const lines: string[] = []
@@ -610,6 +618,20 @@ export function buildOpenApiDocumentUserPrompt(input: {
       )
     }
     lines.push('</template_guidance>')
+  }
+
+  if (input.retrievedContext?.contextText.trim()) {
+    lines.push('')
+    lines.push(
+      '- Use the supplemental context below as a secondary grounding source when it adds operational, architectural, or policy detail that the OpenAPI metadata does not contain.',
+    )
+    lines.push(
+      '- If supplemental context conflicts with explicit OpenAPI metadata, prefer the OpenAPI metadata and call out the discrepancy instead of blending both as facts.',
+    )
+    lines.push('')
+    lines.push('<supplemental_context>')
+    lines.push(input.retrievedContext.contextText.trim())
+    lines.push('</supplemental_context>')
   }
 
   lines.push('')

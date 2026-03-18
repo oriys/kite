@@ -7,6 +7,12 @@ import { AiCompletionError } from '@/lib/ai-server'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import { db } from '@/lib/db'
 import {
+  DocGenerationMaterialError,
+  isDocGenerationMaterialSourceType,
+  retrieveDocGenerationContext,
+  type DocGenerationMaterialInput,
+} from '@/lib/openapi/doc-generation-rag'
+import {
   buildOpenApiDocumentTitle,
   getOpenApiDocumentTypeMeta,
   getTemplateCategoryLabel,
@@ -18,10 +24,15 @@ import {
   getTemplate,
   incrementTemplateUsage,
 } from '@/lib/queries/templates'
+import { isRagQueryMode } from '@/lib/rag/types'
 import { apiEndpoints, openapiSources } from '@/lib/schema'
 import { logServerError } from '@/lib/server-errors'
 
 const MAX_ENDPOINTS_PER_REQUEST = 50
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
 
 function buildEndpointLookupKey(
   method: string,
@@ -70,6 +81,39 @@ export async function POST(request: NextRequest) {
   const templateId = typeof body.templateId === 'string' ? body.templateId.trim() : ''
   const documentTypeInput =
     typeof body.documentType === 'string' ? body.documentType.trim() : ''
+  const ragEnabled = body.ragEnabled === true
+  const ragMode =
+    typeof body.ragMode === 'string' && isRagQueryMode(body.ragMode)
+      ? body.ragMode
+      : undefined
+  const multiTurnRag = body.multiTurnRag === true
+  const rawMaterials: unknown[] = Array.isArray(body.materials)
+    ? body.materials
+    : []
+  const materials = rawMaterials
+    .map((value: unknown): DocGenerationMaterialInput | null => {
+      if (!isRecord(value)) return null
+
+      const sourceType =
+        typeof value.sourceType === 'string' &&
+        isDocGenerationMaterialSourceType(value.sourceType)
+          ? value.sourceType
+          : null
+
+      if (!sourceType) return null
+
+      return {
+        sourceType,
+        title: typeof value.title === 'string' ? value.title.trim() : '',
+        rawContent:
+          typeof value.rawContent === 'string' ? value.rawContent : undefined,
+        sourceUrl:
+          typeof value.sourceUrl === 'string' ? value.sourceUrl.trim() : null,
+        fileName:
+          typeof value.fileName === 'string' ? value.fileName.trim() : null,
+      } satisfies DocGenerationMaterialInput
+    })
+    .filter((value): value is DocGenerationMaterialInput => value !== null)
 
   if (!openapiSourceId) {
     return badRequest('openapiSourceId is required')
@@ -82,6 +126,10 @@ export async function POST(request: NextRequest) {
   const documentType = isOpenApiDocumentType(documentTypeInput)
     ? documentTypeInput
     : null
+
+  if (rawMaterials.length > 0 && materials.length !== rawMaterials.length) {
+    return badRequest('One or more supplemental materials are invalid')
+  }
 
   // Verify the OpenAPI source belongs to this workspace
   const source = await db.query.openapiSources.findFirst({
@@ -129,9 +177,10 @@ export async function POST(request: NextRequest) {
 
     const hasSelectedEndpoints = endpoints.length > 0
     const hasPrompt = prompt.length > 0
-    const shouldUseAi = hasSelectedEndpoints || hasPrompt
+    const hasRagContext = ragEnabled
+    const shouldUseAi = hasSelectedEndpoints || hasPrompt || hasRagContext
     const shouldCreateFromTemplate =
-      Boolean(template) && !hasSelectedEndpoints && !hasPrompt
+      Boolean(template) && !hasSelectedEndpoints && !hasPrompt && !hasRagContext
 
     const resolvedDocumentType =
       documentType ?? (hasSelectedEndpoints ? 'api-reference' : null)
@@ -238,6 +287,26 @@ export async function POST(request: NextRequest) {
       id: ep.id,
     }))
 
+    const retrievedContext =
+      hasRagContext
+        ? await retrieveDocGenerationContext({
+            workspaceId: result.ctx.workspaceId,
+            sourceName: sourceDisplayName,
+            endpoints: parsedEndpoints,
+            apiTitle: parsedSpec?.title ?? source.name,
+            userPrompt: prompt,
+            documentType: resolvedDocumentType,
+            requestedModelId: model,
+            materials,
+            multiTurn: multiTurnRag,
+            visibility: {
+              userId: result.ctx.userId,
+              role: result.ctx.role,
+            },
+            ragMode,
+          })
+        : null
+
     const generated = await generateOpenApiDocument({
       workspaceId: result.ctx.workspaceId,
       sourceName: sourceDisplayName,
@@ -256,8 +325,18 @@ export async function POST(request: NextRequest) {
             content: template.content,
           }
         : null,
+      retrievedContext,
       model,
     })
+    const retrievalDiagnostics = retrievedContext
+      ? {
+          materialCount: retrievedContext.materialCount,
+          materialTitles: retrievedContext.materialTitles,
+          queryVariants: retrievedContext.queryVariants,
+          ragMode: retrievedContext.ragMode,
+          workspaceSourceCount: retrievedContext.workspaceSourceCount,
+        }
+      : null
 
     const endpointTags = Array.from(
       new Set(
@@ -273,6 +352,8 @@ export async function POST(request: NextRequest) {
         ? endpoints[0].summary ?? endpoints[0].description ?? ''
         : endpoints.length > 1
           ? `Combined documentation for ${endpoints.length} selected endpoints.`
+          : hasRagContext
+            ? 'Documentation generated with retrieval context.'
           : template?.description ?? '')
     const doc = await createDocument(
       result.ctx.workspaceId,
@@ -301,6 +382,7 @@ export async function POST(request: NextRequest) {
         documentId: doc.id,
         title: generated.title,
         mode: 'ai',
+        retrieval: retrievalDiagnostics,
       },
     })
   } catch (error) {
@@ -311,7 +393,12 @@ export async function POST(request: NextRequest) {
 
     const message =
       error instanceof Error ? error.message : 'Generation failed'
-    const status = error instanceof AiCompletionError ? error.status : 502
+    const status =
+      error instanceof AiCompletionError
+        ? error.status
+        : error instanceof DocGenerationMaterialError
+          ? error.status
+          : 502
 
     return NextResponse.json({ error: message }, { status })
   }

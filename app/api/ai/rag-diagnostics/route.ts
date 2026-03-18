@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 
 import { debugRetrieveChatContext } from '@/lib/ai-chat'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
+import { isRagQueryMode } from '@/lib/rag/types'
 
 export async function POST(request: NextRequest) {
   const result = await withWorkspaceAuth('owner')
@@ -14,6 +15,10 @@ export async function POST(request: NextRequest) {
   const query = typeof body.query === 'string' ? body.query.trim() : ''
   const documentId =
     typeof body.documentId === 'string' ? body.documentId : undefined
+  const mode =
+    typeof body.mode === 'string' && isRagQueryMode(body.mode)
+      ? body.mode
+      : undefined
 
   if (!query) return badRequest('Query is required')
 
@@ -27,6 +32,7 @@ export async function POST(request: NextRequest) {
         role: result.ctx.role,
       },
       debug: true,
+      mode,
     })
 
   return NextResponse.json({

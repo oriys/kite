@@ -1,3 +1,9 @@
+import {
+  DEFAULT_RAG_QUERY_MODE as DEFAULT_SHARED_RAG_QUERY_MODE,
+  normalizeRagQueryMode,
+  type RagQueryMode,
+} from '@/lib/rag/types'
+
 /**
  * Centralized AI / RAG configuration.
  *
@@ -45,6 +51,27 @@ export const OVERLAP_TOKENS = envInt('AI_OVERLAP_TOKENS', 50)
 export const EMBEDDING_BATCH_SIZE = envInt('AI_EMBEDDING_BATCH_SIZE', 20)
 
 // ---------------------------------------------------------------------------
+// RAG query modes & cache
+// ---------------------------------------------------------------------------
+export const DEFAULT_SERVER_RAG_QUERY_MODE: RagQueryMode = normalizeRagQueryMode(
+  envStr('AI_DEFAULT_RAG_QUERY_MODE', DEFAULT_SHARED_RAG_QUERY_MODE),
+  DEFAULT_SHARED_RAG_QUERY_MODE,
+)
+
+export const RAG_KEYWORD_CACHE_TTL_SECONDS = envInt(
+  'AI_RAG_KEYWORD_CACHE_TTL_SECONDS',
+  24 * 60 * 60,
+)
+export const RAG_QUERY_CONTEXT_CACHE_TTL_SECONDS = envInt(
+  'AI_RAG_QUERY_CONTEXT_CACHE_TTL_SECONDS',
+  5 * 60,
+)
+export const RAG_SUMMARY_CACHE_TTL_SECONDS = envInt(
+  'AI_RAG_SUMMARY_CACHE_TTL_SECONDS',
+  30 * 24 * 60 * 60,
+)
+
+// ---------------------------------------------------------------------------
 // Retrieval
 // ---------------------------------------------------------------------------
 export const TOP_K_CHUNKS = envInt('AI_TOP_K_CHUNKS', 15)
@@ -69,6 +96,15 @@ export const MAX_KEYWORD_SNIPPET_CHARS = envInt(
   'AI_MAX_KEYWORD_SNIPPET_CHARS',
   1_600,
 )
+
+// ---------------------------------------------------------------------------
+// Token budget (replaces character-based limits)
+// ---------------------------------------------------------------------------
+export const MAX_CONTEXT_TOKENS = envInt('AI_MAX_CONTEXT_TOKENS', 8_000)
+export const MAX_SECTION_TOKENS = envInt('AI_MAX_SECTION_TOKENS', 1_500)
+export const MAX_ENTITY_TOKENS = envInt('AI_MAX_ENTITY_TOKENS', 2_000)
+export const MAX_RELATION_TOKENS = envInt('AI_MAX_RELATION_TOKENS', 2_000)
+export const MAX_CHUNK_TOKENS = envInt('AI_MAX_CHUNK_TOKENS', 4_000)
 
 // ---------------------------------------------------------------------------
 // Vector similarity
@@ -215,16 +251,29 @@ export interface ContextLimits {
   maxSectionChars: number
   maxCompressedBlocks: number
   adjacentChunkRadius: number
+  // Token-based limits
+  maxContextTokens: number
+  maxSectionTokens: number
+  maxEntityTokens: number
+  maxRelationTokens: number
+  maxChunkTokens: number
 }
 
 export function resolveContextLimits(modelId?: string): ContextLimits {
   const contextWindow = (modelId && MODEL_CONTEXT_WINDOWS[modelId]) || 16_000
   const scaleFactor = Math.min(contextWindow / 16_000, 4)
   return {
+    // Existing char-based (keep for backward compat)
     maxContextChars: Math.min(Math.round(20_000 * scaleFactor), 80_000),
     maxSectionChars: Math.min(Math.round(2_500 * scaleFactor), 8_000),
     maxCompressedBlocks: Math.min(Math.round(4 * scaleFactor), 12),
     adjacentChunkRadius: scaleFactor >= 2 ? 2 : 1,
+    // Token-based limits (scale with model)
+    maxContextTokens: Math.min(Math.round(MAX_CONTEXT_TOKENS * scaleFactor), 32_000),
+    maxSectionTokens: Math.min(Math.round(MAX_SECTION_TOKENS * scaleFactor), 6_000),
+    maxEntityTokens: Math.min(Math.round(MAX_ENTITY_TOKENS * scaleFactor), 8_000),
+    maxRelationTokens: Math.min(Math.round(MAX_RELATION_TOKENS * scaleFactor), 8_000),
+    maxChunkTokens: Math.min(Math.round(MAX_CHUNK_TOKENS * scaleFactor), 16_000),
   }
 }
 

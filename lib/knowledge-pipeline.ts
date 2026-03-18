@@ -6,75 +6,45 @@ import {
   requestAiEmbedding,
   resolveEmbeddingProvider,
 } from '@/lib/ai-server'
+import { extractZipDocuments } from '@/lib/knowledge-extractors'
 import { logServerError } from '@/lib/server-errors'
 import { EMBEDDING_BATCH_SIZE } from '@/lib/ai-config'
 import { insertDocumentChunkRowsInBatches } from '@/lib/document-chunk-storage'
 import {
-  extractOpenApiContent,
-  extractGraphQlContent,
-  extractZipContent,
-  extractAsyncApiContent,
-  extractProtobufContent,
-  extractRstContent,
-  extractAsciidocContent,
-  extractCsvContent,
-  extractSqlDdlContent,
-  extractTypeScriptDefsContent,
-  extractPostmanContent,
-} from '@/lib/knowledge-extractors'
+  extractKnowledgeSourceContent,
+  type ExtractableKnowledgeSourceType,
+} from '@/lib/knowledge-source-content'
+import { sanitizePlainText } from '@/lib/sanitize'
 
-/**
- * Extract plain text from raw content based on source type.
- */
-async function extractContent(
-  sourceType: string,
-  rawContent: string,
-): Promise<{ title: string; content: string }> {
-  switch (sourceType) {
-    case 'openapi':
-      return await extractOpenApiContent(rawContent)
-    case 'graphql':
-      return extractGraphQlContent(rawContent)
-    case 'zip':
-      return extractZipContent(rawContent)
-    case 'asyncapi':
-      return extractAsyncApiContent(rawContent)
-    case 'protobuf':
-      return extractProtobufContent(rawContent)
-    case 'rst':
-      return extractRstContent(rawContent)
-    case 'asciidoc':
-      return extractAsciidocContent(rawContent)
-    case 'csv':
-      return extractCsvContent(rawContent)
-    case 'sql_ddl':
-      return extractSqlDdlContent(rawContent)
-    case 'typescript_defs':
-      return extractTypeScriptDefsContent(rawContent)
-    case 'postman':
-      return extractPostmanContent(rawContent)
-    case 'faq': {
-      // Expect JSON array of { question, answer } pairs
-      try {
-        const pairs = JSON.parse(rawContent) as Array<{
-          question: string
-          answer: string
-        }>
-        const content = pairs
-          .map((p) => `## ${p.question}\n\n${p.answer}`)
-          .join('\n\n')
-        return { title: 'FAQ', content }
-      } catch {
-        return { title: 'FAQ', content: rawContent }
-      }
+const MAX_KNOWLEDGE_SOURCE_ERROR_MESSAGE_LENGTH = 500
+const ZIP_CHUNK_PROGRESS_INTERVAL = 50
+const ZIP_DOCUMENT_CHUNK_INSERT_BATCH_SIZE = 50
+
+function formatKnowledgeSourceProcessingErrorMessage(error: unknown) {
+  const messages: string[] = []
+
+  if (error instanceof Error) {
+    const cause = error.cause
+    if (cause instanceof Error) {
+      messages.push(cause.message)
+    } else if (typeof cause === 'string') {
+      messages.push(cause)
     }
-    case 'url':
-    case 'pdf':
-    case 'markdown':
-    case 'document':
-    default:
-      return { title: '', content: rawContent }
+    messages.push(error.message)
+  } else if (typeof error === 'string') {
+    messages.push(error)
   }
+
+  const normalizedMessages = messages
+    .map((message) => sanitizePlainText(message).trim())
+    .filter((message) => message.length > 0)
+  const preferredMessage =
+    normalizedMessages.find((message) => !message.startsWith('Failed query:'))
+    ?? normalizedMessages[0]
+
+  return preferredMessage
+    ? preferredMessage.slice(0, MAX_KNOWLEDGE_SOURCE_ERROR_MESSAGE_LENGTH)
+    : 'Processing failed'
 }
 
 /**
@@ -134,15 +104,65 @@ export async function processKnowledgeSource(input: {
     }
 
     await writeProgress(0.05, 'extracting')
-    const { title: extractedTitle, content } = await extractContent(
-      source.sourceType,
-      source.rawContent,
-    )
-    const title = source.title || extractedTitle || 'Untitled'
-    const contentHash = computeContentHash(title, content)
+    let title = source.title || 'Untitled'
+    let contentHash = computeContentHash(title, source.rawContent)
+    let chunks: ReturnType<typeof chunkDocument> = []
 
-    await writeProgress(0.15, 'chunking')
-    const chunks = chunkDocument(title, content)
+    if (source.sourceType === 'zip') {
+      const extractedDocuments = extractZipDocuments(source.rawContent)
+      title = source.title || 'Zip Archive'
+      contentHash = computeContentHash(title, source.rawContent)
+
+      await writeProgress(
+        0.15,
+        'chunking',
+        extractedDocuments.length > 0 ? `0 / ${extractedDocuments.length}` : undefined,
+      )
+
+      let nextChunkIndex = 0
+      for (const [index, document] of extractedDocuments.entries()) {
+        const documentChunks = chunkDocument(
+          `${title} — ${document.path}`,
+          document.content,
+        )
+
+        for (const chunk of documentChunks) {
+          chunks.push({
+            ...chunk,
+            chunkIndex: nextChunkIndex,
+            sectionPath: chunk.sectionPath
+              ? `${document.path} > ${chunk.sectionPath}`
+              : document.path,
+          })
+          nextChunkIndex += 1
+        }
+
+        const completed = index + 1
+        if (
+          completed === extractedDocuments.length ||
+          completed % ZIP_CHUNK_PROGRESS_INTERVAL === 0
+        ) {
+          await writeProgress(
+            0.15 + (0.05 * completed / Math.max(extractedDocuments.length, 1)),
+            'chunking',
+            `${completed} / ${extractedDocuments.length}`,
+          )
+        }
+      }
+    } else {
+      const { title: extractedTitle, content } = await extractKnowledgeSourceContent(
+        source.sourceType as ExtractableKnowledgeSourceType,
+        source.rawContent,
+      )
+      const normalizedContent = sanitizePlainText(content)
+      const normalizedExtractedTitle = sanitizePlainText(extractedTitle).trim()
+      title = source.title || normalizedExtractedTitle || 'Untitled'
+      contentHash = computeContentHash(title, normalizedContent)
+
+      await writeProgress(0.15, 'chunking')
+      chunks = chunkDocument(title, normalizedContent)
+    }
+
     if (chunks.length === 0) {
       await db
         .delete(documentChunks)
@@ -212,7 +232,13 @@ export async function processKnowledgeSource(input: {
           eq(documentChunks.knowledgeSourceId, source.id),
         )
 
-      await insertDocumentChunkRowsInBatches(tx, chunkRows)
+      await insertDocumentChunkRowsInBatches(
+        tx,
+        chunkRows,
+        source.sourceType === 'zip'
+          ? ZIP_DOCUMENT_CHUNK_INSERT_BATCH_SIZE
+          : undefined,
+      )
     })
 
     await db
@@ -229,8 +255,7 @@ export async function processKnowledgeSource(input: {
 
     return { status: 'processed' as const, chunkCount: chunks.length }
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Processing failed'
+    const message = formatKnowledgeSourceProcessingErrorMessage(error)
 
     await db
       .update(knowledgeSources)

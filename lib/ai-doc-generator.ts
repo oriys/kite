@@ -9,17 +9,16 @@ import {
 } from '@/lib/openapi/document-types'
 import {
   requestAiTextCompletion,
-  resolveAiModelSelection,
-  resolveWorkspaceAiProviders,
 } from '@/lib/ai-server'
-import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
 import { TEMPERATURE_DOC_GEN } from '@/lib/ai-config'
 import {
   buildEndpointDocUserPrompt,
   buildOpenApiDocumentUserPrompt,
+  type OpenApiDocumentRetrievedContext,
   type OpenApiDocumentTemplateContext,
 } from '@/lib/openapi/doc-prompt'
+import { resolveDocGenerationSelection } from '@/lib/openapi/doc-generation-model'
 
 const SYSTEM_PROMPT = [
   'You are an expert API documentation writer.',
@@ -29,30 +28,10 @@ const SYSTEM_PROMPT = [
   'When multiple endpoints are provided, combine them into one coherent document instead of unrelated fragments.',
   'Never invent undocumented fields, headers, status codes, auth scopes, or rate limits.',
   'If metadata is missing or ambiguous, say so plainly instead of pretending it exists.',
+  'If supplemental context is provided, treat it as secondary context and resolve conflicts in favor of explicit OpenAPI metadata.',
   'Use the same language as any existing summary or description provided in the endpoint metadata.',
   'If the metadata is in English or has no text, write in English.',
 ].join(' ')
-
-async function resolveDocGenerationSelection(
-  workspaceId: string,
-  requestedModelId?: string,
-) {
-  const [providers, workspaceSettings] = await Promise.all([
-    resolveWorkspaceAiProviders(workspaceId),
-    getAiWorkspaceSettings(workspaceId),
-  ])
-
-  return resolveAiModelSelection({
-    requestedModelId,
-    defaultModelId: workspaceSettings?.defaultModelId ?? null,
-    enabledModelIds: Array.isArray(workspaceSettings?.enabledModelIds)
-      ? workspaceSettings.enabledModelIds.filter(
-          (value): value is string => typeof value === 'string',
-        )
-      : [],
-    providers,
-  })
-}
 
 export interface GenerateEndpointDocResult {
   title: string
@@ -108,6 +87,30 @@ export interface GenerateOpenApiDocumentResult {
   model: string
 }
 
+function resolveSupplementalTitleHint(
+  input: OpenApiDocumentRetrievedContext | null | undefined,
+  sourceName: string,
+) {
+  const sourceNameKey = sourceName.trim().toLowerCase()
+
+  return (
+    input?.materialTitles?.find((title) => {
+      const normalized = title.trim()
+      if (!normalized) return false
+
+      const normalizedKey = normalized.toLowerCase()
+      if (
+        normalizedKey === 'supplemental material' ||
+        normalizedKey === 'pasted material'
+      ) {
+        return false
+      }
+
+      return normalizedKey !== sourceNameKey
+    }) ?? null
+  )
+}
+
 export async function generateOpenApiDocument(input: {
   workspaceId: string
   sourceName: string
@@ -119,6 +122,7 @@ export async function generateOpenApiDocument(input: {
   prompt?: string
   documentType?: OpenApiDocumentType | null
   template?: OpenApiDocumentTemplateContext | null
+  retrievedContext?: OpenApiDocumentRetrievedContext | null
   model?: string
 }): Promise<GenerateOpenApiDocumentResult> {
   const selection = await resolveDocGenerationSelection(
@@ -144,6 +148,7 @@ export async function generateOpenApiDocument(input: {
       userPrompt: input.prompt,
       documentType: input.documentType,
       template: input.template,
+      retrievedContext: input.retrievedContext,
     }),
     temperature: TEMPERATURE_DOC_GEN,
   })
@@ -155,6 +160,10 @@ export async function generateOpenApiDocument(input: {
       documentType: input.documentType,
       prompt: input.prompt,
       templateName: input.template?.name,
+      supplementalTitleHint: resolveSupplementalTitleHint(
+        input.retrievedContext,
+        input.apiTitle ?? input.sourceName,
+      ),
     }),
     content: completion.result,
     model: completion.model,

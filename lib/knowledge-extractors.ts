@@ -1,5 +1,6 @@
 import { unzipSync } from 'fflate'
 import { parseOpenAPISpec } from '@/lib/openapi/parser'
+import { sanitizePlainText } from '@/lib/sanitize'
 
 /**
  * Convert an OpenAPI spec into headed markdown that the chunker can split
@@ -294,9 +295,76 @@ function renderFields(lines: string[], fields: any[]) {
 const SUPPORTED_ZIP_EXTENSIONS = new Set([
   '.md', '.txt', '.json', '.yaml', '.yml',
   '.graphql', '.gql', '.xml', '.html', '.csv',
+  '.tsv', '.proto', '.rst', '.adoc', '.asciidoc',
+  '.asc', '.sql', '.ddl', '.ts', '.d.ts',
 ])
 
 const MAX_ENTRY_SIZE = 500 * 1024 // 500 KB
+
+export interface ZipExtractedDocument {
+  path: string
+  content: string
+}
+
+function normalizeZipPath(path: string) {
+  return path.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/{2,}/g, '/')
+}
+
+function shouldIgnoreZipPath(path: string) {
+  const normalizedPath = normalizeZipPath(path)
+  if (!normalizedPath || normalizedPath.endsWith('/')) return true
+
+  const segments = normalizedPath.split('/').filter(Boolean)
+  if (segments.length === 0) return true
+
+  if (segments.some((segment) => segment === '__MACOSX')) {
+    return true
+  }
+
+  const basename = segments[segments.length - 1]
+  if (basename === '.DS_Store' || basename.startsWith('._')) {
+    return true
+  }
+
+  return false
+}
+
+function compareZipPaths(left: string, right: string) {
+  return normalizeZipPath(left).localeCompare(normalizeZipPath(right))
+}
+
+export function extractZipDocuments(rawContent: string): ZipExtractedDocument[] {
+  const bytes = Buffer.from(rawContent, 'base64')
+  const entries = unzipSync(new Uint8Array(bytes))
+  const textDecoder = new TextDecoder('utf-8', { fatal: false })
+
+  return Object.keys(entries)
+    .sort(compareZipPaths)
+    .flatMap((path): ZipExtractedDocument[] => {
+      const normalizedPath = normalizeZipPath(path)
+      if (shouldIgnoreZipPath(normalizedPath)) {
+        return []
+      }
+
+      const data = entries[path]
+      if (!data || data.byteLength > MAX_ENTRY_SIZE) {
+        return []
+      }
+
+      const dotIndex = normalizedPath.lastIndexOf('.')
+      const ext = dotIndex >= 0 ? normalizedPath.slice(dotIndex).toLowerCase() : ''
+      if (!SUPPORTED_ZIP_EXTENSIONS.has(ext)) {
+        return []
+      }
+
+      const content = sanitizePlainText(textDecoder.decode(data)).trimEnd()
+      if (!content.trim()) {
+        return []
+      }
+
+      return [{ path: normalizedPath, content }]
+    })
+}
 
 /**
  * Extract text content from a base64-encoded zip archive.
@@ -305,29 +373,11 @@ const MAX_ENTRY_SIZE = 500 * 1024 // 500 KB
 export function extractZipContent(
   rawContent: string,
 ): { title: string; content: string } {
-  const bytes = Buffer.from(rawContent, 'base64')
-  const entries = unzipSync(new Uint8Array(bytes))
-
-  const textDecoder = new TextDecoder('utf-8', { fatal: false })
   const lines: string[] = []
+  const documents = extractZipDocuments(rawContent)
 
-  const paths = Object.keys(entries).sort()
-
-  for (const path of paths) {
-    // Skip directories
-    if (path.endsWith('/')) continue
-
-    // Skip files that are too large
-    const data = entries[path]
-    if (data.byteLength > MAX_ENTRY_SIZE) continue
-
-    // Check extension
-    const dotIndex = path.lastIndexOf('.')
-    const ext = dotIndex >= 0 ? path.slice(dotIndex).toLowerCase() : ''
-    if (!SUPPORTED_ZIP_EXTENSIONS.has(ext)) continue
-
-    const text = textDecoder.decode(data)
-    lines.push(`## ${path}`, '', text.trimEnd(), '')
+  for (const document of documents) {
+    lines.push(`## ${document.path}`, '', document.content, '')
   }
 
   return {

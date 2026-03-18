@@ -101,6 +101,8 @@ export const documentChunks = pgTable(
       { onDelete: 'cascade' },
     ),
     embedding: vector1536('embedding'),
+    /** Tracks which embedding model generated the vector (for space isolation) */
+    embeddingModelId: text('embedding_model_id'),
     tokenCount: integer('token_count').notNull().default(0),
     contentHash: text('content_hash').notNull(),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
@@ -212,6 +214,35 @@ export const aiChatMessagesRelations = relations(aiChatMessages, ({ one }) => ({
     references: [aiChatSessions.id],
   }),
 }))
+
+export const aiRagCacheEntries = pgTable(
+  'ai_rag_cache_entries',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    cacheType: text('cache_type').notNull(),
+    cacheKey: text('cache_key').notNull(),
+    payload: jsonb('payload')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    expiresAt: timestamp('expires_at', { mode: 'date' }),
+    createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('ai_rag_cache_entries_workspace_lookup_idx').on(
+      t.workspaceId,
+      t.cacheType,
+      t.cacheKey,
+    ),
+    index('ai_rag_cache_entries_expires_idx').on(t.expiresAt),
+  ],
+)
 
 export const mcpTransportTypeEnum = pgEnum('mcp_transport_type', [
   'stdio',

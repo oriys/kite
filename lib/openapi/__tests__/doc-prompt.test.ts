@@ -138,12 +138,20 @@ describe('OpenAPI doc prompt builder', () => {
         category: 'getting-started',
         content: '# Getting Started\n\n## Prerequisites\n\n- API key',
       },
+      retrievedContext: {
+        contextText:
+          '[1] Release Notes\nSource Type: markdown\n\nUse Idempotency-Key for order creation and explain the current rate limits.',
+        materialCount: 1,
+        queryVariants: ['Create onboarding guide for POST /orders'],
+      },
     })
 
     expect(prompt).toContain('Target document type: Guide document')
     expect(prompt).toContain('<custom_prompt>')
     expect(prompt).toContain('Focus on onboarding external integrators.')
     expect(prompt).toContain('<template_guidance>')
+    expect(prompt).toContain('<supplemental_context>')
+    expect(prompt).toContain('Use Idempotency-Key for order creation')
     expect(prompt).toContain('Template Name: Getting Started Guide')
     expect(prompt).toContain('### Endpoint 1')
     expect(prompt).toContain('### Endpoint 2')
@@ -171,5 +179,18 @@ describe('OpenAPI doc prompt builder', () => {
         templateName: null,
       }),
     ).toBe('Orders API guide')
+  })
+
+  it('uses supplemental title hints for materials-only documents', () => {
+    expect(
+      buildOpenApiDocumentTitle({
+        sourceName: 'Orders API',
+        documentType: 'guide',
+        endpoints: [],
+        prompt: '',
+        templateName: null,
+        supplementalTitleHint: 'OAuth migration guide',
+      }),
+    ).toBe('Orders API — OAuth migration guide')
   })
 })
