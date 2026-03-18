@@ -4,7 +4,9 @@ import * as React from 'react'
 import { toast } from 'sonner'
 
 import {
+  mergeNavOrder,
   mergePersonalFeatureVisibility,
+  type NavItemKey,
   type PersonalFeatureId,
   type PersonalFeatureVisibility,
 } from '@/lib/personal-settings'
@@ -16,6 +18,9 @@ interface PersonalSettingsContextValue {
   updateFeatureVisibility: (
     updates: Partial<PersonalFeatureVisibility>,
   ) => Promise<boolean>
+  navOrder: NavItemKey[]
+  isUpdatingNavOrder: boolean
+  updateNavOrder: (navOrder: NavItemKey[] | null) => Promise<boolean>
 }
 
 const PersonalSettingsContext =
@@ -24,9 +29,11 @@ const PersonalSettingsContext =
 export function PersonalSettingsProvider({
   children,
   initialFeatureVisibility,
+  initialNavOrder,
 }: {
   children: React.ReactNode
   initialFeatureVisibility: PersonalFeatureVisibility
+  initialNavOrder?: NavItemKey[]
 }) {
   const [featureVisibility, setFeatureVisibility] =
     React.useState<PersonalFeatureVisibility>(() =>
@@ -38,6 +45,12 @@ export function PersonalSettingsProvider({
   const [pendingFeatureIds, setPendingFeatureIds] = React.useState<
     PersonalFeatureId[]
   >([])
+
+  const [navOrder, setNavOrder] = React.useState<NavItemKey[]>(() =>
+    mergeNavOrder(initialNavOrder),
+  )
+  const navOrderRef = React.useRef(navOrder)
+  const [isUpdatingNavOrder, setIsUpdatingNavOrder] = React.useState(false)
 
   const updateFeatureVisibility = React.useCallback(
     async (updates: Partial<PersonalFeatureVisibility>) => {
@@ -111,18 +124,76 @@ export function PersonalSettingsProvider({
     [isUpdatingFeatureVisibility],
   )
 
+  const updateNavOrder = React.useCallback(
+    async (nextNavOrder: NavItemKey[] | null) => {
+      if (isUpdatingNavOrder) {
+        return false
+      }
+
+      const previousNavOrder = navOrderRef.current
+      const resolvedNavOrder = mergeNavOrder(nextNavOrder)
+
+      navOrderRef.current = resolvedNavOrder
+      setNavOrder(resolvedNavOrder)
+      setIsUpdatingNavOrder(true)
+
+      try {
+        const response = await fetch('/api/personal-settings', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ navOrder: nextNavOrder }),
+        })
+
+        const payload = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          throw new Error(
+            typeof payload?.error === 'string'
+              ? payload.error
+              : 'Failed to update navigation order.',
+          )
+        }
+
+        const serverNavOrder = mergeNavOrder(payload?.navOrder)
+        navOrderRef.current = serverNavOrder
+        setNavOrder(serverNavOrder)
+        return true
+      } catch (error) {
+        navOrderRef.current = previousNavOrder
+        setNavOrder(previousNavOrder)
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : 'Failed to update navigation order.',
+        )
+        return false
+      } finally {
+        setIsUpdatingNavOrder(false)
+      }
+    },
+    [isUpdatingNavOrder],
+  )
+
   const value = React.useMemo(
     () => ({
       featureVisibility,
       isUpdatingFeatureVisibility,
       pendingFeatureIds,
       updateFeatureVisibility,
+      navOrder,
+      isUpdatingNavOrder,
+      updateNavOrder,
     }),
     [
       featureVisibility,
       isUpdatingFeatureVisibility,
       pendingFeatureIds,
       updateFeatureVisibility,
+      navOrder,
+      isUpdatingNavOrder,
+      updateNavOrder,
     ],
   )
 

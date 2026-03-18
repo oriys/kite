@@ -195,6 +195,34 @@ export async function upsertAiWorkspaceModelSettings(
   return settings
 }
 
+export async function upsertAiWorkspaceRagEnabled(
+  workspaceId: string,
+  ragEnabled: boolean,
+) {
+  const now = new Date()
+
+  const [settings] = await db
+    .insert(aiWorkspaceSettings)
+    .values({
+      workspaceId,
+      enabledModelIds: [],
+      promptSettings: {},
+      ragEnabled,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: aiWorkspaceSettings.workspaceId,
+      set: {
+        ragEnabled,
+        updatedAt: now,
+      },
+    })
+    .returning()
+
+  return settings
+}
+
 export async function upsertAiWorkspacePromptSettings(
   workspaceId: string,
   promptSettings: unknown,

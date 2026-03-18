@@ -43,10 +43,16 @@ export async function GET(request: NextRequest) {
     conditions.push(eq(errorLogs.resolved, false))
   }
   if (from) {
-    conditions.push(gte(errorLogs.occurredAt, new Date(from)))
+    const d = new Date(from)
+    if (!isNaN(d.getTime())) {
+      conditions.push(gte(errorLogs.occurredAt, d))
+    }
   }
   if (to) {
-    conditions.push(lte(errorLogs.occurredAt, new Date(to)))
+    const d = new Date(to)
+    if (!isNaN(d.getTime())) {
+      conditions.push(lte(errorLogs.occurredAt, d))
+    }
   }
   if (fingerprint) {
     conditions.push(eq(errorLogs.fingerprint, fingerprint))

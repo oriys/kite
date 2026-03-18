@@ -9,13 +9,15 @@ import {
   collectMcpToolNamesFromSteps,
   createChatMessageAttribution,
 } from '@/lib/ai-chat-shared'
-import { TEMPERATURE_CHAT, TEMPERATURE_COMPLETION } from '@/lib/ai-config'
+import { TEMPERATURE_CHAT, TEMPERATURE_COMPLETION, DEFAULT_EMBEDDING_MODEL } from '@/lib/ai-config'
 import {
   AiCompletionError,
   type OpenAiCompatibleRerankResponse,
   type ResolvedAiProviderConfig,
 } from './ai-server-types'
 import { getNumber } from './ai-server-helpers'
+import { resolveWorkspaceAiProviders } from './ai-server-providers'
+import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 
 function normalizeGeminiModelId(modelId: string) {
   return modelId.startsWith('models/') ? modelId.slice('models/'.length) : modelId
@@ -369,5 +371,23 @@ export async function requestAiChatCompletionStream(input: {
     if (error instanceof AiCompletionError) throw error
     const message = error instanceof Error ? error.message : 'The AI provider request failed.'
     throw new AiCompletionError(message, 502)
+  }
+}
+
+export async function resolveEmbeddingProvider(workspaceId: string) {
+  const [providers, settings] = await Promise.all([
+    resolveWorkspaceAiProviders(workspaceId),
+    getAiWorkspaceSettings(workspaceId),
+  ])
+
+  const embeddingProviders = providers.filter(
+    (p) => p.enabled && (p.providerType === 'openai_compatible' || p.providerType === 'gemini'),
+  )
+
+  if (embeddingProviders.length === 0) return null
+
+  return {
+    provider: embeddingProviders[0],
+    modelId: settings?.embeddingModelId?.trim() || DEFAULT_EMBEDDING_MODEL,
   }
 }

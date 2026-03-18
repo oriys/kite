@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, BrainCircuit, Cable, Key, KeyRound, Palette, PencilLine, Plug, SlidersHorizontal, Sparkles, Users, UsersRound } from 'lucide-react'
+import { Activity, Bell, Blocks, BookOpen, BrainCircuit, Cable, Key, KeyRound, Palette, PencilLine, Plug, Shield, SlidersHorizontal, Sparkles, Users, UsersRound, Webhook } from 'lucide-react'
 
 import { useSettingsAccess, type SettingsRole } from '@/components/settings/settings-access-provider'
 import { cn } from '@/lib/utils'
@@ -56,6 +56,18 @@ const SETTINGS_NAV = [
         minRole: 'admin',
       },
       {
+        href: '/docs/settings/knowledge-base',
+        label: 'Knowledge Base',
+        icon: BookOpen,
+        minRole: 'admin',
+      },
+      {
+        href: '/docs/settings/rag-diagnostics',
+        label: 'RAG Diagnostics',
+        icon: Activity,
+        minRole: 'owner',
+      },
+      {
         href: '/docs/settings/notifications',
         label: 'Notifications',
         icon: Bell,
@@ -65,6 +77,30 @@ const SETTINGS_NAV = [
         href: '/docs/settings/integrations',
         label: 'Integrations',
         icon: Plug,
+        minRole: 'admin',
+      },
+      {
+        href: '/docs/settings/webhooks',
+        label: 'Webhooks',
+        icon: Webhook,
+        minRole: 'admin',
+      },
+      {
+        href: '/docs/settings/branding',
+        label: 'Branding',
+        icon: Palette,
+        minRole: 'admin',
+      },
+      {
+        href: '/docs/settings/quick-insert',
+        label: 'Quick Insert',
+        icon: Blocks,
+        minRole: 'member',
+      },
+      {
+        href: '/docs/settings/audit-logs',
+        label: 'Audit Logs',
+        icon: Shield,
         minRole: 'admin',
       },
       { href: '/docs/settings/tokens', label: 'API Tokens', icon: Key, minRole: 'member' },

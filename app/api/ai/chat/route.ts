@@ -11,6 +11,8 @@ import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import { logServerError } from '@/lib/server-errors'
 
 const MAX_MESSAGE_LENGTH = 4000
+const RESUME_REPLY_PROMPT =
+  'Continue your previous answer from where you stopped. Do not repeat completed sections unless necessary.'
 
 export async function POST(request: NextRequest) {
   const result = await withWorkspaceAuth('member')
@@ -19,7 +21,9 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
 
-  const message = typeof body.message === 'string' ? body.message.trim() : ''
+  const resume = body.resume === true
+  const rawMessage = typeof body.message === 'string' ? body.message.trim() : ''
+  const message = resume ? RESUME_REPLY_PROMPT : rawMessage
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
   const documentId =
     typeof body.documentId === 'string' ? body.documentId : undefined
@@ -40,45 +44,47 @@ export async function POST(request: NextRequest) {
         }
       : undefined
 
-  if (!message) return badRequest('Message is required')
-  if (message.length > MAX_MESSAGE_LENGTH) {
+  if (!resume && !rawMessage) return badRequest('Message is required')
+  if (resume && !sessionId) {
+    return badRequest('Session is required to resume a reply')
+  }
+  if (!resume && rawMessage.length > MAX_MESSAGE_LENGTH) {
     return badRequest(`Message too long. Limit is ${MAX_MESSAGE_LENGTH} characters.`)
   }
 
   try {
-    // Resolve or create session
     let activeSessionId = sessionId
     if (!activeSessionId) {
       const session = await createChatSession({
         workspaceId: result.ctx.workspaceId,
         userId: result.ctx.userId,
         documentId,
-        title: message.slice(0, 80),
+        title: rawMessage.slice(0, 80),
       })
       activeSessionId = session.id
     }
 
-    // Save user message
-    await saveChatMessage({
-      sessionId: activeSessionId,
-      role: 'user',
-      content: message,
-    })
+    if (!resume) {
+      await saveChatMessage({
+        sessionId: activeSessionId,
+        role: 'user',
+        content: rawMessage,
+      })
+    }
 
-    // Stream RAG response
     const { stream, sources, attributionPromise } = await streamChatResponse({
       workspaceId: result.ctx.workspaceId,
       sessionId: activeSessionId,
       userMessage: message,
       documentId,
       model,
+      userId: result.ctx.userId,
+      role: result.ctx.role,
       mcpPrompt,
     })
 
-    // Collect full response for persistence (fork the stream)
     const [browserStream, persistStream] = stream.tee()
 
-    // Save assistant message in the background
     void Promise.all([
       collectStreamText(persistStream),
       attributionPromise.catch((error) => {
@@ -86,7 +92,7 @@ export async function POST(request: NextRequest) {
           sessionId: activeSessionId,
         })
         return undefined
-      })
+      }),
     ])
       .then(async ([fullText, attribution]) => {
         await saveChatMessage({

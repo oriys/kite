@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+
 import { createClientUuid } from '@/lib/client-uuid'
 import {
   type ChatMessageAttribution,
@@ -25,6 +26,15 @@ export interface ChatSession {
   updatedAt: string
 }
 
+interface SessionRefreshOptions {
+  silent?: boolean
+}
+
+interface RequestReplyOptions {
+  content?: string
+  resume?: boolean
+}
+
 interface UseAiChatOptions {
   documentId?: string
   model?: string
@@ -33,8 +43,12 @@ interface UseAiChatOptions {
 export function useAiChat(options: UseAiChatOptions = {}) {
   const [sessionId, setSessionId] = React.useState<string | null>(null)
   const [messages, setMessages] = React.useState<ChatMessage[]>([])
+  const [sessions, setSessions] = React.useState<ChatSession[]>([])
   const [isStreaming, setIsStreaming] = React.useState(false)
+  const [isLoadingSessions, setIsLoadingSessions] = React.useState(false)
+  const [canResume, setCanResume] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [sessionsError, setSessionsError] = React.useState<string | null>(null)
   const abortRef = React.useRef<AbortController | null>(null)
   const messagesRef = React.useRef<ChatMessage[]>([])
 
@@ -42,21 +56,28 @@ export function useAiChat(options: UseAiChatOptions = {}) {
     messagesRef.current = messages
   }, [messages])
 
-  const mapChatMessage = React.useCallback((message: ChatMessage): ChatMessage => ({
-    id: message.id ?? createClientUuid(),
-    role: message.role,
-    content: message.content,
-    sources: message.sources,
-    attribution: normalizeChatMessageAttribution(message.attribution),
-    createdAt: message.createdAt,
-  }), [])
+  const mapChatMessage = React.useCallback(
+    (message: ChatMessage): ChatMessage => ({
+      id: message.id ?? createClientUuid(),
+      role: message.role,
+      content: message.content,
+      sources: message.sources,
+      attribution: normalizeChatMessageAttribution(message.attribution),
+      createdAt: message.createdAt,
+    }),
+    [],
+  )
 
   const fetchSessionMessages = React.useCallback(
     async (id: string) => {
       const res = await fetch(`/api/ai/chat/sessions/${id}`, {
         cache: 'no-store',
       })
-      if (!res.ok) return null
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error ?? `Failed to load chat history (${res.status})`)
+      }
 
       const data = (await res.json()) as { messages: ChatMessage[] }
       return data.messages.map(mapChatMessage)
@@ -64,45 +85,96 @@ export function useAiChat(options: UseAiChatOptions = {}) {
     [mapChatMessage],
   )
 
+  const fetchChatSessions = React.useCallback(async () => {
+    const res = await fetch('/api/ai/chat/sessions', {
+      cache: 'no-store',
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      throw new Error(data?.error ?? `Failed to load chats (${res.status})`)
+    }
+
+    const data = (await res.json()) as { sessions: ChatSession[] }
+    return data.sessions
+  }, [])
+
+  const refreshSessions = React.useCallback(
+    async (refreshOptions: SessionRefreshOptions = {}) => {
+      const { silent = false } = refreshOptions
+
+      if (!silent) {
+        setIsLoadingSessions(true)
+        setSessionsError(null)
+      }
+
+      try {
+        const nextSessions = await fetchChatSessions()
+        setSessions(nextSessions)
+      } catch (err) {
+        if (!silent) {
+          const msg = err instanceof Error ? err.message : 'Failed to load chats'
+          setSessionsError(msg)
+        }
+      } finally {
+        if (!silent) {
+          setIsLoadingSessions(false)
+        }
+      }
+    },
+    [fetchChatSessions],
+  )
+
   const syncSessionMessages = React.useCallback(
     async (id: string, expectedMessageCount?: number) => {
       for (let attempt = 0; attempt < 4; attempt++) {
-        const nextMessages = await fetchSessionMessages(id)
-        if (!nextMessages) return
+        try {
+          const nextMessages = await fetchSessionMessages(id)
 
-        if (
-          expectedMessageCount === undefined ||
-          nextMessages.length >= expectedMessageCount
-        ) {
-          setSessionId(id)
-          setMessages(nextMessages)
-          return
+          if (
+            expectedMessageCount === undefined
+            || nextMessages.length >= expectedMessageCount
+          ) {
+            setSessionId(id)
+            setMessages(nextMessages)
+            return true
+          }
+        } catch {
+          break
         }
 
-        await new Promise((resolve) =>
-          setTimeout(resolve, 150 * (attempt + 1)),
-        )
+        await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)))
       }
+
+      setSessionId(id)
+      return false
     },
     [fetchSessionMessages],
   )
 
-  const sendMessage = React.useCallback(
-    async (content: string) => {
-      if (!content.trim() || isStreaming) return
+  const requestReply = React.useCallback(
+    async ({ content, resume = false }: RequestReplyOptions) => {
+      const nextContent = content?.trim() ?? ''
+      if (isStreaming) return
+      if (!resume && !nextContent) return
+      if (resume && !sessionId) return
 
       setError(null)
-      const expectedMessageCount = messagesRef.current.length + 2
+      setCanResume(false)
 
-      // Add user message immediately
-      const userMessage: ChatMessage = {
-        id: createClientUuid(),
-        role: 'user',
-        content: content.trim(),
+      const expectedMessageCount = resume
+        ? undefined
+        : messagesRef.current.length + 2
+
+      if (!resume) {
+        const userMessage: ChatMessage = {
+          id: createClientUuid(),
+          role: 'user',
+          content: nextContent,
+        }
+        setMessages((prev) => [...prev, userMessage])
       }
-      setMessages((prev) => [...prev, userMessage])
 
-      // Add placeholder for assistant
       const assistantId = createClientUuid()
       setMessages((prev) => [
         ...prev,
@@ -110,16 +182,18 @@ export function useAiChat(options: UseAiChatOptions = {}) {
       ])
       setIsStreaming(true)
 
+      abortRef.current?.abort()
       const controller = new AbortController()
       abortRef.current = controller
+      let activeSessionId = sessionId
 
       try {
         const res = await fetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            message: content.trim(),
-            sessionId: sessionId ?? undefined,
+            ...(resume ? { resume: true } : { message: nextContent }),
+            sessionId: activeSessionId ?? undefined,
             documentId: options.documentId,
             model: options.model,
           }),
@@ -131,12 +205,13 @@ export function useAiChat(options: UseAiChatOptions = {}) {
           throw new Error(data?.error ?? `Request failed (${res.status})`)
         }
 
-        // Capture session ID from header
         const newSessionId = res.headers.get('x-ai-chat-session')
-        if (newSessionId) setSessionId(newSessionId)
-        const activeSessionId = newSessionId ?? sessionId
+        if (newSessionId) {
+          activeSessionId = newSessionId
+          setSessionId(newSessionId)
+          void refreshSessions({ silent: true })
+        }
 
-        // Parse sources
         let sources: ChatMessage['sources'] = []
         const sourcesHeader = res.headers.get('x-ai-chat-sources')
         if (sourcesHeader) {
@@ -146,11 +221,10 @@ export function useAiChat(options: UseAiChatOptions = {}) {
             )
             sources = JSON.parse(new TextDecoder().decode(bytes))
           } catch {
-            // Non-critical: sources are supplementary metadata, chat works without them
+            // Sources are supplementary metadata. Keep the streamed answer even if decoding fails.
           }
         }
 
-        // Stream the response
         const reader = res.body?.getReader()
         if (!reader) throw new Error('No response stream')
 
@@ -163,25 +237,30 @@ export function useAiChat(options: UseAiChatOptions = {}) {
           fullText += decoder.decode(value, { stream: true })
 
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, content: fullText, sources }
-                : m,
+            prev.map((message) =>
+              message.id === assistantId
+                ? { ...message, content: fullText, sources }
+                : message,
             ),
           )
         }
 
         if (activeSessionId) {
           await syncSessionMessages(activeSessionId, expectedMessageCount)
+          void refreshSessions({ silent: true })
         }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return
 
-        const msg =
-          err instanceof Error ? err.message : 'Failed to send message'
+        setCanResume(false)
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          setCanResume(Boolean(activeSessionId))
+          return
+        }
+
+        const msg = err instanceof Error ? err.message : 'Failed to send message'
         setError(msg)
-        // Remove the empty assistant placeholder on error
-        setMessages((prev) => prev.filter((m) => m.id !== assistantId))
+        setMessages((prev) => prev.filter((message) => message.id !== assistantId))
+        setCanResume(Boolean(activeSessionId))
       } finally {
         setIsStreaming(false)
         abortRef.current = null
@@ -191,15 +270,28 @@ export function useAiChat(options: UseAiChatOptions = {}) {
       isStreaming,
       options.documentId,
       options.model,
+      refreshSessions,
       sessionId,
       syncSessionMessages,
     ],
   )
 
+  const sendMessage = React.useCallback(
+    async (content: string) => {
+      await requestReply({ content })
+    },
+    [requestReply],
+  )
+
+  const resumeReply = React.useCallback(async () => {
+    await requestReply({ resume: true })
+  }, [requestReply])
+
   const stopStreaming = React.useCallback(() => {
     abortRef.current?.abort()
     setIsStreaming(false)
-  }, [])
+    setCanResume(Boolean(sessionId))
+  }, [sessionId])
 
   const clearChat = React.useCallback(() => {
     abortRef.current?.abort()
@@ -207,28 +299,43 @@ export function useAiChat(options: UseAiChatOptions = {}) {
     setMessages([])
     setError(null)
     setIsStreaming(false)
+    setCanResume(false)
   }, [])
 
-  const loadSession = React.useCallback(async (id: string) => {
-    try {
-      const nextMessages = await fetchSessionMessages(id)
-      if (!nextMessages) return
+  const loadSession = React.useCallback(
+    async (id: string) => {
+      abortRef.current?.abort()
+      setError(null)
+      setIsStreaming(false)
+      setCanResume(false)
 
-      setSessionId(id)
-      setMessages(nextMessages)
-    } catch {
-      // Non-critical: loading previous session is optional, user starts with empty chat
-    }
-  }, [fetchSessionMessages])
+      try {
+        const nextMessages = await fetchSessionMessages(id)
+        setSessionId(id)
+        setMessages(nextMessages)
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'Failed to load chat history'
+        setError(msg)
+      }
+    },
+    [fetchSessionMessages],
+  )
 
   return {
     sessionId,
     messages,
+    sessions,
     isStreaming,
+    isLoadingSessions,
+    canResume,
     error,
+    sessionsError,
     sendMessage,
+    resumeReply,
     stopStreaming,
     clearChat,
     loadSession,
+    refreshSessions,
   }
 }

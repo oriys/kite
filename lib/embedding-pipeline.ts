@@ -4,38 +4,16 @@ import { documents, documentChunks } from '@/lib/schema'
 import { chunkDocument, computeContentHash } from '@/lib/chunker'
 import {
   requestAiEmbedding,
-  resolveWorkspaceAiProviders,
+  resolveEmbeddingProvider,
 } from '@/lib/ai-server'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
-import { DEFAULT_EMBEDDING_MODEL, EMBEDDING_BATCH_SIZE } from '@/lib/ai-config'
-
-async function resolveEmbeddingProvider(workspaceId: string) {
-  const [providers, settings] = await Promise.all([
-    resolveWorkspaceAiProviders(workspaceId),
-    getAiWorkspaceSettings(workspaceId),
-  ])
-
-  const embeddingModelId = settings?.embeddingModelId?.trim() || ''
-
-  // Prefer OpenAI-compatible providers for embeddings
-  const embeddingProviders = providers.filter(
-    (p) => p.enabled && (p.providerType === 'openai_compatible' || p.providerType === 'gemini'),
-  )
-
-  if (embeddingProviders.length === 0) {
-    return null
-  }
-
-  const provider = embeddingProviders[0]
-  const modelId = embeddingModelId || DEFAULT_EMBEDDING_MODEL
-
-  return { provider, modelId }
-}
+import { EMBEDDING_BATCH_SIZE } from '@/lib/ai-config'
 
 /**
  * Embed a single document: chunk it, generate embeddings, and store them.
  * Skips if the content hash hasn't changed.
+ * If ragEnabled is false, deletes existing chunks and returns skipped.
  */
 export async function embedDocument(input: {
   workspaceId: string
@@ -43,7 +21,16 @@ export async function embedDocument(input: {
   title: string
   content: string
   force?: boolean
+  ragEnabled?: boolean
 }) {
+  // If RAG is explicitly disabled for this document, delete existing chunks
+  if (input.ragEnabled === false) {
+    await db
+      .delete(documentChunks)
+      .where(eq(documentChunks.documentId, input.documentId))
+    return { status: 'skipped' as const, chunkCount: 0 }
+  }
+
   const contentHash = computeContentHash(input.title, input.content)
 
   // Check if already up-to-date
@@ -83,6 +70,11 @@ export async function embedDocument(input: {
       model: resolved.modelId,
     })
     allEmbeddings.push(...result.embeddings)
+    if (result.embeddings.length !== batch.length) {
+      throw new Error(
+        `Embedding count mismatch: expected ${batch.length}, got ${result.embeddings.length}`,
+      )
+    }
   }
 
   // Replace existing chunks atomically
@@ -98,6 +90,8 @@ export async function embedDocument(input: {
           workspaceId: input.workspaceId,
           chunkIndex: chunk.chunkIndex,
           chunkText: chunk.chunkText,
+          sectionPath: chunk.sectionPath,
+          heading: chunk.heading,
           embedding: allEmbeddings[i] ?? null,
           tokenCount: chunk.tokenCount,
           contentHash,
@@ -111,33 +105,51 @@ export async function embedDocument(input: {
 
 /**
  * Embed all non-deleted documents in a workspace that need updating.
+ * Respects global RAG toggle and per-document RAG flags.
  */
 export async function embedWorkspaceDocuments(input: {
   workspaceId: string
   force?: boolean
   onProgress?: (completed: number, total: number) => void
 }) {
+  // Check global RAG setting first
+  const settings = await getAiWorkspaceSettings(input.workspaceId)
+  if (settings?.ragEnabled === false) {
+    return { status: 'rag_disabled' as const, processed: 0, total: 0 }
+  }
+
   const resolved = await resolveEmbeddingProvider(input.workspaceId)
   if (!resolved) {
     return { status: 'no_provider' as const, processed: 0, total: 0 }
   }
 
-  const docs = await db
-    .select({
-      id: documents.id,
-      title: documents.title,
-      content: documents.content,
-    })
-    .from(documents)
-    .where(
-      and(
-        eq(documents.workspaceId, input.workspaceId),
-        sql`${documents.deletedAt} IS NULL`,
-      ),
-    )
+  const allDocs: Array<{ id: string; title: string; content: string; ragEnabled: boolean }> = []
+  let batchOffset = 0
+  const batchSize = 100
+  while (true) {
+    const batch = await db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        content: documents.content,
+        ragEnabled: documents.ragEnabled,
+      })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.workspaceId, input.workspaceId),
+          sql`${documents.deletedAt} IS NULL`,
+        ),
+      )
+      .limit(batchSize)
+      .offset(batchOffset)
+    allDocs.push(...batch)
+    if (batch.length < batchSize) break
+    batchOffset += batchSize
+  }
 
   let processed = 0
-  for (const doc of docs) {
+  for (const doc of allDocs) {
     try {
       await embedDocument({
         workspaceId: input.workspaceId,
@@ -145,6 +157,7 @@ export async function embedWorkspaceDocuments(input: {
         title: doc.title,
         content: doc.content,
         force: input.force,
+        ragEnabled: doc.ragEnabled,
       })
     } catch (error) {
       logServerError('Failed to embed document', error, {
@@ -154,10 +167,10 @@ export async function embedWorkspaceDocuments(input: {
     }
 
     processed += 1
-    input.onProgress?.(processed, docs.length)
+    input.onProgress?.(processed, allDocs.length)
   }
 
-  return { status: 'done' as const, processed, total: docs.length }
+  return { status: 'done' as const, processed, total: allDocs.length }
 }
 
 /**

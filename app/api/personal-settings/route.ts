@@ -4,7 +4,9 @@ import { NextResponse } from 'next/server'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import {
   PERSONAL_FEATURE_IDS,
+  isValidNavOrder,
   type PersonalFeatureVisibility,
+  type NavItemKey,
 } from '@/lib/personal-settings'
 import {
   getUserFeatureVisibility,
@@ -15,8 +17,8 @@ export async function GET() {
   const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
-  const featureVisibility = await getUserFeatureVisibility(result.ctx.userId)
-  return NextResponse.json(featureVisibility)
+  const data = await getUserFeatureVisibility(result.ctx.userId)
+  return NextResponse.json(data)
 }
 
 export async function PUT(request: NextRequest) {
@@ -34,10 +36,22 @@ export async function PUT(request: NextRequest) {
     }
   }
 
-  const featureVisibility = await updateUserFeatureVisibility(
+  let navOrder: NavItemKey[] | null | undefined
+  if (body.navOrder !== undefined) {
+    if (body.navOrder === null) {
+      navOrder = null
+    } else if (isValidNavOrder(body.navOrder)) {
+      navOrder = body.navOrder as NavItemKey[]
+    } else {
+      return badRequest('navOrder must be a valid permutation of nav item keys')
+    }
+  }
+
+  const data = await updateUserFeatureVisibility(
     result.ctx.userId,
     updates,
+    navOrder,
   )
 
-  return NextResponse.json(featureVisibility)
+  return NextResponse.json(data)
 }

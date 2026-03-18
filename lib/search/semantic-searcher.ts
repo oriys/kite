@@ -2,14 +2,12 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
   requestAiEmbedding,
-  resolveWorkspaceAiProviders,
+  resolveEmbeddingProvider,
 } from '@/lib/ai-server'
-import { getAiWorkspaceSettings } from '@/lib/queries/ai'
+import { logServerError } from '@/lib/server-errors'
+import { SEMANTIC_TOP_K } from '@/lib/ai-config'
 import type { SearchResult } from './searcher'
 import { searchDocuments } from './searcher'
-
-const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
-const SEMANTIC_TOP_K = 20
 
 export interface HybridSearchResult extends SearchResult {
   matchType: 'keyword' | 'semantic' | 'hybrid'
@@ -24,30 +22,20 @@ async function semanticSearch(
   query: string,
   limit: number,
 ): Promise<HybridSearchResult[]> {
-  const [providers, settings] = await Promise.all([
-    resolveWorkspaceAiProviders(workspaceId),
-    getAiWorkspaceSettings(workspaceId),
-  ])
-
-  const embeddingProviders = providers.filter(
-    (p) => p.enabled && (p.providerType === 'openai_compatible' || p.providerType === 'gemini'),
-  )
-
-  if (embeddingProviders.length === 0) return []
-
-  const provider = embeddingProviders[0]
-  const modelId = settings?.embeddingModelId?.trim() || DEFAULT_EMBEDDING_MODEL
+  const resolved = await resolveEmbeddingProvider(workspaceId)
+  if (!resolved) return []
 
   let queryEmbedding: number[]
   try {
     const { embeddings } = await requestAiEmbedding({
-      provider,
+      provider: resolved.provider,
       texts: [query],
-      model: modelId,
+      model: resolved.modelId,
     })
     if (embeddings.length === 0) return []
     queryEmbedding = embeddings[0]
-  } catch {
+  } catch (error) {
+    logServerError('Semantic search embedding failed', error, { workspaceId })
     return []
   }
 
@@ -65,6 +53,7 @@ async function semanticSearch(
     JOIN documents d ON d.id = dc.document_id AND d.deleted_at IS NULL
     WHERE dc.workspace_id = ${workspaceId}
       AND dc.embedding IS NOT NULL
+      AND d.visibility IN ('public', 'partner')
     ORDER BY dc.embedding <=> ${queryVector}::vector
     LIMIT ${limit * 2}
   `)

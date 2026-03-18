@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BarChart3,
-  Blocks,
   Braces,
   ChevronDown,
   ClipboardCheck,
@@ -14,16 +13,13 @@ import {
   LayoutTemplate,
   LinkIcon,
   Menu,
-  Palette,
   Search,
   Settings,
-  Shield,
-  Webhook,
 } from 'lucide-react'
 
 import { usePersonalSettings } from '@/components/personal-settings-provider'
 import { cn } from '@/lib/utils'
-import type { PersonalFeatureId } from '@/lib/personal-settings'
+import type { PersonalFeatureId, NavItemKey } from '@/lib/personal-settings'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -47,55 +43,52 @@ import { GlobalSearch } from '@/components/global-search'
 import { NotificationBell } from '@/components/notification-bell'
 import { AiChatTrigger } from '@/components/ai-chat-panel'
 
-const NAV_ITEMS = [
-  { href: '/docs', label: 'Documents', icon: FileText },
-  { href: '/docs/compare', label: 'Compare', icon: GitCompareArrows },
+const NAV_ITEMS: ReadonlyArray<{
+  key: NavItemKey
+  href: string
+  label: string
+  icon: typeof FileText
+  featureId?: PersonalFeatureId
+}> = [
+  { key: 'documents', href: '/docs', label: 'Documents', icon: FileText },
+  { key: 'compare', href: '/docs/compare', label: 'Compare', icon: GitCompareArrows },
   {
+    key: 'openApi',
     href: '/docs/openapi',
     label: 'OpenAPI',
     icon: Braces,
     featureId: 'openApi' as PersonalFeatureId,
   },
   {
+    key: 'analytics',
     href: '/docs/analytics',
     label: 'Analytics',
     icon: BarChart3,
     featureId: 'analytics' as PersonalFeatureId,
   },
   {
+    key: 'templates',
     href: '/docs/templates',
     label: 'Templates',
     icon: LayoutTemplate,
     featureId: 'templates' as PersonalFeatureId,
   },
   {
+    key: 'approvals',
     href: '/docs/approvals',
     label: 'Approvals',
     icon: ClipboardCheck,
     featureId: 'approvals' as PersonalFeatureId,
   },
   {
-    href: '/docs/webhooks',
-    label: 'Webhooks',
-    icon: Webhook,
-    featureId: 'webhooks' as PersonalFeatureId,
-  },
-  { href: '/docs/branding', label: 'Branding', icon: Palette },
-  {
+    key: 'linkHealth',
     href: '/docs/link-health',
     label: 'Link Health',
     icon: LinkIcon,
     featureId: 'linkHealth' as PersonalFeatureId,
   },
-  {
-    href: '/docs/components',
-    label: 'Quick Insert',
-    icon: Blocks,
-    featureId: 'quickInsert' as PersonalFeatureId,
-  },
-  { href: '/docs/audit-logs', label: 'Audit Logs', icon: Shield },
-  { href: '/docs/settings/members', label: 'Settings', icon: Settings },
-] as const
+  { key: 'settings', href: '/docs/settings/members', label: 'Settings', icon: Settings },
+]
 
 const DESKTOP_NAV_LINK_CLASS =
   'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors'
@@ -143,19 +136,22 @@ function isActive(pathname: string, href: string) {
 
 export function DocsTopNav() {
   const pathname = usePathname()
-  const { featureVisibility } = usePersonalSettings()
+  const { featureVisibility, navOrder } = usePersonalSettings()
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [searchOpen, setSearchOpen] = React.useState(false)
   const desktopNavRef = React.useRef<HTMLDivElement | null>(null)
   const desktopMeasureRef = React.useRef<HTMLDivElement | null>(null)
-  const navItems = React.useMemo(
-    () =>
-      NAV_ITEMS.filter(
-        (item) =>
-          !('featureId' in item) || featureVisibility[item.featureId],
-      ),
-    [featureVisibility],
-  )
+  const navItems = React.useMemo(() => {
+    const filtered = NAV_ITEMS.filter(
+      (item) =>
+        !('featureId' in item && item.featureId) || featureVisibility[item.featureId],
+    )
+    // Sort by navOrder
+    const orderMap = new Map(navOrder.map((key, index) => [key, index]))
+    return [...filtered].sort(
+      (a, b) => (orderMap.get(a.key) ?? 999) - (orderMap.get(b.key) ?? 999),
+    )
+  }, [featureVisibility, navOrder])
   const [visibleCount, setVisibleCount] = React.useState<number>(navItems.length)
 
   React.useEffect(() => {

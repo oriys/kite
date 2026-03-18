@@ -9,8 +9,10 @@ import {
   requestAiEmbedding,
   requestAiChatCompletionStream,
   requestAiRerank,
+  requestAiTextCompletion,
   resolveAiModelSelection,
   resolveWorkspaceAiProviders,
+  resolveEmbeddingProvider,
 } from '@/lib/ai-server'
 import { listStoredDocumentRelations } from '@/lib/document-relations'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
@@ -28,7 +30,6 @@ import {
   normalizeChatMessageAttribution,
 } from '@/lib/ai-chat-shared'
 import {
-  DEFAULT_EMBEDDING_MODEL,
   DEFAULT_RERANKER_MODEL,
   TOP_K_CHUNKS,
   TOP_K_KEYWORD_DOCUMENTS,
@@ -44,6 +45,7 @@ import {
   MAX_KEYWORD_SNIPPET_CHARS,
   MIN_VECTOR_SIMILARITY,
   VECTOR_SIMILARITY_WINDOW,
+  SIMILARITY_PROFILES,
   MAX_PRIMARY_DOCUMENTS,
   MAX_REFERENCE_LINKS_PER_DOCUMENT,
   MAX_REFERENCE_SEARCH_RESULTS,
@@ -51,8 +53,48 @@ import {
   MAX_RERANK_DOCUMENT_CHARS,
   SHOPLINE_DOCS_BASE_URL,
   TEMPERATURE_CHAT,
+  TEMPERATURE_QUERY_REWRITE,
+  MAX_HISTORY_TURNS_FOR_REWRITE,
+  BOOST_RECENT_SOURCE_SCORE,
+  ENABLE_ITERATIVE_RETRIEVAL,
+  MIN_CONTEXT_SECTIONS_FOR_SKIP,
+  MAX_ITERATIVE_FOLLOWUP_QUERIES,
   MAX_MCP_TOOL_STEPS,
+  resolveContextLimits,
+  type ContextLimits,
+  AI_DEFAULT_QUERY_EXPANSION_RULES,
+  type QueryExpansionRule,
 } from '@/lib/ai-config'
+
+type MemberRole = 'owner' | 'admin' | 'member' | 'guest'
+
+interface VisibilityContext {
+  userId: string
+  role: MemberRole
+}
+
+/**
+ * Build a SQL fragment that filters documents by visibility.
+ * Admins/owners see everything. Members see public + partner + own + explicitly permitted.
+ * `tableAlias` must match the alias used in the query (e.g. 'd' for `documents d`).
+ */
+function buildVisibilityFilter(
+  tableAlias: string,
+  ctx: VisibilityContext | undefined,
+) {
+  if (!ctx) return sql``
+  if (ctx.role === 'owner' || ctx.role === 'admin') return sql``
+
+  return sql`AND (
+    ${sql.raw(tableAlias)}.visibility IN ('public', 'partner')
+    OR ${sql.raw(tableAlias)}.created_by = ${ctx.userId}
+    OR EXISTS (
+      SELECT 1 FROM document_permissions dp
+      WHERE dp.document_id = ${sql.raw(tableAlias)}.id
+        AND dp.user_id = ${ctx.userId}
+    )
+  )`
+}
 
 interface RetrievedContextSection {
   source: ChatSource
@@ -75,61 +117,101 @@ interface ReferenceCandidate {
   searchQuery: string
 }
 
-type SemanticChunkHit = Awaited<ReturnType<typeof searchSimilarChunks>>[number]
+type SemanticChunkHit = Awaited<ReturnType<typeof searchSimilarChunks>>['hits'][number]
 
-const DOMAIN_QUERY_REWRITES: Array<{
-  pattern: RegExp
+export interface RetrievalDiagnostics {
+  queryVariants: string[]
+  timings: {
+    semanticSearchMs: number
+    keywordSearchMs: number
+    neighborhoodMs: number
+    rerankMs: number
+    referenceExpansionMs: number
+    totalMs: number
+  }
+  semanticChunks: Array<{
+    chunkId: string
+    documentId: string
+    documentTitle: string
+    chunkIndex: number
+    similarity: number
+  }>
+  keywordDocuments: Array<{
+    documentId: string
+    title: string
+  }>
+  rerankScores: Array<{
+    documentId: string
+    title: string
+    score: number | null
+  }>
+  selectedSections: Array<{
+    documentId: string
+    title: string
+    relationType: string
+    contentPreview: string
+  }>
+}
+
+interface CompiledExpansionRule {
+  regex: RegExp
   expansions: string[]
-}> = [
-  {
-    pattern: /(权限点|权限|access\s*scope|accessscope|scope|permission)/i,
-    expansions: ['权限点', 'AccessScope', 'access scope', '授权'],
-  },
-  {
-    pattern: /(metaobject|元对象)/i,
-    expansions: ['metaobject', '元对象'],
-  },
-  {
-    pattern: /(metafield|元字段)/i,
-    expansions: ['metafield', '元字段'],
-  },
-  {
-    pattern: /(webhook|事件通知|回调)/i,
-    expansions: ['webhook', '事件', '回调'],
-  },
-  {
-    pattern: /(token|访问令牌|授权令牌)/i,
-    expansions: ['token', '访问令牌', 'access token'],
-  },
-  {
-    pattern: /(admin\s*rest|admin-rest-api|restful|rest\s+api|rest接口)/i,
-    expansions: ['admin rest api', 'admin-rest-api'],
-  },
-  {
-    pattern: /(graphql|graph\s*ql)/i,
-    expansions: ['graphql'],
-  },
-]
+  scoreBoost: number
+}
 
-// ─── Vector search ──────────────────────────────────────────────
+function compileExpansionRules(rules: QueryExpansionRule[]): CompiledExpansionRule[] {
+  const compiled: CompiledExpansionRule[] = []
+  for (const rule of rules) {
+    try {
+      compiled.push({
+        regex: new RegExp(rule.pattern, 'i'),
+        expansions: rule.expansions,
+        scoreBoost: rule.scoreBoost ?? 14,
+      })
+    } catch {
+      console.warn(`[RAG] Invalid query expansion pattern, skipping: ${rule.pattern}`)
+    }
+  }
+  return compiled
+}
 
-async function resolveEmbeddingConfig(workspaceId: string) {
-  const [providers, settings] = await Promise.all([
-    resolveWorkspaceAiProviders(workspaceId),
-    getAiWorkspaceSettings(workspaceId),
-  ])
+const DEFAULT_COMPILED_RULES = compileExpansionRules(AI_DEFAULT_QUERY_EXPANSION_RULES)
 
-  const embeddingProviders = providers.filter(
-    (p) => p.enabled && (p.providerType === 'openai_compatible' || p.providerType === 'gemini'),
-  )
+// 60s in-memory cache for workspace-specific expansion rules
+const _expansionRulesCache = new Map<string, { rules: CompiledExpansionRule[]; ts: number }>()
 
-  if (embeddingProviders.length === 0) return null
+async function loadQueryExpansionRules(workspaceId: string): Promise<CompiledExpansionRule[]> {
+  const cached = _expansionRulesCache.get(workspaceId)
+  if (cached && Date.now() - cached.ts < 60_000) return cached.rules
 
-  return {
-    provider: embeddingProviders[0],
-    modelId: settings?.embeddingModelId?.trim() || DEFAULT_EMBEDDING_MODEL,
+  try {
+    const settings = await getAiWorkspaceSettings(workspaceId)
+    const promptSettings = settings?.promptSettings as Record<string, unknown> | null
+    const rawRules = promptSettings?.queryExpansionRules
+
+    if (!Array.isArray(rawRules) || rawRules.length === 0) {
+      _expansionRulesCache.set(workspaceId, { rules: DEFAULT_COMPILED_RULES, ts: Date.now() })
+      if (_expansionRulesCache.size > 50) {
+        const firstKey = _expansionRulesCache.keys().next().value
+        if (firstKey !== undefined) _expansionRulesCache.delete(firstKey)
+      }
+      return DEFAULT_COMPILED_RULES
+    }
+
+    const rules = compileExpansionRules(rawRules as QueryExpansionRule[])
+    _expansionRulesCache.set(workspaceId, { rules, ts: Date.now() })
+    if (_expansionRulesCache.size > 50) {
+      const firstKey = _expansionRulesCache.keys().next().value
+      if (firstKey !== undefined) _expansionRulesCache.delete(firstKey)
+    }
+    return rules
+  } catch (error) {
+    logServerError('Failed to load query expansion rules', error, { workspaceId })
+    return DEFAULT_COMPILED_RULES
   }
 }
+
+// ─── Vector search ──────────────────────────────────────────────
 
 async function resolveRerankerConfig(workspaceId: string) {
   const [providers, settings] = await Promise.all([
@@ -154,9 +236,18 @@ export async function searchSimilarChunks(input: {
   query: string
   documentId?: string
   topK?: number
-}) {
-  const config = await resolveEmbeddingConfig(input.workspaceId)
-  if (!config) return []
+  visibility?: VisibilityContext
+}): Promise<{ hits: Array<{
+  chunkId: string
+  documentId: string
+  chunkText: string
+  chunkIndex: number
+  documentTitle: string
+  documentSlug: string | null
+  similarity: number
+}>; embeddingModelId: string | null }> {
+  const config = await resolveEmbeddingProvider(input.workspaceId)
+  if (!config) return { hits: [], embeddingModelId: null }
 
   const { embeddings } = await requestAiEmbedding({
     provider: config.provider,
@@ -164,7 +255,7 @@ export async function searchSimilarChunks(input: {
     model: config.modelId,
   })
 
-  if (embeddings.length === 0) return []
+  if (embeddings.length === 0) return { hits: [], embeddingModelId: config.modelId }
 
   const queryVector = `[${embeddings[0].join(',')}]`
   const topK = input.topK ?? TOP_K_CHUNKS
@@ -172,6 +263,7 @@ export async function searchSimilarChunks(input: {
   const documentFilter = input.documentId
     ? sql`AND dc.document_id = ${input.documentId}`
     : sql``
+  const visibilityFilter = buildVisibilityFilter('d', input.visibility)
 
   const results = await db.execute(sql`
     SELECT
@@ -179,21 +271,25 @@ export async function searchSimilarChunks(input: {
       dc.document_id,
       dc.chunk_text,
       dc.chunk_index,
-      d.title AS document_title,
+      dc.knowledge_source_id,
+      COALESCE(d.title, ks.title, 'Untitled') AS document_title,
       d.slug AS document_slug,
       1 - (dc.embedding <=> ${queryVector}::vector) AS similarity
     FROM document_chunks dc
-    JOIN documents d ON d.id = dc.document_id AND d.deleted_at IS NULL
+    LEFT JOIN documents d ON d.id = dc.document_id AND d.deleted_at IS NULL AND dc.knowledge_source_id IS NULL
+    LEFT JOIN knowledge_sources ks ON ks.id = dc.knowledge_source_id AND ks.deleted_at IS NULL
     WHERE dc.workspace_id = ${input.workspaceId}
       AND dc.embedding IS NOT NULL
+      AND (d.id IS NOT NULL OR ks.id IS NOT NULL)
       ${documentFilter}
+      ${visibilityFilter}
     ORDER BY dc.embedding <=> ${queryVector}::vector
     LIMIT ${topK}
   `)
 
-  return (results as unknown as Array<Record<string, unknown>>).map((row) => ({
+  const hits = (results as unknown as Array<Record<string, unknown>>).map((row) => ({
     chunkId: row.chunk_id as string,
-    documentId: row.document_id as string,
+    documentId: (row.document_id as string) ?? (row.knowledge_source_id as string),
     chunkText: row.chunk_text as string,
     chunkIndex: row.chunk_index as number,
     documentTitle: row.document_title as string,
@@ -203,6 +299,8 @@ export async function searchSimilarChunks(input: {
         : String(row.document_slug),
     similarity: Number(row.similarity ?? 0),
   }))
+
+  return { hits, embeddingModelId: config.modelId }
 }
 
 // ─── RAG context builder ────────────────────────────────────────
@@ -247,7 +345,7 @@ function extractQueryTerms(query: string) {
   return terms.slice(0, 8)
 }
 
-function buildRetrievalQueries(query: string) {
+function buildRetrievalQueries(query: string, rules: CompiledExpansionRule[] = DEFAULT_COMPILED_RULES) {
   const queries: string[] = []
   const seen = new Set<string>()
 
@@ -271,10 +369,25 @@ function buildRetrievalQueries(query: string) {
     addQuery(englishTerms.join(' '))
   }
 
+  // Extract HTTP methods and path segments for API-doc queries
+  const httpMethodMatch = query.match(/\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/i)
+  const pathMatch = query.match(/\/[a-z][a-z0-9/_-]*/i)
+  if (httpMethodMatch && pathMatch) {
+    addQuery(`${httpMethodMatch[1].toUpperCase()} ${pathMatch[0]}`)
+  } else if (pathMatch) {
+    addQuery(pathMatch[0])
+  }
+
+  // Extract "X endpoint" pattern → search for "/X"
+  const endpointMatch = query.match(/\b(\w+)\s+endpoints?\b/i)
+  if (endpointMatch) {
+    addQuery(`/${endpointMatch[1].toLowerCase()}`)
+  }
+
   const expandedTerms = new Set<string>()
-  for (const rewrite of DOMAIN_QUERY_REWRITES) {
-    if (!rewrite.pattern.test(query)) continue
-    for (const expansion of rewrite.expansions) {
+  for (const rule of rules) {
+    if (!rule.regex.test(query)) continue
+    for (const expansion of rule.expansions) {
       expandedTerms.add(expansion)
       addQuery(expansion)
     }
@@ -326,15 +439,20 @@ function selectRelevantChunks(
       queryMatches?: number
     }
   >,
+  embeddingModelId?: string,
 ) {
   if (chunks.length === 0) return []
 
+  const profile = embeddingModelId ? SIMILARITY_PROFILES[embeddingModelId] : undefined
+  const minSimilarity = profile?.min ?? MIN_VECTOR_SIMILARITY
+  const similarityWindow = profile?.window ?? VECTOR_SIMILARITY_WINDOW
+
   const topSimilarity = chunks[0].similarity
-  if (topSimilarity < MIN_VECTOR_SIMILARITY) return []
+  if (topSimilarity < minSimilarity) return []
 
   const similarityFloor = Math.max(
-    MIN_VECTOR_SIMILARITY,
-    topSimilarity - VECTOR_SIMILARITY_WINDOW,
+    minSimilarity,
+    topSimilarity - similarityWindow,
   )
 
   const filtered = chunks.filter(
@@ -418,7 +536,7 @@ function splitIntoContextBlocks(content: string) {
   return merged
 }
 
-function scoreContextBlock(block: string, terms: string[], query: string) {
+function scoreContextBlock(block: string, terms: string[], query: string, rules: CompiledExpansionRule[] = DEFAULT_COMPILED_RULES) {
   const lowerBlock = block.toLowerCase()
   const lowerQuery = query.toLowerCase()
   const normalizedCompactBlock = lowerBlock.replace(/[\s_-]+/g, '')
@@ -444,15 +562,15 @@ function scoreContextBlock(block: string, terms: string[], query: string) {
   if (/^```/.test(block.trim())) score += /json|bash|curl|graphql|sql|typescript|javascript/i.test(query) ? 6 : -3
   if (/^\>\s+/m.test(block)) score += 3
 
-  if (
-    /(权限点|权限|access\s*scope|accessscope|permission)/i.test(query) &&
-    /(权限点|accessscope|access scope|私有应用是否可用|相关接口)/i.test(block)
-  ) {
-    score += 18
-  }
-
-  if (/(metaobject|元对象)/i.test(query) && /(metaobject|元对象)/i.test(block)) {
-    score += 14
+  // Generic query expansion scoring — replaces hardcoded domain logic
+  for (const rule of rules) {
+    if (!rule.regex.test(query)) continue
+    for (const expansion of rule.expansions) {
+      if (lowerBlock.includes(expansion.toLowerCase())) {
+        score += rule.scoreBoost
+        break
+      }
+    }
   }
 
   if (/(接口|api|endpoint|request|response|参数)/i.test(query) && /(请求|响应|参数|字段|endpoint|api)/i.test(block)) {
@@ -467,6 +585,8 @@ function compressContentForTerms(
   terms: string[],
   maxChars: number,
   query = terms.join(' '),
+  maxBlocks = MAX_COMPRESSED_BLOCKS,
+  rules?: CompiledExpansionRule[],
 ) {
   const normalized = content.replace(/\r\n?/g, '\n').trim()
   if (!normalized) return ''
@@ -480,12 +600,12 @@ function compressContentForTerms(
   const scoredBlocks = blocks.map((block, index) => ({
     block,
     index,
-    score: scoreContextBlock(block, terms, query),
+    score: scoreContextBlock(block, terms, query, rules),
   }))
 
   const selected = scoredBlocks
     .sort((left, right) => right.score - left.score || left.index - right.index)
-    .slice(0, MAX_COMPRESSED_BLOCKS)
+    .slice(0, maxBlocks)
     .sort((left, right) => left.index - right.index)
 
   if (selected.length === 0) {
@@ -530,21 +650,40 @@ function heuristicRerankContextSections(
   query: string,
   sections: RetrievedContextSection[],
   rerankScores?: Map<number, number>,
+  boostDocumentIds?: Set<string>,
 ) {
   const queryTerms = extractQueryTerms(query)
+  const queryUpper = query.toUpperCase()
   const scored = sections.map((section, index) => {
     const title = section.source.title.toLowerCase()
     const content = section.content.toLowerCase()
+    // Extract the first heading from content as a "section heading" signal
+    const headingMatch = section.content.match(/^#+\s+(.+)/m)
+    const heading = headingMatch ? headingMatch[1].toLowerCase() : ''
     let score = section.source.relationType === 'primary' ? 55 : 28
     const modelScore = rerankScores?.get(index) ?? null
 
-    if (modelScore !== null) {
-      score += modelScore * 120
+    // Boost documents that appeared in recent conversation turns
+    if (boostDocumentIds?.has(section.source.documentId)) {
+      score += BOOST_RECENT_SOURCE_SCORE
+    }
+
+    if (modelScore !== null && rerankScores) {
+      const values = [...rerankScores.values()]
+      const mlMin = Math.min(...values)
+      const mlRange = Math.max(...values) - mlMin || 1
+      const normalizedScore = (modelScore - mlMin) / mlRange
+      score += normalizedScore * 80
     }
 
     for (const term of queryTerms) {
       const normalizedTerm = term.toLowerCase()
       const compactTerm = normalizedTerm.replace(/[\s_-]+/g, '')
+
+      // Heading match — strong signal
+      if (heading && (heading.includes(normalizedTerm) || heading.replace(/[\s/_-]+/g, '').includes(compactTerm))) {
+        score += 15
+      }
 
       if (title.includes(normalizedTerm) || title.replace(/[\s/_-]+/g, '').includes(compactTerm)) {
         score += 18
@@ -555,19 +694,30 @@ function heuristicRerankContextSections(
       }
     }
 
-    if (section.content.includes('<!-- SHOPLINE_IMPORT') || section.content.includes('> Source: ')) {
-      score += 6
+    // HTTP method match: query mentions GET/POST/etc. and section contains it
+    const httpMethodMatch = queryUpper.match(/\b(GET|POST|PUT|PATCH|DELETE)\b/)
+    if (httpMethodMatch) {
+      const method = httpMethodMatch[1]
+      if (
+        section.content.toUpperCase().includes(method) &&
+        (heading.toUpperCase().includes(method) || title.toUpperCase().includes(method))
+      ) {
+        score += 12
+      }
     }
 
-    if (
-      /(权限点|权限|access\s*scope|accessscope|permission)/i.test(query) &&
-      /(权限点|accessscope|access scope|私有应用是否可用|相关接口)/i.test(section.content)
-    ) {
-      score += 20
+    // Schema name match: query mentions a type name and heading matches
+    const typeNameMatch = query.match(/\b([A-Z][a-zA-Z]+(?:Type|Input|Object|Enum|Schema)?)\b/)
+    if (typeNameMatch) {
+      const typeName = typeNameMatch[1].toLowerCase()
+      if (heading.includes(typeName) || title.includes(typeName)) {
+        score += 10
+      }
     }
 
-    if (/(metaobject|元对象)/i.test(query) && /(metaobject|元对象)/i.test(section.content)) {
-      score += 14
+    // Code block presence — helpful for "how to" queries
+    if (/\bhow\s+to\b/i.test(query) && /```/.test(section.content)) {
+      score += 5
     }
 
     return { section, index, score, modelScore }
@@ -627,14 +777,15 @@ async function rerankContextSections(input: {
   workspaceId: string
   query: string
   sections: RetrievedContextSection[]
+  boostDocumentIds?: Set<string>
 }) {
   if (input.sections.length <= 1) {
-    return heuristicRerankContextSections(input.query, input.sections)
+    return heuristicRerankContextSections(input.query, input.sections, undefined, input.boostDocumentIds)
   }
 
   const config = await resolveRerankerConfig(input.workspaceId)
   if (!config) {
-    return heuristicRerankContextSections(input.query, input.sections)
+    return heuristicRerankContextSections(input.query, input.sections, undefined, input.boostDocumentIds)
   }
 
   try {
@@ -650,14 +801,15 @@ async function rerankContextSections(input: {
       rerankResult.results.map((result) => [result.index, result.relevanceScore]),
     )
 
-    return heuristicRerankContextSections(input.query, input.sections, rerankScores)
+    return heuristicRerankContextSections(input.query, input.sections, rerankScores, input.boostDocumentIds)
   } catch (error) {
+    console.warn('[RAG] Reranker failed, falling back to heuristic-only ranking:', error)
     logServerError('AI chat reranking failed.', error, {
       workspaceId: input.workspaceId,
       query: input.query,
     })
 
-    return heuristicRerankContextSections(input.query, input.sections)
+    return heuristicRerankContextSections(input.query, input.sections, undefined, input.boostDocumentIds)
   }
 }
 
@@ -829,43 +981,71 @@ function getReferenceUrlParts(value: string | null | undefined) {
 async function searchReferenceCandidateDocuments(input: {
   workspaceId: string
   candidate: ReferenceCandidate
+  visibility?: VisibilityContext
 }) {
-  const likePatterns = input.candidate.searchTerms.map((term) => `%${term}%`)
-  if (likePatterns.length === 0) return []
+  const searchTerms = input.candidate.searchTerms
+  if (searchTerms.length === 0) return []
 
-  const whereMatches = sql.join(
-    likePatterns.map(
-      (pattern) => sql`(d.title ILIKE ${pattern} OR d.content ILIKE ${pattern})`,
-    ),
-    sql` OR `,
-  )
-  const keywordRank = sql.join(
-    likePatterns.flatMap((pattern) => [
-      sql`CASE WHEN d.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
-      sql`CASE WHEN d.content ILIKE ${pattern} THEN 1 ELSE 0 END`,
-    ]),
-    sql` + `,
-  )
+  const visibilityFilter = buildVisibilityFilter('d', input.visibility)
+  const useCjkFallback = searchTerms.some((term) => containsCjk(term))
 
-  const results = await db.execute(sql`
-    SELECT
-      d.id,
-      d.title,
-      d.slug,
-      d.content,
-      d.updated_at,
-      ${keywordRank} AS keyword_rank
-    FROM documents d
-    WHERE d.workspace_id = ${input.workspaceId}
-      AND d.deleted_at IS NULL
-      AND (${whereMatches})
-    ORDER BY keyword_rank DESC, d.updated_at DESC
-    LIMIT ${MAX_REFERENCE_SEARCH_RESULTS * 8}
-  `)
+  let results: Array<Record<string, unknown>>
+
+  if (useCjkFallback) {
+    const likePatterns = searchTerms.map((term) => `%${term}%`)
+    const whereMatches = sql.join(
+      likePatterns.map(
+        (pattern) => sql`(d.title ILIKE ${pattern} OR d.content ILIKE ${pattern})`,
+      ),
+      sql` OR `,
+    )
+    const keywordRank = sql.join(
+      likePatterns.flatMap((pattern) => [
+        sql`CASE WHEN d.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
+        sql`CASE WHEN d.content ILIKE ${pattern} THEN 1 ELSE 0 END`,
+      ]),
+      sql` + `,
+    )
+
+    results = await db.execute(sql`
+      SELECT
+        d.id,
+        d.title,
+        d.slug,
+        d.content,
+        d.updated_at,
+        ${keywordRank} AS keyword_rank
+      FROM documents d
+      WHERE d.workspace_id = ${input.workspaceId}
+        AND d.deleted_at IS NULL
+        ${visibilityFilter}
+        AND (${whereMatches})
+      ORDER BY keyword_rank DESC, d.updated_at DESC
+      LIMIT ${MAX_REFERENCE_SEARCH_RESULTS * 8}
+    `) as unknown as Array<Record<string, unknown>>
+  } else {
+    const tsQuery = searchTerms.join(' ')
+    results = await db.execute(sql`
+      SELECT
+        d.id,
+        d.title,
+        d.slug,
+        d.content,
+        d.updated_at,
+        ts_rank(d.search_vector, plainto_tsquery('english', ${tsQuery})) AS keyword_rank
+      FROM documents d
+      WHERE d.workspace_id = ${input.workspaceId}
+        AND d.deleted_at IS NULL
+        ${visibilityFilter}
+        AND d.search_vector @@ plainto_tsquery('english', ${tsQuery})
+      ORDER BY keyword_rank DESC, d.updated_at DESC
+      LIMIT ${MAX_REFERENCE_SEARCH_RESULTS * 8}
+    `) as unknown as Array<Record<string, unknown>>
+  }
 
   const candidateUrlParts = getReferenceUrlParts(input.candidate.url)
 
-  return (results as unknown as Array<Record<string, unknown>>)
+  return results
     .map((row) => {
       const document = {
         id: row.id as string,
@@ -935,8 +1115,33 @@ async function searchReferenceCandidateDocuments(input: {
     )
 }
 
-async function loadDocumentsByIds(workspaceId: string, ids: string[]) {
+async function loadDocumentsByIds(
+  workspaceId: string,
+  ids: string[],
+  visibility?: VisibilityContext,
+) {
   if (ids.length === 0) return []
+
+  const visibilityFilter = buildVisibilityFilter('d', visibility)
+
+  if (visibility && visibility.role !== 'owner' && visibility.role !== 'admin') {
+    // Use raw SQL to apply visibility filter
+    const results = await db.execute(sql`
+      SELECT d.id, d.title, d.slug, d.content
+      FROM documents d
+      WHERE d.workspace_id = ${workspaceId}
+        AND d.deleted_at IS NULL
+        AND d.id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+        ${visibilityFilter}
+    `)
+
+    return (results as unknown as Array<Record<string, unknown>>).map((row) => ({
+      id: row.id as string,
+      title: (row.title as string) || 'Untitled',
+      slug: row.slug === undefined || row.slug === null ? null : String(row.slug),
+      content: String(row.content ?? ''),
+    }))
+  }
 
   return db
     .select({
@@ -958,19 +1163,21 @@ async function loadDocumentsByIds(workspaceId: string, ids: string[]) {
 async function loadChunkNeighborhoods(input: {
   workspaceId: string
   chunks: SemanticChunkHit[]
+  chunkRadius?: number
 }) {
   if (input.chunks.length === 0) {
     return new Map<string, Map<number, string>>()
   }
 
+  const radius = input.chunkRadius ?? ADJACENT_CHUNK_RADIUS
   const clauses: ReturnType<typeof sql>[] = []
 
   for (const chunk of input.chunks) {
     const indexes: number[] = []
 
     for (
-      let index = Math.max(0, chunk.chunkIndex - ADJACENT_CHUNK_RADIUS);
-      index <= chunk.chunkIndex + ADJACENT_CHUNK_RADIUS;
+      let index = Math.max(0, chunk.chunkIndex - radius);
+      index <= chunk.chunkIndex + radius;
       index += 1
     ) {
       indexes.push(index)
@@ -1014,7 +1221,11 @@ function buildSemanticSections(input: {
   chunks: SemanticChunkHit[]
   neighborhoodMap: Map<string, Map<number, string>>
   query: string
+  limits?: ContextLimits
 }) {
+  const sectionChars = input.limits?.maxSectionChars ?? MAX_SECTION_CHARS
+  const compressedBlocks = input.limits?.maxCompressedBlocks ?? MAX_COMPRESSED_BLOCKS
+  const chunkRadius = input.limits?.adjacentChunkRadius ?? ADJACENT_CHUNK_RADIUS
   const sections: RetrievedContextSection[] = []
   const seenRanges = new Set<string>()
   const queryTerms = extractQueryTerms(input.query)
@@ -1025,8 +1236,8 @@ function buildSemanticSections(input: {
     const parts: string[] = []
 
     for (
-      let index = Math.max(0, chunk.chunkIndex - ADJACENT_CHUNK_RADIUS);
-      index <= chunk.chunkIndex + ADJACENT_CHUNK_RADIUS;
+      let index = Math.max(0, chunk.chunkIndex - chunkRadius);
+      index <= chunk.chunkIndex + chunkRadius;
       index += 1
     ) {
       const part = chunkMap?.get(index)
@@ -1040,8 +1251,9 @@ function buildSemanticSections(input: {
     const content = compressContentForTerms(
       rawContent,
       queryTerms,
-      MAX_SECTION_CHARS,
+      sectionChars,
       input.query,
+      compressedBlocks,
     )
     const rangeKey =
       indexes.length > 0
@@ -1078,6 +1290,7 @@ async function expandStoredReferencedDocuments(input: {
   workspaceId: string
   query: string
   primarySections: RetrievedContextSection[]
+  visibility?: VisibilityContext
 }) {
   const primaryDocumentIds = Array.from(
     new Set(input.primarySections.map((section) => section.source.documentId)),
@@ -1132,6 +1345,7 @@ async function expandReferencedDocuments(input: {
   workspaceId: string
   query: string
   primarySections: RetrievedContextSection[]
+  visibility?: VisibilityContext
 }) {
   const primaryDocumentIds = Array.from(
     new Set(input.primarySections.map((section) => section.source.documentId)),
@@ -1142,6 +1356,7 @@ async function expandReferencedDocuments(input: {
   const primaryDocuments = await loadDocumentsByIds(
     input.workspaceId,
     primaryDocumentIds,
+    input.visibility,
   )
 
   const resolvedMatches = new Map<string, ReferenceCandidate>()
@@ -1157,6 +1372,7 @@ async function expandReferencedDocuments(input: {
         const matches = await searchReferenceCandidateDocuments({
           workspaceId: input.workspaceId,
           candidate,
+          visibility: input.visibility,
         })
 
         const match = matches.find(
@@ -1186,6 +1402,7 @@ async function expandReferencedDocuments(input: {
   const relatedDocuments = await loadDocumentsByIds(
     input.workspaceId,
     [...resolvedMatches.keys()],
+    input.visibility,
   )
 
   const queryTerms = extractQueryTerms(input.query)
@@ -1225,6 +1442,7 @@ async function searchKeywordDocuments(input: {
   query: string
   documentId?: string
   topK?: number
+  visibility?: VisibilityContext
 }): Promise<RetrievedContextSection[]> {
   const terms = extractQueryTerms(input.query)
   if (terms.length === 0) return []
@@ -1232,39 +1450,67 @@ async function searchKeywordDocuments(input: {
   const documentFilter = input.documentId
     ? sql`AND d.id = ${input.documentId}`
     : sql``
-
-  const likePatterns = terms.map((term) => `%${term}%`)
-  const whereMatches = sql.join(
-    likePatterns.map(
-      (pattern) => sql`(d.title ILIKE ${pattern} OR d.content ILIKE ${pattern})`,
-    ),
-    sql` OR `,
-  )
-  const keywordRank = sql.join(
-    likePatterns.flatMap((pattern) => [
-      sql`CASE WHEN d.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
-      sql`CASE WHEN d.content ILIKE ${pattern} THEN 1 ELSE 0 END`,
-    ]),
-    sql` + `,
-  )
-
+  const visibilityFilter = buildVisibilityFilter('d', input.visibility)
   const topK = input.topK ?? TOP_K_KEYWORD_DOCUMENTS
+  const useCjkFallback = containsCjk(input.query)
 
-  const results = await db.execute(sql`
-    SELECT
-      d.id,
-      d.title,
-      d.content,
-      d.updated_at,
-      ${keywordRank} AS keyword_rank
-    FROM documents d
-    WHERE d.workspace_id = ${input.workspaceId}
-      AND d.deleted_at IS NULL
-      ${documentFilter}
-      AND (${whereMatches})
-    ORDER BY keyword_rank DESC, d.updated_at DESC
-    LIMIT ${topK}
-  `)
+  let results: Array<Record<string, unknown>>
+
+  if (useCjkFallback) {
+    // CJK queries: tsvector doesn't handle CJK well, use ILIKE
+    const likePatterns = terms.map((term) => `%${term}%`)
+    const whereMatches = sql.join(
+      likePatterns.map(
+        (pattern) => sql`(d.title ILIKE ${pattern} OR d.content ILIKE ${pattern})`,
+      ),
+      sql` OR `,
+    )
+    const keywordRank = sql.join(
+      likePatterns.flatMap((pattern) => [
+        sql`CASE WHEN d.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
+        sql`CASE WHEN d.content ILIKE ${pattern} THEN 1 ELSE 0 END`,
+      ]),
+      sql` + `,
+    )
+
+    results = await db.execute(sql`
+      SELECT
+        d.id,
+        d.title,
+        d.slug,
+        d.content,
+        d.updated_at,
+        ${keywordRank} AS keyword_rank
+      FROM documents d
+      WHERE d.workspace_id = ${input.workspaceId}
+        AND d.deleted_at IS NULL
+        ${documentFilter}
+        ${visibilityFilter}
+        AND (${whereMatches})
+      ORDER BY keyword_rank DESC, d.updated_at DESC
+      LIMIT ${topK}
+    `) as unknown as Array<Record<string, unknown>>
+  } else {
+    // Non-CJK: use tsvector with ts_rank for proper stemming and ranking
+    const tsQuery = terms.join(' ')
+    results = await db.execute(sql`
+      SELECT
+        d.id,
+        d.title,
+        d.slug,
+        d.content,
+        d.updated_at,
+        ts_rank(d.search_vector, plainto_tsquery('english', ${tsQuery})) AS keyword_rank
+      FROM documents d
+      WHERE d.workspace_id = ${input.workspaceId}
+        AND d.deleted_at IS NULL
+        ${documentFilter}
+        ${visibilityFilter}
+        AND d.search_vector @@ plainto_tsquery('english', ${tsQuery})
+      ORDER BY keyword_rank DESC, d.updated_at DESC
+      LIMIT ${topK}
+    `) as unknown as Array<Record<string, unknown>>
+  }
 
   const sections: RetrievedContextSection[] = []
 
@@ -1297,16 +1543,21 @@ async function searchKeywordDocuments(input: {
   return sections
 }
 
-function buildContextFromSections(sections: RetrievedContextSection[]) {
+function buildContextFromSections(
+  sections: RetrievedContextSection[],
+  limits?: ContextLimits,
+) {
+  const maxContextChars = limits?.maxContextChars ?? MAX_CONTEXT_CHARS
+  const maxSectionChars = limits?.maxSectionChars ?? MAX_SECTION_CHARS
   const sources: ChatSource[] = []
   const contextParts: string[] = []
   let totalChars = 0
 
   for (const section of sections) {
-    const remainingChars = MAX_CONTEXT_CHARS - totalChars
+    const remainingChars = maxContextChars - totalChars
     if (remainingChars <= 0) break
 
-    const content = section.content.slice(0, Math.min(remainingChars, MAX_SECTION_CHARS)).trim()
+    const content = section.content.slice(0, Math.min(remainingChars, maxSectionChars)).trim()
     if (!content) continue
 
     const label = `[${sources.length + 1}]`
@@ -1335,20 +1586,34 @@ async function retrieveChatContext(input: {
   workspaceId: string
   query: string
   documentId?: string
+  visibility?: VisibilityContext
+  debug?: boolean
+  boostDocumentIds?: Set<string>
+  chatModelId?: string
 }) {
+  const totalStart = performance.now()
+  const limits = resolveContextLimits(input.chatModelId)
+  const expansionRules = await loadQueryExpansionRules(input.workspaceId)
+  const queryVariants = buildRetrievalQueries(input.query, expansionRules)
+
+  const semanticStart = performance.now()
   const [semanticChunks, keywordDocuments] = await Promise.all([
     Promise.all(
-      buildRetrievalQueries(input.query).map((query) =>
+      queryVariants.map((query) =>
         searchSimilarChunks({
           workspaceId: input.workspaceId,
           query,
           documentId: input.documentId,
           topK: TOP_K_CHUNKS,
+          visibility: input.visibility,
         }),
       ),
     )
-      .then(mergeSemanticChunkResults)
-      .then(selectRelevantChunks)
+      .then((results) => {
+        const embeddingModelId = results.find((r) => r.embeddingModelId)?.embeddingModelId ?? null
+        const merged = mergeSemanticChunkResults(results.map((r) => r.hits))
+        return selectRelevantChunks(merged, embeddingModelId ?? undefined)
+      })
       .catch((error) => {
         logServerError('AI chat semantic retrieval failed.', error, {
           workspaceId: input.workspaceId,
@@ -1361,6 +1626,7 @@ async function retrieveChatContext(input: {
       workspaceId: input.workspaceId,
       query: input.query,
       documentId: input.documentId,
+      visibility: input.visibility,
     }).catch((error) => {
       logServerError('AI chat keyword retrieval failed.', error, {
         workspaceId: input.workspaceId,
@@ -1370,10 +1636,13 @@ async function retrieveChatContext(input: {
       return []
       }),
   ])
+  const semanticMs = performance.now() - semanticStart
 
+  const neighborhoodStart = performance.now()
   const neighborhoodMap = await loadChunkNeighborhoods({
     workspaceId: input.workspaceId,
     chunks: semanticChunks,
+    chunkRadius: limits.adjacentChunkRadius,
   }).catch((error) => {
     logServerError('AI chat chunk neighborhood expansion failed.', error, {
       workspaceId: input.workspaceId,
@@ -1382,11 +1651,13 @@ async function retrieveChatContext(input: {
     })
     return new Map<string, Map<number, string>>()
   })
+  const neighborhoodMs = performance.now() - neighborhoodStart
 
   const sections: RetrievedContextSection[] = buildSemanticSections({
     chunks: semanticChunks,
     neighborhoodMap,
     query: input.query,
+    limits,
   })
 
   const includedDocumentIds = new Set(
@@ -1398,10 +1669,12 @@ async function retrieveChatContext(input: {
     sections.push(document)
   }
 
+  const refStart = performance.now()
   const storedRelatedSections = await expandStoredReferencedDocuments({
     workspaceId: input.workspaceId,
     query: input.query,
     primarySections: sections,
+    visibility: input.visibility,
   }).catch((error) => {
     logServerError('AI chat stored relation expansion failed.', error, {
       workspaceId: input.workspaceId,
@@ -1418,6 +1691,7 @@ async function retrieveChatContext(input: {
           workspaceId: input.workspaceId,
           query: input.query,
           primarySections: sections,
+          visibility: input.visibility,
         }).catch((error) => {
           logServerError('AI chat related-document expansion failed.', error, {
             workspaceId: input.workspaceId,
@@ -1426,6 +1700,7 @@ async function retrieveChatContext(input: {
           })
           return []
         })
+  const refMs = performance.now() - refStart
 
   for (const relatedSection of relatedSections) {
     if (includedDocumentIds.has(relatedSection.source.documentId)) continue
@@ -1433,21 +1708,145 @@ async function retrieveChatContext(input: {
     sections.push(relatedSection)
   }
 
-  return buildContextFromSections(
-    await rerankContextSections({
-      workspaceId: input.workspaceId,
-      query: input.query,
-      sections,
-    }),
-  )
+  const rerankStart = performance.now()
+  const rerankedSections = await rerankContextSections({
+    workspaceId: input.workspaceId,
+    query: input.query,
+    sections,
+    boostDocumentIds: input.boostDocumentIds,
+  })
+  const rerankMs = performance.now() - rerankStart
+
+  const result = buildContextFromSections(rerankedSections, limits)
+  const totalMs = performance.now() - totalStart
+
+  const diagnostics: RetrievalDiagnostics | undefined = input.debug
+    ? {
+        queryVariants,
+        timings: {
+          semanticSearchMs: Math.round(semanticMs),
+          keywordSearchMs: Math.round(semanticMs), // combined in parallel
+          neighborhoodMs: Math.round(neighborhoodMs),
+          rerankMs: Math.round(rerankMs),
+          referenceExpansionMs: Math.round(refMs),
+          totalMs: Math.round(totalMs),
+        },
+        semanticChunks: semanticChunks.map((c) => ({
+          chunkId: c.chunkId,
+          documentId: c.documentId,
+          documentTitle: c.documentTitle,
+          chunkIndex: c.chunkIndex,
+          similarity: c.similarity,
+        })),
+        keywordDocuments: keywordDocuments.map((s) => ({
+          documentId: s.source.documentId,
+          title: s.source.title,
+        })),
+        rerankScores: rerankedSections.map((s) => ({
+          documentId: s.source.documentId,
+          title: s.source.title,
+          score: null,
+        })),
+        selectedSections: rerankedSections.map((s) => ({
+          documentId: s.source.documentId,
+          title: s.source.title,
+          relationType: s.source.relationType ?? 'primary',
+          contentPreview: s.content.slice(0, 200),
+        })),
+      }
+    : undefined
+
+  return { ...result, diagnostics }
 }
 
 export async function debugRetrieveChatContext(input: {
   workspaceId: string
   query: string
   documentId?: string
+  visibility?: VisibilityContext
+  debug?: boolean
 }) {
-  return retrieveChatContext(input)
+  return retrieveChatContext({ ...input, debug: input.debug ?? true })
+}
+
+async function maybeIterativeRetrieval(input: {
+  workspaceId: string
+  originalQuery: string
+  firstResult: { contextText: string; sources: ChatSource[] }
+  documentId?: string
+  visibility?: VisibilityContext
+  provider: { provider: import('@/lib/ai-server').ResolvedAiProviderConfig; modelId: string }
+  boostDocumentIds?: Set<string>
+}): Promise<{ contextText: string; sources: ChatSource[] }> {
+  if (ENABLE_ITERATIVE_RETRIEVAL === 0) return input.firstResult
+  if (input.firstResult.sources.length >= MIN_CONTEXT_SECTIONS_FOR_SKIP) return input.firstResult
+
+  try {
+    // Ask the LLM to suggest alternative queries based on what was (or wasn't) found
+    const foundSummary = input.firstResult.sources.length > 0
+      ? `Found ${input.firstResult.sources.length} section(s): ${input.firstResult.sources.map((s) => s.title).join(', ')}`
+      : 'No relevant sections were found.'
+
+    const { result } = await requestAiTextCompletion({
+      provider: input.provider.provider,
+      model: input.provider.modelId,
+      temperature: TEMPERATURE_QUERY_REWRITE,
+      systemPrompt:
+        'You are a search query generator for a documentation RAG system. ' +
+        'The initial search returned insufficient results. Generate 1-2 alternative search queries ' +
+        'that might find the relevant documentation. Output one query per line, nothing else.',
+      userPrompt:
+        `Original query: ${input.originalQuery}\n${foundSummary}\n\nSuggest alternative search queries:`,
+    })
+
+    const followUpQueries = result
+      .split('\n')
+      .map((line) => line.replace(/^\d+[.)]\s*/, '').trim())
+      .filter((line) => line.length > 0 && line.length <= 300)
+      .slice(0, MAX_ITERATIVE_FOLLOWUP_QUERIES)
+
+    if (followUpQueries.length === 0) return input.firstResult
+
+    // Run follow-up retrievals
+    const followUpResults = await Promise.all(
+      followUpQueries.map((query) =>
+        retrieveChatContext({
+          workspaceId: input.workspaceId,
+          query,
+          documentId: input.documentId,
+          visibility: input.visibility,
+          boostDocumentIds: input.boostDocumentIds,
+        }).catch(() => ({ contextText: '', sources: [] as ChatSource[] })),
+      ),
+    )
+
+    // Merge: deduplicate sources by chunkId, concatenate context
+    const seenChunkIds = new Set(input.firstResult.sources.map((s) => s.chunkId))
+    const mergedSources = [...input.firstResult.sources]
+    const contextParts = [input.firstResult.contextText]
+
+    for (const followUp of followUpResults) {
+      for (const source of followUp.sources) {
+        if (seenChunkIds.has(source.chunkId)) continue
+        seenChunkIds.add(source.chunkId)
+        mergedSources.push(source)
+      }
+      if (followUp.contextText) {
+        contextParts.push(followUp.contextText)
+      }
+    }
+
+    return {
+      contextText: contextParts.filter(Boolean).join('\n\n---\n\n'),
+      sources: mergedSources,
+    }
+  } catch (error) {
+    logServerError('AI iterative retrieval failed, using initial results.', error, {
+      workspaceId: input.workspaceId,
+      query: input.originalQuery,
+    })
+    return input.firstResult
+  }
 }
 
 function createStaticStream(text: string) {
@@ -1569,8 +1968,88 @@ async function resolveMcpPromptMessages(
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }))
-  } catch {
+  } catch (error) {
+    logServerError('Failed to resolve MCP prompt messages', error, {
+      workspaceId,
+      serverId: mcpPrompt.serverId,
+      promptName: mcpPrompt.name,
+    })
     return undefined
+  }
+}
+
+// ─── Multi-turn RAG helpers ─────────────────────────────────────
+
+interface HistoryMessageWithSources {
+  role: 'user' | 'assistant'
+  content: string
+  sources?: ChatSource[]
+}
+
+async function rewriteQueryOrSkipRetrieval(input: {
+  userMessage: string
+  recentHistory: HistoryMessageWithSources[]
+  provider: { provider: import('@/lib/ai-server').ResolvedAiProviderConfig; modelId: string }
+}): Promise<{
+  action: 'retrieve' | 'skip'
+  query: string
+  previousSources: ChatSource[]
+}> {
+  // No history — nothing to rewrite
+  if (input.recentHistory.length === 0) {
+    return { action: 'retrieve', query: input.userMessage, previousSources: [] }
+  }
+
+  // Collect previous sources from the last assistant message that had them
+  let previousSources: ChatSource[] = []
+  for (let i = input.recentHistory.length - 1; i >= 0; i--) {
+    const msg = input.recentHistory[i]
+    if (msg.role === 'assistant' && msg.sources && msg.sources.length > 0) {
+      previousSources = msg.sources
+      break
+    }
+  }
+
+  // Take last N turns for the rewrite prompt
+  const historySlice = input.recentHistory.slice(-MAX_HISTORY_TURNS_FOR_REWRITE * 2)
+
+  const conversationSnippet = historySlice
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 400)}`)
+    .join('\n')
+
+  try {
+    const { result } = await requestAiTextCompletion({
+      provider: input.provider.provider,
+      model: input.provider.modelId,
+      temperature: TEMPERATURE_QUERY_REWRITE,
+      systemPrompt:
+        'You are a search query rewriter for a documentation RAG system. ' +
+        'Given the conversation history and the latest user message, decide:\n' +
+        '- If the follow-up does NOT need new document retrieval (e.g. "thanks", "got it", ' +
+        '"再详细说说", "explain more", or it can be answered from the already-provided context), ' +
+        'output exactly: SKIP\n' +
+        '- Otherwise, output a single standalone search query that resolves pronouns and references ' +
+        'from the conversation. No explanation, no quotes, just the query text.',
+      userPrompt: `Conversation:\n${conversationSnippet}\n\nLatest message: ${input.userMessage}`,
+    })
+
+    const trimmed = result.trim()
+
+    if (trimmed.toUpperCase() === 'SKIP') {
+      return { action: 'skip', query: input.userMessage, previousSources }
+    }
+
+    // Sanity: if the rewritten query is empty or absurdly long, fall back
+    if (!trimmed || trimmed.length > 500) {
+      return { action: 'retrieve', query: input.userMessage, previousSources }
+    }
+
+    return { action: 'retrieve', query: trimmed, previousSources }
+  } catch (error) {
+    logServerError('AI query rewrite failed, falling back to original query.', error, {
+      userMessage: input.userMessage,
+    })
+    return { action: 'retrieve', query: input.userMessage, previousSources }
   }
 }
 
@@ -1582,34 +2061,38 @@ export async function streamChatResponse(input: {
   userMessage: string
   documentId?: string
   model?: string
+  userId?: string
+  role?: MemberRole
   mcpPrompt?: {
     serverId: string
     name: string
     arguments?: Record<string, string>
   }
 }) {
-  // 1. Get chat history for context
+  // 1. Get chat history — preserve sources on each message for P1/P2
   const history = await getChatHistory(input.sessionId)
-  const recentHistory = history
+  const recentHistoryWithSources: HistoryMessageWithSources[] = history
     .slice(-MAX_HISTORY_MESSAGES)
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .map((m) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
+      sources: (m.sources as ChatSource[] | null) ?? undefined,
     }))
 
-  const [
-    { contextText, sources },
-    providers,
-    settings,
-    mcpTools,
-    mcpPromptMessages,
-  ] = await Promise.all([
-    retrieveChatContext({
-      workspaceId: input.workspaceId,
-      query: input.userMessage,
-      documentId: input.documentId,
-    }),
+  // Stripped history for the LLM messages array (no sources metadata)
+  const recentHistory = recentHistoryWithSources.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }))
+
+  const visibility: VisibilityContext | undefined =
+    input.userId && input.role
+      ? { userId: input.userId, role: input.role }
+      : undefined
+
+  // 2. Resolve providers, settings, and MCP in parallel (no retrieval yet)
+  const [providers, settings, mcpTools, mcpPromptMessages] = await Promise.all([
     resolveWorkspaceAiProviders(input.workspaceId),
     getAiWorkspaceSettings(input.workspaceId),
     resolveWorkspaceMcpToolSet(input.workspaceId).catch(() => undefined),
@@ -1618,11 +2101,82 @@ export async function streamChatResponse(input: {
       : Promise.resolve(undefined),
   ])
 
+  // 3. Resolve model selection (needs providers)
+  const selection = resolveAiModelSelection({
+    requestedModelId: input.model,
+    defaultModelId: settings?.defaultModelId ?? null,
+    enabledModelIds: Array.isArray(settings?.enabledModelIds)
+      ? settings.enabledModelIds.filter(
+          (v): v is string => typeof v === 'string',
+        )
+      : [],
+    providers,
+  })
+
+  if (!selection) {
+    throw new Error('No AI model configured.')
+  }
+
+  // 4. Query rewrite / retrieval skip (P0+P1)
+  const rewriteResult = await rewriteQueryOrSkipRetrieval({
+    userMessage: input.userMessage,
+    recentHistory: recentHistoryWithSources,
+    provider: selection,
+  })
+
+  // 5. Collect boostDocumentIds from previous assistant sources (P2)
+  const boostDocumentIds = new Set<string>()
+  for (const msg of recentHistoryWithSources) {
+    if (msg.role === 'assistant' && msg.sources) {
+      for (const source of msg.sources) {
+        boostDocumentIds.add(source.documentId)
+      }
+    }
+  }
+
+  // 6. Branch: skip retrieval or retrieve + iterative
+  let contextText: string
+  let sources: ChatSource[]
+
+  if (rewriteResult.action === 'skip' && rewriteResult.previousSources.length > 0) {
+    // Reuse previous sources, no new retrieval
+    contextText = ''
+    sources = rewriteResult.previousSources
+  } else {
+    // Retrieve with (possibly rewritten) query
+    const firstResult = await retrieveChatContext({
+      workspaceId: input.workspaceId,
+      query: rewriteResult.query,
+      documentId: input.documentId,
+      visibility,
+      boostDocumentIds: boostDocumentIds.size > 0 ? boostDocumentIds : undefined,
+      chatModelId: selection.modelId,
+    })
+
+    // Iterative retrieval (P3) — only triggers when enabled and results are sparse
+    const finalResult = await maybeIterativeRetrieval({
+      workspaceId: input.workspaceId,
+      originalQuery: rewriteResult.query,
+      firstResult,
+      documentId: input.documentId,
+      visibility,
+      provider: selection,
+      boostDocumentIds: boostDocumentIds.size > 0 ? boostDocumentIds : undefined,
+    })
+
+    contextText = finalResult.contextText
+    sources = finalResult.sources
+  }
+
+  // 7. Grounding check — treat skip as grounded when previousSources exist
   const hasDocumentationContext = Boolean(contextText && sources.length > 0)
+  const hasSkipWithPreviousSources =
+    rewriteResult.action === 'skip' && rewriteResult.previousSources.length > 0
   const hasMcpTools = Boolean(mcpTools)
   const hasMcpPromptMessages = Boolean(mcpPromptMessages?.length)
 
   if (
+    !hasSkipWithPreviousSources &&
     !hasChatGrounding({
       hasDocumentationContext,
       hasMcpTools,
@@ -1641,31 +2195,14 @@ export async function streamChatResponse(input: {
     }
   }
 
-  // 2. Build system prompt with available grounding
+  // 8. Build system prompt + stream (unchanged)
   const systemPrompt = buildChatSystemPrompt({
     documentationContext: hasDocumentationContext ? contextText : undefined,
     hasMcpTools,
     hasMcpPromptMessages,
   })
 
-  const selection = resolveAiModelSelection({
-    requestedModelId: input.model,
-    defaultModelId: settings?.defaultModelId ?? null,
-    enabledModelIds: Array.isArray(settings?.enabledModelIds)
-      ? settings.enabledModelIds.filter(
-          (v): v is string => typeof v === 'string',
-        )
-      : [],
-    providers,
-  })
-
-  if (!selection) {
-    throw new Error('No AI model configured.')
-  }
-
-  // 3. Stream response with full conversation context
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-    // Prepend MCP prompt messages if provided
     ...(mcpPromptMessages ?? []),
     ...recentHistory,
     { role: 'user' as const, content: input.userMessage },

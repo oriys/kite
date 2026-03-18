@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   integer,
+  boolean,
   primaryKey,
   index,
   uniqueIndex,
@@ -64,6 +65,7 @@ export const documents = pgTable(
     createdBy: text('created_by').references(() => users.id, {
       onDelete: 'set null',
     }),
+    ragEnabled: boolean('rag_enabled').notNull().default(true),
   },
   (t) => [
     uniqueIndex('documents_workspace_slug_idx')

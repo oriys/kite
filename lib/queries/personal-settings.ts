@@ -2,7 +2,9 @@ import { eq } from 'drizzle-orm'
 
 import { db } from '../db'
 import {
+  mergeNavOrder,
   mergePersonalFeatureVisibility,
+  type NavItemKey,
   type PersonalFeatureVisibility,
 } from '../personal-settings'
 import { userFeaturePreferences } from '../schema'
@@ -23,10 +25,14 @@ function mapRowToFeatureVisibility(
     aiWorkspace: row.aiWorkspaceEnabled,
     analytics: row.analyticsEnabled,
     approvals: row.approvalsEnabled,
-    webhooks: row.webhooksEnabled,
     linkHealth: row.linkHealthEnabled,
-    quickInsert: row.quickInsertEnabled,
   })
+}
+
+function mapRowToNavOrder(
+  row?: UserFeaturePreferencesRow | null,
+): NavItemKey[] {
+  return mergeNavOrder(row?.navOrder)
 }
 
 function mapFeatureVisibilityUpdates(
@@ -54,16 +60,8 @@ function mapFeatureVisibilityUpdates(
     nextUpdates.approvalsEnabled = updates.approvals
   }
 
-  if (typeof updates.webhooks === 'boolean') {
-    nextUpdates.webhooksEnabled = updates.webhooks
-  }
-
   if (typeof updates.linkHealth === 'boolean') {
     nextUpdates.linkHealthEnabled = updates.linkHealth
-  }
-
-  if (typeof updates.quickInsert === 'boolean') {
-    nextUpdates.quickInsertEnabled = updates.quickInsert
   }
 
   return nextUpdates
@@ -75,25 +73,35 @@ export async function getUserFeatureVisibility(userId: string) {
       where: eq(userFeaturePreferences.userId, userId),
     })
 
-    return mapRowToFeatureVisibility(row)
+    return {
+      ...mapRowToFeatureVisibility(row),
+      navOrder: mapRowToNavOrder(row),
+    }
   } catch (error) {
     console.error('Failed to load user feature visibility', {
       userId,
       error,
     })
-    return mergePersonalFeatureVisibility()
+    return {
+      ...mergePersonalFeatureVisibility(),
+      navOrder: mergeNavOrder(),
+    }
   }
 }
 
 export async function updateUserFeatureVisibility(
   userId: string,
   updates: Partial<PersonalFeatureVisibility>,
+  navOrder?: NavItemKey[] | null,
 ) {
   const dbUpdates = mapFeatureVisibilityUpdates(updates)
 
-  if (Object.keys(dbUpdates).length === 0) {
+  const hasNavOrderUpdate = navOrder !== undefined
+  if (Object.keys(dbUpdates).length === 0 && !hasNavOrderUpdate) {
     return getUserFeatureVisibility(userId)
   }
+
+  const navOrderValue = hasNavOrderUpdate ? (navOrder ?? undefined) : undefined
 
   try {
     const [row] = await db
@@ -101,18 +109,24 @@ export async function updateUserFeatureVisibility(
       .values({
         userId,
         ...dbUpdates,
+        ...(navOrderValue !== undefined ? { navOrder: navOrderValue } : {}),
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
         target: [userFeaturePreferences.userId],
         set: {
           ...dbUpdates,
+          ...(navOrderValue !== undefined ? { navOrder: navOrderValue } : {}),
+          ...(hasNavOrderUpdate && navOrder === null ? { navOrder: null } : {}),
           updatedAt: new Date(),
         },
       })
       .returning()
 
-    return mapRowToFeatureVisibility(row)
+    return {
+      ...mapRowToFeatureVisibility(row),
+      navOrder: mapRowToNavOrder(row),
+    }
   } catch (error) {
     console.error('Failed to update user feature visibility', {
       userId,

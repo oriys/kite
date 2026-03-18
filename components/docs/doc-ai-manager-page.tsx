@@ -608,10 +608,7 @@ export function DocAiManagerPage() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <p className="editorial-section-kicker">Default AI</p>
-                <Badge variant="outline">{enabledCount} enabled</Badge>
-              </div>
+              <p className="editorial-section-kicker">Default AI</p>
               <Select
                 value={activeModelId ?? undefined}
                 onValueChange={(value) => setActiveModelId(value)}
@@ -630,7 +627,8 @@ export function DocAiManagerPage() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{enabledCount} enabled</Badge>
                 {enabledModels.length === 0 ? (
                   <Badge variant="outline">No enabled models yet</Badge>
                 ) : (

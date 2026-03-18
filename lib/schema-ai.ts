@@ -14,6 +14,7 @@ import { relations } from 'drizzle-orm'
 import { users } from './schema-auth'
 import { workspaces } from './schema-workspace'
 import { documents } from './schema-documents'
+import { knowledgeSources } from './schema-knowledge'
 import type { ChatMessageAttribution } from './ai-chat-shared'
 
 export const aiProviderTypeEnum = pgEnum('ai_provider_type', [
@@ -61,11 +62,13 @@ export const aiWorkspaceSettings = pgTable(
       .default({}),
     embeddingModelId: text('embedding_model_id'),
     rerankerModelId: text('reranker_model_id'),
+    ragEnabled: boolean('rag_enabled').notNull().default(true),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
   },
 )
 
+// Dimension must match EMBEDDING_VECTOR_DIMENSION in lib/ai-config.ts
 const vector1536 = customType<{ data: number[]; driverParam: string }>({
   dataType() {
     return 'vector(1536)'
@@ -85,13 +88,18 @@ export const documentChunks = pgTable(
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
     documentId: text('document_id')
-      .notNull()
       .references(() => documents.id, { onDelete: 'cascade' }),
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     chunkIndex: integer('chunk_index').notNull(),
     chunkText: text('chunk_text').notNull(),
+    sectionPath: text('section_path'),
+    heading: text('heading'),
+    knowledgeSourceId: text('knowledge_source_id').references(
+      () => knowledgeSources.id,
+      { onDelete: 'cascade' },
+    ),
     embedding: vector1536('embedding'),
     tokenCount: integer('token_count').notNull().default(0),
     contentHash: text('content_hash').notNull(),

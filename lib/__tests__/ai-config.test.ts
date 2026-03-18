@@ -13,11 +13,11 @@ describe('ai-config', () => {
   describe('defaults', () => {
     it('provides sensible default values', () => {
       expect(DEFAULT_EMBEDDING_MODEL).toBe('text-embedding-3-small')
-      expect(TOP_K_CHUNKS).toBe(8)
+      expect(TOP_K_CHUNKS).toBe(15)
       expect(TEMPERATURE_CHAT).toBe(0.3)
       expect(TARGET_CHUNK_TOKENS).toBe(500)
-      expect(MIN_VECTOR_SIMILARITY).toBe(0.15)
-      expect(MAX_CONTEXT_CHARS).toBe(12_000)
+      expect(MIN_VECTOR_SIMILARITY).toBe(0.28)
+      expect(MAX_CONTEXT_CHARS).toBe(20_000)
       expect(SHOPLINE_DOCS_BASE_URL).toBe('https://developer.shopline.com')
     })
   })

@@ -343,6 +343,7 @@ export async function updateDocument(
     tags?: string[]
     content?: string
     visibility?: VisibilityValue
+    ragEnabled?: boolean
   },
 ) {
   const [existing] = await db
@@ -402,6 +403,7 @@ export async function updateDocument(
     tags?: string[]
     content?: string
     visibility?: VisibilityValue
+    ragEnabled?: boolean
   } = { ...patch }
   if (patch.tags !== undefined) {
     documentPatch.tags = normalizeDocumentTags(patch.tags)

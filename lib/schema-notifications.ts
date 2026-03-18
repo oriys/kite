@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   boolean,
+  jsonb,
   primaryKey,
   index,
 } from 'drizzle-orm/pg-core'
@@ -108,6 +109,7 @@ export const userFeaturePreferences = pgTable(
     webhooksEnabled: boolean('webhooks_enabled').notNull().default(true),
     linkHealthEnabled: boolean('link_health_enabled').notNull().default(true),
     quickInsertEnabled: boolean('quick_insert_enabled').notNull().default(true),
+    navOrder: jsonb('nav_order').$type<string[]>(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId] })],

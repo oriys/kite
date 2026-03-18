@@ -3,6 +3,8 @@
 import * as React from 'react'
 import Link from 'next/link'
 import {
+  ArrowDown,
+  ArrowUp,
   BrainCircuit,
   Palette,
   PencilLine,
@@ -27,7 +29,9 @@ import {
 import {
   PERSONAL_FEATURE_CONFIG,
   PERSONAL_FEATURE_IDS,
+  DEFAULT_NAV_ORDER,
   createPersonalFeatureVisibilityUpdate,
+  type NavItemKey,
 } from '@/lib/personal-settings'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -52,6 +56,17 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
+const NAV_ITEM_LABELS: Record<NavItemKey, string> = {
+  documents: 'Documents',
+  compare: 'Compare',
+  openApi: 'OpenAPI',
+  analytics: 'Analytics',
+  templates: 'Templates',
+  approvals: 'Approvals',
+  linkHealth: 'Link Health',
+  settings: 'Settings',
+}
+
 export function PersonalSettingsPage({
   initialNotificationPreferences,
   workspaceName,
@@ -66,6 +81,9 @@ export function PersonalSettingsPage({
     featureVisibility,
     isUpdatingFeatureVisibility,
     updateFeatureVisibility,
+    navOrder,
+    isUpdatingNavOrder,
+    updateNavOrder,
   } = usePersonalSettings()
   const [notificationPreferences, setNotificationPreferences] =
     React.useState<NotificationPreferenceValues>(() =>
@@ -196,7 +214,7 @@ export function PersonalSettingsPage({
               </p>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 Hide OpenAPI, Templates, AI management pages, Analytics,
-                Approvals, Webhooks, Link Health, and Quick Insert until you
+                Approvals, and Link Health until you
                 need them again.
               </p>
             </div>
@@ -377,6 +395,72 @@ export function PersonalSettingsPage({
             })}
           </FieldGroup>
         </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardAction>
+            <Badge variant="secondary">Account-wide</Badge>
+          </CardAction>
+          <CardTitle>Navigation order</CardTitle>
+          <CardDescription>
+            Reorder the items in the top navigation bar to match your workflow.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            {navOrder.map((key, index) => (
+              <div
+                key={key}
+                className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2"
+              >
+                <span className="flex-1 text-sm font-medium text-foreground">
+                  {NAV_ITEM_LABELS[key]}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={index === 0 || isUpdatingNavOrder}
+                  onClick={() => {
+                    const next = [...navOrder]
+                    ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+                    void updateNavOrder(next)
+                  }}
+                  aria-label={`Move ${NAV_ITEM_LABELS[key]} up`}
+                >
+                  <ArrowUp className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={index === navOrder.length - 1 || isUpdatingNavOrder}
+                  onClick={() => {
+                    const next = [...navOrder]
+                    ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+                    void updateNavOrder(next)
+                  }}
+                  aria-label={`Move ${NAV_ITEM_LABELS[key]} down`}
+                >
+                  <ArrowDown className="size-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+        <CardFooter className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <p className="text-sm text-muted-foreground">
+            Changes apply to the docs navigation immediately.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isUpdatingNavOrder || navOrder.join(',') === DEFAULT_NAV_ORDER.join(',')}
+            onClick={() => void updateNavOrder(null)}
+          >
+            <RotateCcw data-icon="inline-start" />
+            Reset to default
+          </Button>
+        </CardFooter>
       </Card>
 
       <Card>
