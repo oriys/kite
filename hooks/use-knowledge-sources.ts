@@ -11,13 +11,14 @@ export interface ProcessingProgress {
 export interface KnowledgeSourceItem {
   id: string
   sourceType: 'document' | 'pdf' | 'url' | 'markdown' | 'faq' | 'openapi' | 'graphql' | 'zip' | 'asyncapi' | 'protobuf' | 'rst' | 'asciidoc' | 'csv' | 'sql_ddl' | 'typescript_defs' | 'postman'
-  status: 'pending' | 'processing' | 'ready' | 'error' | 'archived'
+  status: 'pending' | 'processing' | 'cancelled' | 'ready' | 'error' | 'archived'
   title: string
   sourceUrl: string | null
   rawContent: string
   contentHash: string | null
   metadata: Record<string, unknown> | null
   errorMessage: string | null
+  stopRequestedAt: string | null
   createdAt: string
   updatedAt: string
   processedAt: string | null
@@ -219,12 +220,12 @@ export function useKnowledgeSources() {
 
   const processSource = React.useCallback(
     async (id: string) => {
-      setMutating(true)
-
       // Optimistic: mark item as processing so polling starts immediately
       setItems((prev) =>
         prev.map((item) =>
-          item.id === id ? { ...item, status: 'processing' as const } : item,
+          item.id === id
+            ? { ...item, status: 'processing' as const, stopRequestedAt: null }
+            : item,
         ),
       )
 
@@ -242,9 +243,46 @@ export function useKnowledgeSources() {
 
         const result = await response.json()
         await refresh().catch(() => undefined)
-        return result as { status: string; chunkCount: number }
-      } finally {
-        setMutating(false)
+        return result as { status: KnowledgeSourceItem['status']; chunkCount: number }
+      } catch (error) {
+        await refresh().catch(() => undefined)
+        throw error
+      }
+    },
+    [refresh],
+  )
+
+  const stopSource = React.useCallback(
+    async (id: string) => {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                stopRequestedAt: item.stopRequestedAt ?? new Date().toISOString(),
+              }
+            : item,
+        ),
+      )
+
+      try {
+        const response = await fetch(
+          `/api/ai/knowledge-sources/${encodeURIComponent(id)}/stop`,
+          {
+            method: 'POST',
+          },
+        )
+
+        if (!response.ok) {
+          throw new Error(await parseResponseError(response))
+        }
+
+        const result = await response.json()
+        await refresh().catch(() => undefined)
+        return result as { status: 'stopping' }
+      } catch (error) {
+        await refresh().catch(() => undefined)
+        throw error
       }
     },
     [refresh],
@@ -260,5 +298,6 @@ export function useKnowledgeSources() {
     updateSource,
     deleteSource,
     processSource,
+    stopSource,
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Download, Loader2, PencilLine, RefreshCw, Trash2 } from 'lucide-react'
+import { Download, Loader2, PencilLine, RefreshCw, Trash2, X } from 'lucide-react'
 
 import type { KnowledgeSourceItem } from '@/hooks/use-knowledge-sources'
 import { getProcessingProgress } from '@/hooks/use-knowledge-sources'
@@ -12,8 +12,10 @@ interface KnowledgeSourceCardProps {
   onEdit: (source: KnowledgeSourceItem) => void
   onDelete: (source: KnowledgeSourceItem) => void
   onProcess: (source: KnowledgeSourceItem) => void
+  onStop: (source: KnowledgeSourceItem) => void
   mutating: boolean
   processing: boolean
+  stopping: boolean
 }
 
 const STATUS_STYLES: Record<
@@ -27,6 +29,10 @@ const STATUS_STYLES: Record<
   processing: {
     className: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
     label: 'Processing',
+  },
+  cancelled: {
+    className: 'border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300',
+    label: 'Cancelled',
   },
   error: {
     className: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
@@ -79,25 +85,47 @@ function formatDate(dateString: string | null) {
   })
 }
 
+function getStopMessage(stage?: string) {
+  if (stage === 'embedding') {
+    return 'Cancelling the in-flight embedding request…'
+  }
+
+  if (stage === 'extracting' || stage === 'chunking') {
+    return 'Waiting for the current extraction step to yield before stopping.'
+  }
+
+  if (stage === 'storing') {
+    return 'Waiting for the current database write to finish before stopping.'
+  }
+
+  return 'Stopping the current processing run…'
+}
+
 export function KnowledgeSourceCard({
   source,
   onEdit,
   onDelete,
   onProcess,
+  onStop,
   mutating,
   processing,
+  stopping,
 }: KnowledgeSourceCardProps) {
   const status = STATUS_STYLES[source.status]
   const progress = getProcessingProgress(source)
+  const stopRequested = Boolean(source.stopRequestedAt)
 
-  const stageLabel = progress
-    ? STAGE_LABELS[progress.stage] ?? progress.stage
-    : null
+  const stageLabel = stopRequested
+    ? 'Stop requested…'
+    : progress
+      ? STAGE_LABELS[progress.stage] ?? progress.stage
+      : null
   const stageDetail =
-    progress?.detail && progress.stage === 'embedding'
+    !stopRequested && progress?.detail && progress.stage === 'embedding'
       ? ` (${progress.detail})`
       : ''
   const pct = progress ? Math.round(progress.progress * 100) : 0
+  const disableContentActions = mutating || source.status === 'processing'
 
   return (
     <article className="rounded-md border border-border/70 bg-background/70 p-4">
@@ -122,19 +150,35 @@ export function KnowledgeSourceCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onProcess(source)}
-            disabled={mutating || processing}
-          >
-            {processing ? (
-              <Loader2 data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <RefreshCw data-icon="inline-start" />
-            )}
-            Reprocess
-          </Button>
+          {source.status === 'processing' ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onStop(source)}
+              disabled={stopping || stopRequested}
+            >
+              {stopping || stopRequested ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <X data-icon="inline-start" />
+              )}
+              {stopping || stopRequested ? 'Stopping…' : 'Stop'}
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onProcess(source)}
+              disabled={processing}
+            >
+              {processing ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <RefreshCw data-icon="inline-start" />
+              )}
+              Reprocess
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -152,6 +196,7 @@ export function KnowledgeSourceCard({
             variant="ghost"
             size="sm"
             onClick={() => onEdit(source)}
+            disabled={disableContentActions}
           >
             <PencilLine data-icon="inline-start" />
             Edit
@@ -160,6 +205,7 @@ export function KnowledgeSourceCard({
             variant="ghost"
             size="sm"
             onClick={() => onDelete(source)}
+            disabled={disableContentActions}
           >
             <Trash2 data-icon="inline-start" />
             Delete
@@ -189,6 +235,11 @@ export function KnowledgeSourceCard({
               style={{ width: `${Math.max(pct, 2)}%` }}
             />
           </div>
+          {stopRequested ? (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {getStopMessage(progress?.stage)}
+            </p>
+          ) : null}
         </div>
       )}
 

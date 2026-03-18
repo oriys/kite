@@ -35,6 +35,7 @@ export function DocKnowledgeBaseManagerPage() {
     updateSource,
     deleteSource,
     processSource,
+    stopSource,
   } = useKnowledgeSources()
 
   // Form state
@@ -50,7 +51,8 @@ export function DocKnowledgeBaseManagerPage() {
   const [deleteTarget, setDeleteTarget] = React.useState<KnowledgeSourceItem | null>(null)
 
   // Processing state
-  const [processingId, setProcessingId] = React.useState<string | null>(null)
+  const [processingIds, setProcessingIds] = React.useState<Set<string>>(() => new Set())
+  const [stoppingIds, setStoppingIds] = React.useState<Set<string>>(() => new Set())
 
   // -- Handlers --
 
@@ -111,20 +113,42 @@ export function DocKnowledgeBaseManagerPage() {
   }
 
   async function handleProcess(source: KnowledgeSourceItem) {
-    setProcessingId(source.id)
+    setProcessingIds((prev) => new Set(prev).add(source.id))
     try {
       const result = await processSource(source.id)
       if (result.status === 'ready') {
         toast.success(
           `Processed — ${result.chunkCount} chunk${result.chunkCount === 1 ? '' : 's'} indexed`,
         )
+      } else if (result.status === 'cancelled') {
+        toast.info(`Stopped "${source.title}"`)
       } else {
         toast.info(`Processing status: ${result.status}`)
       }
     } catch {
       toast.error('Failed to process knowledge source')
     } finally {
-      setProcessingId(null)
+      setProcessingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(source.id)
+        return next
+      })
+    }
+  }
+
+  async function handleStop(source: KnowledgeSourceItem) {
+    setStoppingIds((prev) => new Set(prev).add(source.id))
+    try {
+      await stopSource(source.id)
+      toast.info(`Stopping "${source.title}"…`)
+    } catch {
+      toast.error('Failed to stop knowledge source processing')
+    } finally {
+      setStoppingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(source.id)
+        return next
+      })
     }
   }
 
@@ -193,8 +217,10 @@ export function DocKnowledgeBaseManagerPage() {
                 onEdit={openEditForm}
                 onDelete={setDeleteTarget}
                 onProcess={handleProcess}
+                onStop={handleStop}
                 mutating={mutating}
-                processing={processingId === source.id}
+                processing={processingIds.has(source.id)}
+                stopping={stoppingIds.has(source.id)}
               />
             ))}
           </div>

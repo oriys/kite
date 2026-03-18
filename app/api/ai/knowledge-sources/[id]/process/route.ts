@@ -22,6 +22,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     .select({
       id: knowledgeSources.id,
       status: knowledgeSources.status,
+      stopRequestedAt: knowledgeSources.stopRequestedAt,
     })
     .from(knowledgeSources)
     .where(
@@ -34,6 +35,17 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     .limit(1)
 
   if (!existing) return notFound()
+
+  if (existing.status === 'processing') {
+    return NextResponse.json(
+      {
+        error: existing.stopRequestedAt
+          ? 'Knowledge source is already stopping'
+          : 'Knowledge source is already processing',
+      },
+      { status: 409 },
+    )
+  }
 
   try {
     const processingResult = await processKnowledgeSource({

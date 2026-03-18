@@ -32,6 +32,7 @@ export const knowledgeSourceTypeEnum = pgEnum('knowledge_source_type', [
 export const knowledgeSourceStatusEnum = pgEnum('knowledge_source_status', [
   'pending',
   'processing',
+  'cancelled',
   'ready',
   'error',
   'archived',
@@ -57,6 +58,7 @@ export const knowledgeSources = pgTable(
       .notNull()
       .default({}),
     errorMessage: text('error_message'),
+    stopRequestedAt: timestamp('stop_requested_at', { mode: 'date' }),
     createdBy: text('created_by').references(() => users.id, {
       onDelete: 'set null',
     }),

@@ -20,7 +20,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   if (!body) return badRequest('Invalid JSON')
 
   const [existing] = await db
-    .select({ id: knowledgeSources.id })
+    .select({ id: knowledgeSources.id, status: knowledgeSources.status })
     .from(knowledgeSources)
     .where(
       and(
@@ -32,6 +32,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     .limit(1)
 
   if (!existing) return notFound()
+
+  if (existing.status === 'processing') {
+    return NextResponse.json(
+      { error: 'Stop processing before editing this knowledge source' },
+      { status: 409 },
+    )
+  }
 
   const updates: Record<string, unknown> = { updatedAt: new Date() }
 
@@ -58,7 +65,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
   const { id } = await context.params
 
   const [existing] = await db
-    .select({ id: knowledgeSources.id })
+    .select({ id: knowledgeSources.id, status: knowledgeSources.status })
     .from(knowledgeSources)
     .where(
       and(
@@ -70,6 +77,13 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     .limit(1)
 
   if (!existing) return notFound()
+
+  if (existing.status === 'processing') {
+    return NextResponse.json(
+      { error: 'Stop processing before deleting this knowledge source' },
+      { status: 409 },
+    )
+  }
 
   // Soft delete
   await db

@@ -79,6 +79,7 @@ export async function GET(request: NextRequest) {
       contentHash: knowledgeSources.contentHash,
       metadata: knowledgeSources.metadata,
       errorMessage: knowledgeSources.errorMessage,
+      stopRequestedAt: knowledgeSources.stopRequestedAt,
       createdAt: knowledgeSources.createdAt,
       updatedAt: knowledgeSources.updatedAt,
       processedAt: knowledgeSources.processedAt,

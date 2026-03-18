@@ -168,6 +168,7 @@ export async function requestAiEmbedding(input: {
   provider: ResolvedAiProviderConfig
   texts: string[]
   model: string
+  abortSignal?: AbortSignal
 }) {
   if (!input.provider.apiKey.trim()) {
     throw new AiCompletionError('This AI provider is missing an API key.', 503)
@@ -182,6 +183,7 @@ export async function requestAiEmbedding(input: {
     const { embeddings } = await embedMany({
       model,
       values: input.texts,
+      abortSignal: input.abortSignal,
     })
 
     return { embeddings }

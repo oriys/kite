@@ -11,6 +11,10 @@ import { logServerError } from '@/lib/server-errors'
 import { EMBEDDING_BATCH_SIZE } from '@/lib/ai-config'
 import { insertDocumentChunkRowsInBatches } from '@/lib/document-chunk-storage'
 import {
+  clearKnowledgeSourceProcessing,
+  registerKnowledgeSourceProcessing,
+} from '@/lib/knowledge-processing-runtime'
+import {
   extractKnowledgeSourceContent,
   type ExtractableKnowledgeSourceType,
 } from '@/lib/knowledge-source-content'
@@ -19,6 +23,13 @@ import { sanitizePlainText } from '@/lib/sanitize'
 const MAX_KNOWLEDGE_SOURCE_ERROR_MESSAGE_LENGTH = 500
 const ZIP_CHUNK_PROGRESS_INTERVAL = 50
 const ZIP_DOCUMENT_CHUNK_INSERT_BATCH_SIZE = 50
+
+export class KnowledgeSourceProcessingStoppedError extends Error {
+  constructor(message = 'Processing stopped by user') {
+    super(message)
+    this.name = 'KnowledgeSourceProcessingStoppedError'
+  }
+}
 
 function formatKnowledgeSourceProcessingErrorMessage(error: unknown) {
   const messages: string[] = []
@@ -54,6 +65,8 @@ export async function processKnowledgeSource(input: {
   knowledgeSourceId: string
   workspaceId: string
 }) {
+  const runtimeController = registerKnowledgeSourceProcessing(input.knowledgeSourceId)
+
   const [source] = await db
     .select()
     .from(knowledgeSources)
@@ -66,6 +79,7 @@ export async function processKnowledgeSource(input: {
     .limit(1)
 
   if (!source) {
+    clearKnowledgeSourceProcessing(input.knowledgeSourceId, runtimeController)
     throw new Error('Knowledge source not found')
   }
 
@@ -75,7 +89,43 @@ export async function processKnowledgeSource(input: {
   }
   delete userMetadata._processing
 
+  function throwIfAborted() {
+    if (!runtimeController.signal.aborted) return
+
+    const reason =
+      typeof runtimeController.signal.reason === 'string'
+        ? runtimeController.signal.reason
+        : 'Processing stopped by user'
+    throw new KnowledgeSourceProcessingStoppedError(reason)
+  }
+
+  async function throwIfStopRequested() {
+    throwIfAborted()
+
+    const [current] = await db
+      .select({
+        status: knowledgeSources.status,
+        stopRequestedAt: knowledgeSources.stopRequestedAt,
+        deletedAt: knowledgeSources.deletedAt,
+      })
+      .from(knowledgeSources)
+      .where(eq(knowledgeSources.id, source.id))
+      .limit(1)
+
+    if (!current || current.deletedAt || current.status === 'archived') {
+      throw new KnowledgeSourceProcessingStoppedError(
+        'Knowledge source was removed during processing',
+      )
+    }
+
+    if (current.stopRequestedAt) {
+      throw new KnowledgeSourceProcessingStoppedError()
+    }
+  }
+
   async function writeProgress(progress: number, stage: string, detail?: string) {
+    await throwIfStopRequested()
+
     await db
       .update(knowledgeSources)
       .set({
@@ -87,17 +137,21 @@ export async function processKnowledgeSource(input: {
       .where(eq(knowledgeSources.id, source.id))
   }
 
-  // Mark as processing with initial progress
-  await db
-    .update(knowledgeSources)
-    .set({
-      status: 'processing',
-      metadata: { ...userMetadata, _processing: { progress: 0, stage: 'starting' } },
-      updatedAt: new Date(),
-    })
-    .where(eq(knowledgeSources.id, source.id))
-
   try {
+    // Mark as processing with initial progress
+    await db
+      .update(knowledgeSources)
+      .set({
+        status: 'processing',
+        stopRequestedAt: null,
+        metadata: { ...userMetadata, _processing: { progress: 0, stage: 'starting' } },
+        updatedAt: new Date(),
+        errorMessage: null,
+      })
+      .where(eq(knowledgeSources.id, source.id))
+
+    await throwIfStopRequested()
+
     const resolved = await resolveEmbeddingProvider(input.workspaceId)
     if (!resolved) {
       throw new Error('No embedding provider configured')
@@ -121,6 +175,8 @@ export async function processKnowledgeSource(input: {
 
       let nextChunkIndex = 0
       for (const [index, document] of extractedDocuments.entries()) {
+        await throwIfStopRequested()
+
         const documentChunks = chunkDocument(
           `${title} — ${document.path}`,
           document.content,
@@ -163,6 +219,8 @@ export async function processKnowledgeSource(input: {
       chunks = chunkDocument(title, normalizedContent)
     }
 
+    await throwIfStopRequested()
+
     if (chunks.length === 0) {
       await db
         .delete(documentChunks)
@@ -176,19 +234,22 @@ export async function processKnowledgeSource(input: {
           status: 'ready',
           contentHash,
           metadata: userMetadata,
+          stopRequestedAt: null,
           processedAt: new Date(),
           updatedAt: new Date(),
           errorMessage: null,
         })
         .where(eq(knowledgeSources.id, source.id))
 
-      return { status: 'empty' as const, chunkCount: 0 }
+      return { status: 'ready' as const, chunkCount: 0 }
     }
 
     // Generate embeddings in batches
     const totalBatches = Math.ceil(chunks.length / EMBEDDING_BATCH_SIZE)
     const allEmbeddings: number[][] = []
     for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
+      await throwIfStopRequested()
+
       const batchIndex = Math.floor(i / EMBEDDING_BATCH_SIZE)
       await writeProgress(
         0.2 + (0.65 * batchIndex / totalBatches),
@@ -200,6 +261,7 @@ export async function processKnowledgeSource(input: {
         provider: resolved.provider,
         texts: batch.map((c) => c.embeddingText),
         model: resolved.modelId,
+        abortSignal: runtimeController.signal,
       })
       allEmbeddings.push(...result.embeddings)
       if (result.embeddings.length !== batch.length) {
@@ -210,6 +272,7 @@ export async function processKnowledgeSource(input: {
     }
 
     await writeProgress(0.9, 'storing')
+    await throwIfStopRequested()
 
     const chunkRows = chunks.map((chunk, i) => ({
       workspaceId: input.workspaceId,
@@ -247,14 +310,34 @@ export async function processKnowledgeSource(input: {
         status: 'ready',
         contentHash,
         metadata: userMetadata,
+        stopRequestedAt: null,
         processedAt: new Date(),
         updatedAt: new Date(),
         errorMessage: null,
       })
       .where(eq(knowledgeSources.id, source.id))
 
-    return { status: 'processed' as const, chunkCount: chunks.length }
+    return { status: 'ready' as const, chunkCount: chunks.length }
   } catch (error) {
+    if (
+      error instanceof KnowledgeSourceProcessingStoppedError ||
+      runtimeController.signal.aborted ||
+      (error instanceof Error && error.name === 'AbortError')
+    ) {
+      await db
+        .update(knowledgeSources)
+        .set({
+          status: 'cancelled',
+          metadata: userMetadata,
+          stopRequestedAt: null,
+          errorMessage: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(knowledgeSources.id, source.id))
+
+      return { status: 'cancelled' as const, chunkCount: 0 }
+    }
+
     const message = formatKnowledgeSourceProcessingErrorMessage(error)
 
     await db
@@ -262,6 +345,7 @@ export async function processKnowledgeSource(input: {
       .set({
         status: 'error',
         metadata: userMetadata,
+        stopRequestedAt: null,
         errorMessage: message,
         updatedAt: new Date(),
       })
@@ -273,5 +357,7 @@ export async function processKnowledgeSource(input: {
     })
 
     throw error
+  } finally {
+    clearKnowledgeSourceProcessing(input.knowledgeSourceId, runtimeController)
   }
 }
