@@ -345,9 +345,9 @@ export default function DocsPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
+              <span className="inline-flex h-8 items-center gap-1 text-[11px] font-medium tracking-[0.16em] text-muted-foreground uppercase whitespace-nowrap">
                 <ListFilter className="size-3.5" />
-                Page size
+                Per page
               </span>
               {mounted ? (
                 <Select
