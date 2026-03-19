@@ -17,13 +17,14 @@ export async function logSearch(data: {
 }
 
 export async function logSearchClick(
+  workspaceId: string,
   searchLogId: string,
   documentId: string,
 ): Promise<void> {
   await db
     .update(searchLogs)
     .set({ clickedDocumentId: documentId })
-    .where(eq(searchLogs.id, searchLogId))
+    .where(and(eq(searchLogs.id, searchLogId), eq(searchLogs.workspaceId, workspaceId)))
 }
 
 /**

@@ -2,6 +2,11 @@ import { db } from '@/lib/db'
 import { documentFeedback, documents, searchLogs } from '@/lib/schema'
 import { eq, and, sql, desc, asc, isNull } from 'drizzle-orm'
 
+/**
+ * Submit document feedback. The documentFeedback table has no workspaceId column.
+ * Callers must verify that the documentId belongs to the expected workspace
+ * before calling this function.
+ */
 export async function submitFeedback(data: {
   documentId: string
   userId?: string
@@ -21,7 +26,7 @@ export async function submitFeedback(data: {
   return row
 }
 
-export async function getDocumentFeedbackSummary(documentId: string) {
+export async function getDocumentFeedbackSummary(workspaceId: string, documentId: string) {
   const [result] = await db
     .select({
       helpful: sql<number>`count(*) filter (where ${documentFeedback.isHelpful} = true)::int`,
@@ -29,6 +34,10 @@ export async function getDocumentFeedbackSummary(documentId: string) {
       total: sql<number>`count(*)::int`,
     })
     .from(documentFeedback)
+    .innerJoin(documents, and(
+      eq(documents.id, documentFeedback.documentId),
+      eq(documents.workspaceId, workspaceId),
+    ))
     .where(eq(documentFeedback.documentId, documentId))
 
   const helpful = result?.helpful ?? 0

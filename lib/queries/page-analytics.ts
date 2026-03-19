@@ -125,7 +125,7 @@ export async function getPageAnalyticsOverview(
   }
 }
 
-export async function getDocumentAnalytics(documentId: string, days = 30) {
+export async function getDocumentAnalytics(workspaceId: string, documentId: string, days = 30) {
   const since = new Date()
   since.setDate(since.getDate() - days)
 
@@ -136,7 +136,7 @@ export async function getDocumentAnalytics(documentId: string, days = 30) {
     })
     .from(pageViews)
     .where(
-      and(eq(pageViews.documentId, documentId), gte(pageViews.viewedAt, since)),
+      and(eq(pageViews.documentId, documentId), eq(pageViews.workspaceId, workspaceId), gte(pageViews.viewedAt, since)),
     )
 
   const viewsByDay = await db
@@ -147,7 +147,7 @@ export async function getDocumentAnalytics(documentId: string, days = 30) {
     })
     .from(pageViews)
     .where(
-      and(eq(pageViews.documentId, documentId), gte(pageViews.viewedAt, since)),
+      and(eq(pageViews.documentId, documentId), eq(pageViews.workspaceId, workspaceId), gte(pageViews.viewedAt, since)),
     )
     .groupBy(sql`to_char(${pageViews.viewedAt}, 'YYYY-MM-DD')`)
     .orderBy(sql`to_char(${pageViews.viewedAt}, 'YYYY-MM-DD')`)
@@ -161,6 +161,7 @@ export async function getDocumentAnalytics(documentId: string, days = 30) {
     .where(
       and(
         eq(pageViews.documentId, documentId),
+        eq(pageViews.workspaceId, workspaceId),
         gte(pageViews.viewedAt, since),
         sql`${pageViews.referrer} is not null`,
       ),

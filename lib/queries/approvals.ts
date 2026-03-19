@@ -139,12 +139,20 @@ export async function getApprovalRequest(id: string, workspaceId: string) {
 }
 
 export async function submitApprovalDecision(
+  workspaceId: string,
   requestId: string,
   reviewerId: string,
   decision: ApprovalDecision,
   comment?: string,
 ) {
   return db.transaction(async (tx) => {
+    // Verify request belongs to workspace first
+    const request = await tx.query.approvalRequests.findFirst({
+      where: and(eq(approvalRequests.id, requestId), eq(approvalRequests.workspaceId, workspaceId)),
+    })
+
+    if (!request) return null
+
     const [reviewer] = await tx
       .update(approvalReviewers)
       .set({ decision, comment: comment ?? null, decidedAt: new Date() })
@@ -162,12 +170,6 @@ export async function submitApprovalDecision(
     const allReviewers = await tx.query.approvalReviewers.findMany({
       where: eq(approvalReviewers.requestId, requestId),
     })
-
-    const request = await tx.query.approvalRequests.findFirst({
-      where: eq(approvalRequests.id, requestId),
-    })
-
-    if (!request) return null
 
     const approvedCount = allReviewers.filter(
       (r) => r.decision === 'approved',
@@ -213,10 +215,11 @@ export async function cancelApprovalRequest(id: string, workspaceId: string) {
   return request ?? null
 }
 
-export async function getPendingApprovalsForDocument(documentId: string) {
+export async function getPendingApprovalsForDocument(documentId: string, workspaceId: string) {
   return db.query.approvalRequests.findFirst({
     where: and(
       eq(approvalRequests.documentId, documentId),
+      eq(approvalRequests.workspaceId, workspaceId),
       eq(approvalRequests.status, 'pending'),
     ),
     with: {

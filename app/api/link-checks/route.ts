@@ -38,8 +38,8 @@ export async function GET() {
     .map((doc) => doc.id)
 
   const [checks, summary] = await Promise.all([
-    getBrokenLinkChecksByDocuments(visibleDocumentIds),
-    getLinkHealthSummaryByDocuments(visibleDocumentIds),
+    getBrokenLinkChecksByDocuments(result.ctx.workspaceId, visibleDocumentIds),
+    getLinkHealthSummaryByDocuments(result.ctx.workspaceId, visibleDocumentIds),
   ])
 
   return NextResponse.json({
@@ -109,7 +109,7 @@ export async function POST() {
   const visibleDocumentIds = publishedDocs
     .filter((doc) => accessMap.get(doc.id)?.canView)
     .map((doc) => doc.id)
-  const summary = await getLinkHealthSummaryByDocuments(visibleDocumentIds)
+  const summary = await getLinkHealthSummaryByDocuments(result.ctx.workspaceId, visibleDocumentIds)
 
   return NextResponse.json({
     scannedDocuments: editableDocs.length,

@@ -119,6 +119,7 @@ export async function createComment(data: {
 export async function resolveThread(
   commentId: string,
   resolvedBy: string,
+  documentId: string,
 ): Promise<void> {
   await db
     .update(inlineComments)
@@ -127,10 +128,10 @@ export async function resolveThread(
       resolvedBy,
       resolvedAt: new Date(),
     })
-    .where(eq(inlineComments.id, commentId))
+    .where(and(eq(inlineComments.id, commentId), eq(inlineComments.documentId, documentId)))
 }
 
-export async function unresolveThread(commentId: string): Promise<void> {
+export async function unresolveThread(commentId: string, documentId: string): Promise<void> {
   await db
     .update(inlineComments)
     .set({
@@ -138,14 +139,14 @@ export async function unresolveThread(commentId: string): Promise<void> {
       resolvedBy: null,
       resolvedAt: null,
     })
-    .where(eq(inlineComments.id, commentId))
+    .where(and(eq(inlineComments.id, commentId), eq(inlineComments.documentId, documentId)))
 }
 
-export async function deleteComment(commentId: string): Promise<boolean> {
+export async function deleteComment(commentId: string, documentId: string): Promise<boolean> {
   const result = await db
     .update(inlineComments)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(inlineComments.id, commentId), isNull(inlineComments.deletedAt)))
+    .where(and(eq(inlineComments.id, commentId), eq(inlineComments.documentId, documentId), isNull(inlineComments.deletedAt)))
     .returning({ id: inlineComments.id })
 
   return result.length > 0

@@ -30,7 +30,7 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const members = await listTeamMembers(teamId)
+  const members = await listTeamMembers(workspaceId, teamId)
   return NextResponse.json({ ...team, members })
 }
 

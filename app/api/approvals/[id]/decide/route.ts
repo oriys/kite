@@ -26,6 +26,7 @@ export async function POST(
     return badRequest('Invalid decision. Must be approved, rejected, or changes_requested')
 
   const outcome = await submitApprovalDecision(
+    result.ctx.workspaceId,
     id,
     result.ctx.userId,
     decision,

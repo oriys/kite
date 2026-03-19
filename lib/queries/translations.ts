@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../db'
 import {
+  documents,
   documentTranslations,
   documentTranslationVersions,
 } from '../schema'
@@ -19,7 +20,7 @@ export const SUPPORTED_LOCALES = [
 
 // --- Queries ---
 
-export async function getTranslationsForDocument(documentId: string) {
+export async function getTranslationsForDocument(workspaceId: string, documentId: string) {
   const rows = await db
     .select({
       id: documentTranslations.id,
@@ -33,6 +34,10 @@ export async function getTranslationsForDocument(documentId: string) {
       versionCreatedAt: documentTranslationVersions.createdAt,
     })
     .from(documentTranslations)
+    .innerJoin(documents, and(
+      eq(documents.id, documentTranslations.documentId),
+      eq(documents.workspaceId, workspaceId),
+    ))
     .leftJoin(
       documentTranslationVersions,
       and(
@@ -75,10 +80,22 @@ export async function getTranslationsForDocument(documentId: string) {
   }))
 }
 
-export async function getTranslation(translationId: string) {
-  const [translation] = await db
-    .select()
+export async function getTranslation(workspaceId: string, translationId: string) {
+  const rows = await db
+    .select({
+      id: documentTranslations.id,
+      documentId: documentTranslations.documentId,
+      locale: documentTranslations.locale,
+      status: documentTranslations.status,
+      createdAt: documentTranslations.createdAt,
+      updatedAt: documentTranslations.updatedAt,
+      deletedAt: documentTranslations.deletedAt,
+    })
     .from(documentTranslations)
+    .innerJoin(documents, and(
+      eq(documents.id, documentTranslations.documentId),
+      eq(documents.workspaceId, workspaceId),
+    ))
     .where(
       and(
         eq(documentTranslations.id, translationId),
@@ -87,16 +104,29 @@ export async function getTranslation(translationId: string) {
     )
     .limit(1)
 
-  return translation ?? null
+  return rows[0] ?? null
 }
 
 export async function getTranslationByLocale(
+  workspaceId: string,
   documentId: string,
   locale: string,
 ) {
-  const [translation] = await db
-    .select()
+  const rows = await db
+    .select({
+      id: documentTranslations.id,
+      documentId: documentTranslations.documentId,
+      locale: documentTranslations.locale,
+      status: documentTranslations.status,
+      createdAt: documentTranslations.createdAt,
+      updatedAt: documentTranslations.updatedAt,
+      deletedAt: documentTranslations.deletedAt,
+    })
     .from(documentTranslations)
+    .innerJoin(documents, and(
+      eq(documents.id, documentTranslations.documentId),
+      eq(documents.workspaceId, workspaceId),
+    ))
     .where(
       and(
         eq(documentTranslations.documentId, documentId),
@@ -106,13 +136,25 @@ export async function getTranslationByLocale(
     )
     .limit(1)
 
-  return translation ?? null
+  return rows[0] ?? null
 }
 
-export async function getLatestTranslationVersion(translationId: string) {
-  const [version] = await db
-    .select()
+export async function getLatestTranslationVersion(workspaceId: string, translationId: string) {
+  const rows = await db
+    .select({
+      id: documentTranslationVersions.id,
+      translationId: documentTranslationVersions.translationId,
+      title: documentTranslationVersions.title,
+      content: documentTranslationVersions.content,
+      translatedBy: documentTranslationVersions.translatedBy,
+      createdAt: documentTranslationVersions.createdAt,
+    })
     .from(documentTranslationVersions)
+    .innerJoin(documentTranslations, eq(documentTranslations.id, documentTranslationVersions.translationId))
+    .innerJoin(documents, and(
+      eq(documents.id, documentTranslations.documentId),
+      eq(documents.workspaceId, workspaceId),
+    ))
     .where(eq(documentTranslationVersions.translationId, translationId))
     .orderBy(
       desc(documentTranslationVersions.createdAt),
@@ -120,13 +162,25 @@ export async function getLatestTranslationVersion(translationId: string) {
     )
     .limit(1)
 
-  return version ?? null
+  return rows[0] ?? null
 }
 
-export async function getTranslationVersions(translationId: string) {
+export async function getTranslationVersions(workspaceId: string, translationId: string) {
   return db
-    .select()
+    .select({
+      id: documentTranslationVersions.id,
+      translationId: documentTranslationVersions.translationId,
+      title: documentTranslationVersions.title,
+      content: documentTranslationVersions.content,
+      translatedBy: documentTranslationVersions.translatedBy,
+      createdAt: documentTranslationVersions.createdAt,
+    })
     .from(documentTranslationVersions)
+    .innerJoin(documentTranslations, eq(documentTranslations.id, documentTranslationVersions.translationId))
+    .innerJoin(documents, and(
+      eq(documents.id, documentTranslations.documentId),
+      eq(documents.workspaceId, workspaceId),
+    ))
     .where(eq(documentTranslationVersions.translationId, translationId))
     .orderBy(
       desc(documentTranslationVersions.createdAt),
@@ -136,7 +190,7 @@ export async function getTranslationVersions(translationId: string) {
 
 // --- Mutations ---
 
-export async function createTranslation(input: {
+export async function createTranslation(workspaceId: string, input: {
   documentId: string
   locale: string
   title: string
@@ -144,7 +198,7 @@ export async function createTranslation(input: {
   translatedBy: string
 }) {
   // Check for existing translation
-  const existing = await getTranslationByLocale(input.documentId, input.locale)
+  const existing = await getTranslationByLocale(workspaceId, input.documentId, input.locale)
   if (existing) {
     // Add a new version to the existing translation
     const [version] = await db
@@ -197,12 +251,16 @@ export async function createTranslation(input: {
   })
 }
 
-export async function addTranslationVersion(input: {
+export async function addTranslationVersion(workspaceId: string, input: {
   translationId: string
   title: string
   content: string
   translatedBy: string
 }) {
+  // Verify translation belongs to workspace
+  const translation = await getTranslation(workspaceId, input.translationId)
+  if (!translation) throw new Error('Translation not found')
+
   const [version] = await db
     .insert(documentTranslationVersions)
     .values({
@@ -221,7 +279,11 @@ export async function addTranslationVersion(input: {
   return version
 }
 
-export async function updateTranslationStatus(id: string, status: string) {
+export async function updateTranslationStatus(workspaceId: string, id: string, status: string) {
+  // Verify translation belongs to workspace
+  const translation = await getTranslation(workspaceId, id)
+  if (!translation) return null
+
   const [result] = await db
     .update(documentTranslations)
     .set({ status, updatedAt: new Date() })
@@ -235,7 +297,11 @@ export async function updateTranslationStatus(id: string, status: string) {
   return result ?? null
 }
 
-export async function deleteTranslation(id: string) {
+export async function deleteTranslation(workspaceId: string, id: string) {
+  // Verify translation belongs to workspace
+  const translation = await getTranslation(workspaceId, id)
+  if (!translation) return
+
   await db
     .update(documentTranslations)
     .set({ deletedAt: new Date() })

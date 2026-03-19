@@ -166,6 +166,7 @@ export async function deleteTeam(
 }
 
 export async function listTeamMembers(
+  workspaceId: string,
   teamId: string,
 ): Promise<TeamMember[]> {
   const rows = await db
@@ -178,6 +179,11 @@ export async function listTeamMembers(
     })
     .from(teamMembers)
     .innerJoin(users, eq(teamMembers.userId, users.id))
+    .innerJoin(teams, and(
+      eq(teams.id, teamMembers.teamId),
+      eq(teams.workspaceId, workspaceId),
+      isNull(teams.deletedAt),
+    ))
     .where(eq(teamMembers.teamId, teamId))
     .orderBy(desc(teamMembers.joinedAt))
 

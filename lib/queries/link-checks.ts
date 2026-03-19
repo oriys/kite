@@ -25,7 +25,7 @@ export async function getLinkChecksByWorkspace(workspaceId: string) {
     .orderBy(linkChecks.isAlive, desc(linkChecks.lastCheckedAt))
 }
 
-export async function getLinkChecksByDocument(documentId: string) {
+export async function getLinkChecksByDocument(workspaceId: string, documentId: string) {
   return db
     .select({
       id: linkChecks.id,
@@ -37,11 +37,11 @@ export async function getLinkChecksByDocument(documentId: string) {
       documentId: linkChecks.documentId,
     })
     .from(linkChecks)
-    .where(eq(linkChecks.documentId, documentId))
+    .where(and(eq(linkChecks.documentId, documentId), eq(linkChecks.workspaceId, workspaceId)))
     .orderBy(linkChecks.isAlive, desc(linkChecks.lastCheckedAt))
 }
 
-export async function getBrokenLinkChecksByDocuments(documentIds: string[]) {
+export async function getBrokenLinkChecksByDocuments(workspaceId: string, documentIds: string[]) {
   if (documentIds.length === 0) return []
 
   return db
@@ -60,6 +60,7 @@ export async function getBrokenLinkChecksByDocuments(documentIds: string[]) {
     .where(
       and(
         inArray(linkChecks.documentId, documentIds),
+        eq(linkChecks.workspaceId, workspaceId),
         eq(linkChecks.isAlive, false),
         isNull(documents.deletedAt),
       ),
@@ -67,7 +68,7 @@ export async function getBrokenLinkChecksByDocuments(documentIds: string[]) {
     .orderBy(desc(linkChecks.lastCheckedAt))
 }
 
-export async function getLinkHealthSummaryByDocuments(documentIds: string[]) {
+export async function getLinkHealthSummaryByDocuments(workspaceId: string, documentIds: string[]) {
   if (documentIds.length === 0) {
     return { totalLinks: 0, aliveLinks: 0, deadLinks: 0, lastCheckedAt: null }
   }
@@ -80,7 +81,7 @@ export async function getLinkHealthSummaryByDocuments(documentIds: string[]) {
       lastCheckedAt: sql<Date | null>`max(${linkChecks.lastCheckedAt})`,
     })
     .from(linkChecks)
-    .where(inArray(linkChecks.documentId, documentIds))
+    .where(and(inArray(linkChecks.documentId, documentIds), eq(linkChecks.workspaceId, workspaceId)))
 
   return result ?? { totalLinks: 0, aliveLinks: 0, deadLinks: 0, lastCheckedAt: null }
 }

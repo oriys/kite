@@ -16,6 +16,6 @@ export async function GET(
     365,
   )
 
-  const analytics = await getDocumentAnalytics(id, days)
+  const analytics = await getDocumentAnalytics(result.ctx.workspaceId, id, days)
   return NextResponse.json(analytics)
 }

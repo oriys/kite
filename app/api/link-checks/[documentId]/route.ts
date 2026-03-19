@@ -26,7 +26,7 @@ export async function GET(_request: Request, context: RouteContext) {
   ).get(document.id)
   if (!access?.canView) return forbidden()
 
-  const checks = await getLinkChecksByDocument(documentId)
+  const checks = await getLinkChecksByDocument(result.ctx.workspaceId, documentId)
   return NextResponse.json(checks)
 }
 

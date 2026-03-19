@@ -30,7 +30,7 @@ export async function DELETE(
   ).get(document.id)
   if (!access?.canEdit) return forbidden()
 
-  const deleted = await deleteComment(commentId)
+  const deleted = await deleteComment(commentId, id)
   if (!deleted) return notFound()
 
   return NextResponse.json({ ok: true })
@@ -56,12 +56,12 @@ export async function PATCH(
   if (!body) return badRequest('Invalid JSON')
 
   if (body.action === 'resolve') {
-    await resolveThread(commentId, result.ctx.userId)
+    await resolveThread(commentId, result.ctx.userId, id)
     return NextResponse.json({ ok: true })
   }
 
   if (body.action === 'unresolve') {
-    await unresolveThread(commentId)
+    await unresolveThread(commentId, id)
     return NextResponse.json({ ok: true })
   }
 

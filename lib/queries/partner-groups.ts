@@ -32,7 +32,15 @@ export async function deletePartnerGroup(id: string, workspaceId: string) {
   return deleted ?? null
 }
 
-export async function addMemberToGroup(groupId: string, userId: string) {
+export async function addMemberToGroup(workspaceId: string, groupId: string, userId: string) {
+  // Verify group belongs to workspace
+  const [group] = await db
+    .select({ id: partnerGroups.id })
+    .from(partnerGroups)
+    .where(and(eq(partnerGroups.id, groupId), eq(partnerGroups.workspaceId, workspaceId), isNull(partnerGroups.deletedAt)))
+    .limit(1)
+  if (!group) return null
+
   const [member] = await db
     .insert(partnerGroupMembers)
     .values({ groupId, userId })
@@ -44,7 +52,15 @@ export async function addMemberToGroup(groupId: string, userId: string) {
   return member ?? null
 }
 
-export async function removeMemberFromGroup(groupId: string, userId: string) {
+export async function removeMemberFromGroup(workspaceId: string, groupId: string, userId: string) {
+  // Verify group belongs to workspace
+  const [group] = await db
+    .select({ id: partnerGroups.id })
+    .from(partnerGroups)
+    .where(and(eq(partnerGroups.id, groupId), eq(partnerGroups.workspaceId, workspaceId), isNull(partnerGroups.deletedAt)))
+    .limit(1)
+  if (!group) return null
+
   const [removed] = await db
     .update(partnerGroupMembers)
     .set({ deletedAt: new Date() })
@@ -59,7 +75,7 @@ export async function removeMemberFromGroup(groupId: string, userId: string) {
   return removed ?? null
 }
 
-export async function getGroupMembers(groupId: string) {
+export async function getGroupMembers(workspaceId: string, groupId: string) {
   return db
     .select({
       userId: partnerGroupMembers.userId,
@@ -69,6 +85,11 @@ export async function getGroupMembers(groupId: string) {
     })
     .from(partnerGroupMembers)
     .innerJoin(users, eq(users.id, partnerGroupMembers.userId))
+    .innerJoin(partnerGroups, and(
+      eq(partnerGroups.id, partnerGroupMembers.groupId),
+      eq(partnerGroups.workspaceId, workspaceId),
+      isNull(partnerGroups.deletedAt),
+    ))
     .where(
       and(
         eq(partnerGroupMembers.groupId, groupId),

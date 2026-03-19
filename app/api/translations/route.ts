@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   ).get(document.id)
   if (!access?.canView) return forbidden()
 
-  const translations = await getTranslationsForDocument(documentId)
+  const translations = await getTranslationsForDocument(result.ctx.workspaceId, documentId)
   return NextResponse.json(translations)
 }
 
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   ).get(document.id)
   if (!access?.canEdit) return forbidden()
 
-  const created = await createTranslation({
+  const created = await createTranslation(result.ctx.workspaceId, {
     documentId,
     locale,
     title: title || document.title,

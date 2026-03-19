@@ -36,7 +36,7 @@ export async function GET(
   const group = await verifyGroupOwnership(id, result.ctx.workspaceId)
   if (!group) return notFound()
 
-  const members = await getGroupMembers(id)
+  const members = await getGroupMembers(result.ctx.workspaceId, id)
   return NextResponse.json(members)
 }
 
@@ -57,7 +57,7 @@ export async function POST(
   const userId = typeof body.userId === 'string' ? body.userId.trim() : ''
   if (!userId) return badRequest('userId is required')
 
-  const member = await addMemberToGroup(id, userId)
+  const member = await addMemberToGroup(result.ctx.workspaceId, id, userId)
   return NextResponse.json(member ?? { groupId: id, userId }, { status: 201 })
 }
 
@@ -78,7 +78,7 @@ export async function DELETE(
   const userId = typeof body.userId === 'string' ? body.userId.trim() : ''
   if (!userId) return badRequest('userId is required')
 
-  const removed = await removeMemberFromGroup(id, userId)
+  const removed = await removeMemberFromGroup(result.ctx.workspaceId, id, userId)
   if (!removed) return notFound()
 
   return NextResponse.json({ success: true })
