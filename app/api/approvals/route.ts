@@ -6,9 +6,7 @@ import {
   listApprovalRequests,
 } from '@/lib/queries/approvals'
 import { createBulkNotifications } from '@/lib/queries/notifications'
-import { emitAuditEvent } from '@/lib/queries/audit-logs'
-import { dispatchWebhookEvent } from '@/lib/queries/webhooks'
-import { dispatchToChannels } from '@/lib/notification-sender'
+import { emitResourceEvent } from '@/lib/resource-events'
 
 export async function GET(request: NextRequest) {
   const result = await withWorkspaceAuth('guest')
@@ -75,7 +73,7 @@ export async function POST(request: NextRequest) {
     })),
   )
 
-  emitAuditEvent({
+  emitResourceEvent({
     workspaceId: result.ctx.workspaceId,
     actorId: result.ctx.userId,
     action: 'create',
@@ -83,23 +81,14 @@ export async function POST(request: NextRequest) {
     resourceId: approval.id,
     resourceTitle: title,
     metadata: { documentId, reviewerIds },
-  }).catch(() => {})
-
-  dispatchWebhookEvent(result.ctx.workspaceId, 'approval.requested', {
-    approvalId: approval.id,
-    documentId,
-    title,
-    requesterId: result.ctx.userId,
-    reviewerIds,
-  }).catch(() => {})
-
-  dispatchToChannels({
-    type: 'approval.requested',
-    title: 'Approval requested',
-    body: `Review requested for: ${title}`,
-    workspaceId: result.ctx.workspaceId,
-    linkUrl: `/docs/editor?doc=${documentId}`,
-  }).catch(() => {})
+    webhookEvent: 'approval.requested',
+    webhookPayload: { documentId, title, requesterId: result.ctx.userId, reviewerIds },
+    channel: {
+      title: 'Approval requested',
+      body: `Review requested for: ${title}`,
+      linkUrl: `/docs/editor?doc=${documentId}`,
+    },
+  })
 
   return NextResponse.json(approval, { status: 201 })
 }

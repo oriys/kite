@@ -6,7 +6,8 @@ import {
   attachDocumentAccess,
   buildDocumentAccessMap,
 } from '@/lib/queries/document-permissions'
-import { emitAuditEvent } from '@/lib/queries/audit-logs'
+import { emitResourceEvent } from '@/lib/resource-events'
+import { parsePagination } from '@/lib/pagination'
 import {
   isValidStatus,
   MAX_TITLE_LENGTH,
@@ -33,8 +34,6 @@ export async function GET(request: NextRequest) {
   const rawStatus = searchParams.get('status')
   const rawApiVersionId = searchParams.get('api_version_id')
   const rawSearchQuery = searchParams.get('q')
-  const rawPage = searchParams.get('page')
-  const rawPageSize = searchParams.get('page_size')
   const rawSort = searchParams.get('sort')
   const rawCategory = searchParams.get('category')
   const rawTag = searchParams.get('tag')
@@ -45,13 +44,8 @@ export async function GET(request: NextRequest) {
     statusFilter = rawStatus
   }
 
-  const page = rawPage ? Number.parseInt(rawPage, 10) : 1
-  if (!Number.isFinite(page) || page < 1) return badRequest('Invalid page')
-
-  const pageSize = rawPageSize ? Number.parseInt(rawPageSize, 10) : 20
-  if (!Number.isFinite(pageSize) || pageSize < 1 || pageSize > 100) {
-    return badRequest('Invalid page size')
-  }
+  const { limit: pageSize, offset } = parsePagination(searchParams, { limit: 20, maxLimit: 100 })
+  const page = Math.floor(offset / pageSize) + 1
 
   let sort: DocumentSort = 'updated_desc'
   if (rawSort) {
@@ -160,14 +154,14 @@ export async function POST(request: NextRequest) {
     result.ctx.role,
   )
 
-  emitAuditEvent({
+  emitResourceEvent({
     workspaceId: result.ctx.workspaceId,
     actorId: result.ctx.userId,
     action: 'create',
     resourceType: 'document',
     resourceId: doc.id,
     resourceTitle: doc.title,
-  }).catch(() => {})
+  })
 
   return NextResponse.json(
     attachDocumentAccess(doc, accessMap.get(doc.id)!),

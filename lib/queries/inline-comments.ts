@@ -60,6 +60,7 @@ export async function listDocumentComments(
       isNull(inlineComments.deletedAt),
     ),
     orderBy: [asc(inlineComments.createdAt)],
+    limit: 1000,
     with: {
       author: {
         columns: { name: true, image: true },

@@ -70,6 +70,7 @@ export const channelDeliveries = pgTable(
   (t) => [
     index('channel_deliveries_channel_idx').on(t.channelId),
     index('channel_deliveries_status_idx').on(t.status),
+    index('channel_deliveries_status_attempt_idx').on(t.status, t.attemptCount),
   ],
 )
 

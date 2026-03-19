@@ -4,6 +4,7 @@ import { searchDocuments } from '@/lib/search/searcher'
 import { hybridSearch } from '@/lib/search/semantic-searcher'
 import { logSearch } from '@/lib/queries/search-logs'
 import { logServerError } from '@/lib/server-errors'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 type SearchMode = 'keyword' | 'semantic' | 'hybrid'
 const SEARCH_MODES: SearchMode[] = ['keyword', 'semantic', 'hybrid']
@@ -12,6 +13,14 @@ export async function GET(req: NextRequest) {
   const authResult = await withWorkspaceAuth('guest')
   if ('error' in authResult) return authResult.error
   const { ctx } = authResult
+
+  const rl = checkRateLimit(`search:${ctx.userId}`, RATE_LIMITS.search)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Please wait before searching again.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.resetMs / 1000)) } },
+    )
+  }
 
   const q = req.nextUrl.searchParams.get('q')
   if (!q || q.trim().length === 0) {

@@ -82,6 +82,7 @@ export async function listMcpServerConfigs(workspaceId: string) {
       isNull(mcpServerConfigs.deletedAt),
     ),
     orderBy: [desc(mcpServerConfigs.createdAt)],
+    limit: 100,
   })
 }
 
@@ -148,5 +149,6 @@ export async function listEnabledMcpServerConfigs(workspaceId: string) {
       isNull(mcpServerConfigs.deletedAt),
     ),
     orderBy: [desc(mcpServerConfigs.createdAt)],
+    limit: 100,
   })
 }

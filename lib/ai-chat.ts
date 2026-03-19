@@ -79,44 +79,29 @@ import {
   type RagVisibilityRole,
 } from '@/lib/rag/types'
 import { containsCjk, extractQueryTerms } from '@/lib/search/query-terms'
+import {
+  escapeLikePattern,
+  buildVisibilityFilter,
+  isMissingSearchVectorColumnError,
+} from '@/lib/ai/visibility-filter'
+import {
+  createChatSession as _createChatSession,
+  listChatSessions as _listChatSessions,
+  getChatHistory as _getChatHistory,
+  saveChatMessage as _saveChatMessage,
+} from '@/lib/ai/chat-sessions'
+
+// Re-export session CRUD from extracted module
+export const createChatSession = _createChatSession
+export const listChatSessions = _listChatSessions
+export const getChatHistory = _getChatHistory
+export const saveChatMessage = _saveChatMessage
 
 type MemberRole = RagVisibilityRole
 type VisibilityContext = RagVisibilityContext
 
-function escapeLikePattern(s: string): string {
-  return s.replace(/[%_\\]/g, '\\$&')
-}
-
-/**
- * Build a SQL fragment that filters documents by visibility.
- * Admins/owners see everything. Members see public + partner + own + explicitly permitted.
- * `tableAlias` must match the alias used in the query (e.g. 'd' for `documents d`).
- */
-function buildVisibilityFilter(
-  tableAlias: string,
-  ctx: VisibilityContext | undefined,
-) {
-  if (!ctx) return sql``
-  if (ctx.role === 'owner' || ctx.role === 'admin') return sql``
-
-  return sql`AND (
-    ${sql.raw(tableAlias)}.visibility IN ('public', 'partner')
-    OR ${sql.raw(tableAlias)}.created_by = ${ctx.userId}
-    OR EXISTS (
-      SELECT 1 FROM document_permissions dp
-      WHERE dp.document_id = ${sql.raw(tableAlias)}.id
-        AND dp.user_id = ${ctx.userId}
-    )
-  )`
-}
-
-function isMissingSearchVectorColumnError(error: unknown) {
-  return (
-    error instanceof Error
-    && error.message.includes('search_vector')
-    && error.message.includes('does not exist')
-  )
-}
+// Visibility filter, escapeLikePattern, and isMissingSearchVectorColumnError
+// are now in lib/ai/visibility-filter.ts
 
 async function searchDocumentKeywordRows(input: {
   workspaceId: string
@@ -2032,104 +2017,7 @@ function createStaticStream(text: string) {
 
 // ─── Chat session management ────────────────────────────────────
 
-export async function createChatSession(input: {
-  workspaceId: string
-  userId: string
-  documentId?: string
-  title?: string
-}) {
-  const [session] = await db
-    .insert(aiChatSessions)
-    .values({
-      workspaceId: input.workspaceId,
-      userId: input.userId,
-      documentId: input.documentId ?? null,
-      title: input.title ?? 'New conversation',
-    })
-    .returning()
-
-  return session
-}
-
-export async function listChatSessions(input: {
-  workspaceId: string
-  userId: string
-  limit?: number
-}) {
-  return db
-    .select({
-      id: aiChatSessions.id,
-      title: aiChatSessions.title,
-      documentId: aiChatSessions.documentId,
-      createdAt: aiChatSessions.createdAt,
-      updatedAt: aiChatSessions.updatedAt,
-    })
-    .from(aiChatSessions)
-    .where(
-      and(
-        eq(aiChatSessions.workspaceId, input.workspaceId),
-        eq(aiChatSessions.userId, input.userId),
-      ),
-    )
-    .orderBy(desc(aiChatSessions.updatedAt))
-    .limit(input.limit ?? 20)
-}
-
-export async function getChatHistory(sessionId: string, workspaceId?: string) {
-  const conditions = [eq(aiChatMessages.sessionId, sessionId)]
-  if (workspaceId) {
-    conditions.push(
-      sql`${aiChatMessages.sessionId} IN (
-        SELECT id FROM ai_chat_sessions WHERE id = ${sessionId} AND workspace_id = ${workspaceId}
-      )` as ReturnType<typeof eq>,
-    )
-  }
-
-  const rows = await db
-    .select({
-      id: aiChatMessages.id,
-      role: aiChatMessages.role,
-      content: aiChatMessages.content,
-      sources: aiChatMessages.sources,
-      attribution: aiChatMessages.attribution,
-      createdAt: aiChatMessages.createdAt,
-    })
-    .from(aiChatMessages)
-    .where(and(...conditions))
-    .orderBy(aiChatMessages.createdAt)
-
-  return rows.map((row) => ({
-    ...row,
-    attribution: normalizeChatMessageAttribution(row.attribution),
-  }))
-}
-
-export async function saveChatMessage(input: {
-  sessionId: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  sources?: ChatSource[]
-  attribution?: ChatMessageAttribution
-}) {
-  const [message] = await db
-    .insert(aiChatMessages)
-    .values({
-      sessionId: input.sessionId,
-      role: input.role,
-      content: input.content,
-      sources: input.sources ?? [],
-      attribution: input.attribution,
-    })
-    .returning()
-
-  // Update session timestamp
-  await db
-    .update(aiChatSessions)
-    .set({ updatedAt: new Date() })
-    .where(eq(aiChatSessions.id, input.sessionId))
-
-  return message
-}
+// Chat session CRUD is now in lib/ai/chat-sessions.ts
 
 // ─── MCP prompt resolution ──────────────────────────────────────
 

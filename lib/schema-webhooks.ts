@@ -82,6 +82,7 @@ export const webhookDeliveries = pgTable(
   (t) => [
     index('webhook_deliveries_created_at_idx').on(t.createdAt),
     index('webhook_deliveries_webhook_created_idx').on(t.webhookId, t.createdAt),
+    index('webhook_deliveries_status_attempt_idx').on(t.status, t.attemptCount),
   ],
 )
 

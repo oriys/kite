@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { listAuditLogs, type AuditAction } from '@/lib/queries/audit-logs'
+import { parsePagination } from '@/lib/pagination'
 
 const VALID_ACTIONS: AuditAction[] = [
   'create', 'update', 'delete', 'publish', 'archive',
@@ -18,8 +19,7 @@ export async function GET(request: NextRequest) {
   const actorId = searchParams.get('actorId')
   const from = searchParams.get('from')
   const to = searchParams.get('to')
-  const limit = Math.min(Number(searchParams.get('limit') ?? 50), 100)
-  const offset = Number(searchParams.get('offset') ?? 0)
+  const { limit, offset } = parsePagination(searchParams, { limit: 50, maxLimit: 100 })
 
   if (action && !VALID_ACTIONS.includes(action))
     return badRequest('Invalid action filter')

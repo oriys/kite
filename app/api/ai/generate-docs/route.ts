@@ -27,6 +27,7 @@ import {
 import { isRagQueryMode } from '@/lib/rag/types'
 import { apiEndpoints, openapiSources } from '@/lib/schema'
 import { logServerError } from '@/lib/server-errors'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 const MAX_ENDPOINTS_PER_REQUEST = 50
 
@@ -67,6 +68,14 @@ function buildParsedEndpointLookup(endpoints: ParsedEndpoint[]) {
 export async function POST(request: NextRequest) {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
+
+  const rl = checkRateLimit(`ai-generate:${result.ctx.userId}`, RATE_LIMITS.aiGenerate)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Please wait before generating another document.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.resetMs / 1000)) } },
+    )
+  }
 
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')

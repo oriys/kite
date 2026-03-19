@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
 
 import {
   formatAiChatStreamComment,
@@ -16,6 +17,7 @@ import { aiChatSessions } from '@/lib/schema'
 import { eq, and } from 'drizzle-orm'
 import { isRagQueryMode } from '@/lib/rag/types'
 import { logServerError } from '@/lib/server-errors'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 const MAX_MESSAGE_LENGTH = 4000
 const CHAT_STREAM_KEEPALIVE_MS = 10_000
@@ -25,6 +27,14 @@ const RESUME_REPLY_PROMPT =
 export async function POST(request: NextRequest) {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
+
+  const rl = checkRateLimit(`ai-chat:${result.ctx.userId}`, RATE_LIMITS.aiChat)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Please wait before sending another message.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.resetMs / 1000)) } },
+    )
+  }
 
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')

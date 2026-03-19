@@ -215,6 +215,7 @@ export async function getEndpointsBySource(workspaceId: string, sourceId: string
   return db.query.apiEndpoints.findMany({
     where: eq(apiEndpoints.sourceId, sourceId),
     orderBy: [apiEndpoints.path, apiEndpoints.method],
+    limit: 500,
   })
 }
 

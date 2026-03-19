@@ -67,6 +67,7 @@ export async function listAiProviderConfigs(workspaceId: string) {
       isNull(aiProviderConfigs.deletedAt),
     ),
     orderBy: [desc(aiProviderConfigs.createdAt)],
+    limit: 100,
   })
 }
 

@@ -18,9 +18,7 @@ import {
   getPendingApprovalsForDocument,
   getApprovedApprovalForDocument,
 } from '@/lib/queries/approvals'
-import { emitAuditEvent } from '@/lib/queries/audit-logs'
-import { dispatchWebhookEvent } from '@/lib/queries/webhooks'
-import { dispatchToChannels } from '@/lib/notification-sender'
+import { emitResourceEvent } from '@/lib/resource-events'
 import { runPublishPreflight } from '@/lib/publish-preflight'
 import type { DocStatus } from '@/lib/documents'
 import { isValidStatus, ALLOWED_TRANSITIONS } from '@/lib/constants'
@@ -83,8 +81,7 @@ export async function POST(
     await buildDocumentAccessMap([doc], result.ctx.userId, result.ctx.role)
   ).get(doc.id)
 
-  // Audit events (fire-and-forget)
-  emitAuditEvent({
+  emitResourceEvent({
     workspaceId: result.ctx.workspaceId,
     actorId: result.ctx.userId,
     action: 'status_change',
@@ -92,35 +89,25 @@ export async function POST(
     resourceId: existing.id,
     resourceTitle: existing.title,
     metadata: { from: existing.status, to: newStatus },
-  }).catch(() => {})
+    webhookEvent: `document.${newStatus}`,
+    webhookPayload: { status: newStatus, previousStatus: existing.status },
+    channel: {
+      title: `Document ${newStatus}: ${existing.title}`,
+      body: `"${existing.title}" has been moved to ${newStatus}.`,
+      linkUrl: `/docs/editor?doc=${existing.id}`,
+    },
+  })
 
   if (newStatus === 'published') {
-    emitAuditEvent({
+    emitResourceEvent({
       workspaceId: result.ctx.workspaceId,
       actorId: result.ctx.userId,
       action: 'publish',
       resourceType: 'document',
       resourceId: existing.id,
       resourceTitle: existing.title,
-    }).catch(() => {})
+    })
   }
-
-  // Webhook + channel dispatch (fire-and-forget)
-  dispatchWebhookEvent(result.ctx.workspaceId, `document.${newStatus}`, {
-    documentId: existing.id,
-    title: existing.title,
-    status: newStatus,
-    previousStatus: existing.status,
-    actorId: result.ctx.userId,
-  }).catch(() => {})
-
-  dispatchToChannels({
-    type: `document.${newStatus}`,
-    title: `Document ${newStatus}: ${existing.title}`,
-    body: `"${existing.title}" has been moved to ${newStatus}.`,
-    workspaceId: result.ctx.workspaceId,
-    linkUrl: `/docs/editor?doc=${existing.id}`,
-  }).catch(() => {})
 
   return NextResponse.json(attachDocumentAccess(doc, updatedAccess!))
 }

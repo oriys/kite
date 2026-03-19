@@ -1,13 +1,23 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { captureClientError } from '@/lib/error-collector'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 /**
  * POST /api/error-reports
  * Public endpoint for client-side error reporting (from error boundaries / window.onerror).
- * No auth required — but rate-limited by basic payload validation.
+ * No auth required — rate-limited by IP.
  */
 export async function POST(request: NextRequest) {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  const rl = checkRateLimit(`error-report:${ip}`, RATE_LIMITS.errorReports)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.resetMs / 1000)) } },
+    )
+  }
+
   let body: Record<string, unknown>
   try {
     body = await request.json()

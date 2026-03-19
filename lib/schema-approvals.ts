@@ -59,6 +59,7 @@ export const approvalRequests = pgTable(
     index('approval_requests_document_id_idx').on(t.documentId),
     index('approval_requests_requester_id_idx').on(t.requesterId),
     index('approval_requests_status_idx').on(t.status),
+    index('approval_requests_policy_id_idx').on(t.policyId),
   ],
 )
 

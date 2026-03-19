@@ -3,14 +3,24 @@ import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
 import { submitApprovalDecision } from '@/lib/queries/approvals'
 import { createNotification } from '@/lib/queries/notifications'
-import { emitAuditEvent } from '@/lib/queries/audit-logs'
-import { dispatchWebhookEvent } from '@/lib/queries/webhooks'
-import { dispatchToChannels } from '@/lib/notification-sender'
+import { emitResourceEvent } from '@/lib/resource-events'
 
 const DECISION_LABELS: Record<string, string> = {
   approved: 'approved',
   rejected: 'rejected',
   changes_requested: 'requested changes on',
+}
+
+const AUDIT_ACTIONS = {
+  approved: 'approve',
+  rejected: 'reject',
+  changes_requested: 'request_changes',
+} as const
+
+const WEBHOOK_EVENTS: Record<string, string> = {
+  approved: 'approval.approved',
+  rejected: 'approval.rejected',
+  changes_requested: 'approval.changes_requested',
 }
 
 export async function POST(
@@ -53,44 +63,24 @@ export async function POST(
     })
   }
 
-  // Audit event
-  const AUDIT_ACTIONS = {
-    approved: 'approve',
-    rejected: 'reject',
-    changes_requested: 'request_changes',
-  } as const
   const auditAction = AUDIT_ACTIONS[decision as keyof typeof AUDIT_ACTIONS]
-  emitAuditEvent({
+  const webhookEvent = WEBHOOK_EVENTS[decision] ?? `approval.${decision}`
+
+  emitResourceEvent({
     workspaceId: result.ctx.workspaceId,
     actorId: result.ctx.userId,
     action: auditAction,
     resourceType: 'approval',
     resourceId: id,
     metadata: { decision, comment: body.comment, documentId: outcome.documentId },
-  }).catch(() => {})
-
-  // Webhook + channel dispatch
-  const WEBHOOK_EVENTS: Record<string, string> = {
-    approved: 'approval.approved',
-    rejected: 'approval.rejected',
-    changes_requested: 'approval.changes_requested',
-  }
-  const webhookEvent = WEBHOOK_EVENTS[decision] ?? `approval.${decision}`
-  dispatchWebhookEvent(result.ctx.workspaceId, webhookEvent, {
-    approvalId: id,
-    documentId: outcome.documentId,
-    decision,
-    reviewerId: result.ctx.userId,
-    comment: body.comment,
-  }).catch(() => {})
-
-  dispatchToChannels({
-    type: webhookEvent,
-    title: `Approval ${decision}`,
-    body: `A reviewer has ${DECISION_LABELS[decision] ?? decision} a document.`,
-    workspaceId: result.ctx.workspaceId,
-    linkUrl: outcome.documentId ? `/docs/editor?doc=${outcome.documentId}` : undefined,
-  }).catch(() => {})
+    webhookEvent,
+    webhookPayload: { documentId: outcome.documentId, decision, reviewerId: result.ctx.userId, comment: body.comment },
+    channel: {
+      title: `Approval ${decision}`,
+      body: `A reviewer has ${DECISION_LABELS[decision] ?? decision} a document.`,
+      linkUrl: outcome.documentId ? `/docs/editor?doc=${outcome.documentId}` : undefined,
+    },
+  })
 
   return NextResponse.json(outcome)
 }

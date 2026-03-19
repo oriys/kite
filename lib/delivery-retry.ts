@@ -5,7 +5,7 @@ import {
   notificationChannels,
   channelDeliveries,
 } from './schema'
-import { eq, and, lte, sql } from 'drizzle-orm'
+import { eq, and, lte, sql, inArray } from 'drizzle-orm'
 import { deliverToChannel, type NotificationPayload } from './notification-sender'
 
 const MAX_RETRIES = 5
@@ -37,11 +37,18 @@ export async function processWebhookRetryQueue() {
     )
     .limit(50)
 
+  if (pending.length === 0) return 0
+
+  // Batch-load all referenced webhooks to avoid N+1
+  const webhookIds = [...new Set(pending.map((d) => d.webhookId))]
+  const webhookRows = await db.query.webhooks.findMany({
+    where: inArray(webhooks.id, webhookIds),
+  })
+  const webhookMap = new Map(webhookRows.map((w) => [w.id, w]))
+
   let retried = 0
   for (const delivery of pending) {
-    const wh = await db.query.webhooks.findFirst({
-      where: eq(webhooks.id, delivery.webhookId),
-    })
+    const wh = webhookMap.get(delivery.webhookId)
     if (!wh || !wh.isActive || wh.deletedAt) {
       // Webhook no longer active — mark as permanently failed
       await db
@@ -127,14 +134,21 @@ export async function processChannelRetryQueue() {
     )
     .limit(50)
 
+  if (pending.length === 0) return 0
+
+  // Batch-load all referenced channels to avoid N+1
+  const channelIds = [...new Set(pending.map((d) => d.channelId))]
+  const channelRows = await db.query.notificationChannels.findMany({
+    where: and(
+      inArray(notificationChannels.id, channelIds),
+      eq(notificationChannels.enabled, true),
+    ),
+  })
+  const channelMap = new Map(channelRows.map((c) => [c.id, c]))
+
   let retried = 0
   for (const delivery of pending) {
-    const channel = await db.query.notificationChannels.findFirst({
-      where: and(
-        eq(notificationChannels.id, delivery.channelId),
-        eq(notificationChannels.enabled, true),
-      ),
-    })
+    const channel = channelMap.get(delivery.channelId)
     if (!channel) {
       await db
         .update(channelDeliveries)

@@ -191,6 +191,7 @@ export async function listDocuments(
     .from(documents)
     .where(and(...conditions))
     .orderBy(...orderBy)
+    .limit(500)
 }
 
 async function loadDocument(where: SQL<unknown>) {

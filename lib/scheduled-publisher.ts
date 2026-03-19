@@ -1,7 +1,8 @@
 import { db } from './db'
 import { scheduledPublications, documents } from './schema'
-import { eq, and, lte, isNull } from 'drizzle-orm'
+import { eq, and, lte, isNull, inArray } from 'drizzle-orm'
 import { transitionDocument } from './queries/documents'
+import { getApprovedApprovalForDocument } from './queries/approvals'
 
 export async function processScheduledPublications() {
   const now = new Date()
@@ -23,22 +24,26 @@ export async function processScheduledPublications() {
       createdBy: scheduledPublications.createdBy,
     })
 
+  if (claimed.length === 0) return []
+
+  // Batch-load document states to avoid N+1
+  const documentIds = [...new Set(claimed.map((c) => c.documentId))]
+  const docRows = await db
+    .select({ id: documents.id, status: documents.status })
+    .from(documents)
+    .where(
+      and(
+        inArray(documents.id, documentIds),
+        isNull(documents.deletedAt),
+      ),
+    )
+  const docMap = new Map(docRows.map((d) => [d.id, d]))
+
   const results: { id: string; success: boolean; error?: string }[] = []
 
   for (const item of claimed) {
     try {
-      // Verify document is still in a publishable state
-      const [doc] = await db
-        .select({ status: documents.status })
-        .from(documents)
-        .where(
-          and(
-            eq(documents.id, item.documentId),
-            eq(documents.workspaceId, item.workspaceId),
-            isNull(documents.deletedAt),
-          ),
-        )
-        .limit(1)
+      const doc = docMap.get(item.documentId)
 
       if (!doc || doc.status !== 'review') {
         await db
@@ -47,6 +52,18 @@ export async function processScheduledPublications() {
           .where(eq(scheduledPublications.id, item.id))
 
         results.push({ id: item.id, success: false, error: 'Document not in publishable state' })
+        continue
+      }
+
+      // Verify approval has been granted before publishing
+      const approved = await getApprovedApprovalForDocument(item.documentId, item.workspaceId)
+      if (!approved) {
+        await db
+          .update(scheduledPublications)
+          .set({ status: 'skipped', updatedAt: new Date() })
+          .where(eq(scheduledPublications.id, item.id))
+
+        results.push({ id: item.id, success: false, error: 'No approved approval request' })
         continue
       }
 
