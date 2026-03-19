@@ -101,7 +101,7 @@ const NAV_ITEMS: ReadonlyArray<{
 ]
 
 const DESKTOP_NAV_LINK_CLASS =
-  'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors'
+  'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-2.5 text-xs font-medium transition-colors'
 const DESKTOP_NAV_LINK_ACTIVE_CLASS = 'bg-accent/50 text-foreground'
 const DESKTOP_NAV_LINK_IDLE_CLASS =
   'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
@@ -362,7 +362,7 @@ export function DocsTopNav() {
                   {item.label}
                 </span>
               ))}
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2.5 text-xs font-medium text-muted-foreground">
                 More
                 <ChevronDown className="size-3 opacity-60" />
               </span>
