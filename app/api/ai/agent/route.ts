@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
   // Fire-and-forget: run the agent in the background
   void (async () => {
     try {
-      await updateAgentTaskStatus(task.id, 'running', {
+      await updateAgentTaskStatus(result.ctx.workspaceId, task.id, 'running', {
         progress: {
           currentStep: 0,
           maxSteps: runSettings.maxSteps,
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         maxSteps: runSettings.maxSteps,
         temperature: runSettings.temperature,
         onStep: (step) => {
-          void appendAgentTaskStep(task.id, step, {
+          void appendAgentTaskStep(result.ctx.workspaceId, task.id, step, {
             maxSteps: runSettings.maxSteps,
           }).catch((err) => {
             logServerError('Failed to persist agent step', err, { taskId: task.id })
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      await updateAgentTaskStatus(task.id, 'completed', {
+      await updateAgentTaskStatus(result.ctx.workspaceId, task.id, 'completed', {
         result: agentResult.result,
         steps: agentResult.steps,
         modelId: agentResult.modelRef,
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
       logServerError('Agent task failed', error instanceof Error ? error : new Error(message), {
         taskId: task.id,
       })
-      await updateAgentTaskStatus(task.id, 'failed', { error: message }).catch(() => {})
+      await updateAgentTaskStatus(result.ctx.workspaceId, task.id, 'failed', { error: message }).catch(() => {})
     }
   })()
 

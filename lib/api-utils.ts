@@ -92,6 +92,7 @@ export async function withWorkspaceAuth(
 
   const membership = await verifyWorkspaceMembership(user.id, workspace.id)
   if (!membership) return { error: forbidden() }
+  if (membership.status !== 'active') return { error: forbidden() }
 
   const role = membership.role as MemberRole
   if (!hasMinimumRole(role, requiredRole)) return { error: forbidden() }

@@ -14,7 +14,9 @@ export async function POST(request: NextRequest) {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
-  const body = await request.json()
+  const body = await request.json().catch(() => null)
+  if (!body) return badRequest('Invalid JSON')
+
   const { openapiSourceId, language, packageName, version = '1.0.0' } = body
 
   if (!openapiSourceId || !language || !packageName) {

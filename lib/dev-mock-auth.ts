@@ -1,4 +1,4 @@
-export const DEV_MOCK_AUTH_ENABLED = process.env.NODE_ENV !== 'production'
+export const DEV_MOCK_AUTH_ENABLED = process.env.ENABLE_MOCK_AUTH === 'true'
 
 export interface DevMockUser {
   id: string

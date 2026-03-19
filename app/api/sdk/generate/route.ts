@@ -14,7 +14,9 @@ export async function POST(request: NextRequest) {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
-  const body = await request.json()
+  const body = await request.json().catch(() => null)
+  if (!body) return badRequest('Invalid JSON')
+
   const { openapiSourceId, language, packageName, version = '1.0.0' } = body
 
   if (!openapiSourceId || !language || !packageName) {
@@ -40,10 +42,13 @@ export async function POST(request: NextRequest) {
   const files = generateSdk(generatorSpec, language, packageName, version)
   const zipBuffer = await packageSdk(files)
 
+  const safeName = packageName.replace(/[^a-zA-Z0-9._-]/g, '')
+  const safeVersion = version.replace(/[^a-zA-Z0-9._-]/g, '')
+
   return new NextResponse(zipBuffer, {
     headers: {
       'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="${packageName}-${language}-v${version}.zip"`,
+      'Content-Disposition': `attachment; filename="${safeName}-${language}-v${safeVersion}.zip"`,
     },
   })
 }

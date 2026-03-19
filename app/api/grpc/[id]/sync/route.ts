@@ -15,9 +15,9 @@ export async function POST(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getGrpcSource(id)
+  const source = await getGrpcSource(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 
@@ -43,7 +43,7 @@ export async function POST(
   }
 
   const checksum = computeChecksum(body.rawContent)
-  const updated = await syncGrpcSource(id, body.rawContent, checksum, spec)
+  const updated = await syncGrpcSource(ctx.workspaceId, id, body.rawContent, checksum, spec)
 
   return NextResponse.json({
     id: updated.id,

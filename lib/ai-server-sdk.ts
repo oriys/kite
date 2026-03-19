@@ -113,8 +113,8 @@ export async function requestAiTextCompletion(input: {
     }
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
-    const message = error instanceof Error ? error.message : 'The AI provider request failed.'
-    throw new AiCompletionError(message, 502)
+    console.error('AI provider error:', error)
+    throw new AiCompletionError('AI service temporarily unavailable', 502)
   }
 }
 
@@ -159,8 +159,8 @@ export async function requestAiTextCompletionStream(input: {
     }
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
-    const message = error instanceof Error ? error.message : 'The AI provider request failed.'
-    throw new AiCompletionError(message, 502)
+    console.error('AI provider error:', error)
+    throw new AiCompletionError('AI service temporarily unavailable', 502)
   }
 }
 
@@ -189,8 +189,8 @@ export async function requestAiEmbedding(input: {
     return { embeddings }
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
-    const message = error instanceof Error ? error.message : 'The embedding request failed.'
-    throw new AiCompletionError(message, 502)
+    console.error('AI embedding error:', error)
+    throw new AiCompletionError('AI service temporarily unavailable', 502)
   }
 }
 
@@ -275,8 +275,8 @@ export async function requestAiRerank(input: {
     return { results }
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
-    const message = error instanceof Error ? error.message : 'The reranker request failed.'
-    throw new AiCompletionError(message, 502)
+    console.error('AI reranker error:', error)
+    throw new AiCompletionError('AI service temporarily unavailable', 502)
   }
 }
 
@@ -371,8 +371,8 @@ export async function requestAiChatCompletionStream(input: {
     }
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
-    const message = error instanceof Error ? error.message : 'The AI provider request failed.'
-    throw new AiCompletionError(message, 502)
+    console.error('AI chat provider error:', error)
+    throw new AiCompletionError('AI service temporarily unavailable', 502)
   }
 }
 

@@ -31,15 +31,17 @@ export async function createWorkspace(
   slug: string,
   ownerId: string,
 ) : Promise<UserWorkspace> {
-  const [ws] = await db.insert(workspaces).values({ name, slug }).returning()
-  await db
-    .insert(workspaceMembers)
-    .values({ userId: ownerId, workspaceId: ws.id, role: 'owner' })
+  return db.transaction(async (tx) => {
+    const [ws] = await tx.insert(workspaces).values({ name, slug }).returning()
+    await tx
+      .insert(workspaceMembers)
+      .values({ userId: ownerId, workspaceId: ws.id, role: 'owner' })
 
-  return {
-    ...ws,
-    role: 'owner',
-  }
+    return {
+      ...ws,
+      role: 'owner' as const,
+    }
+  })
 }
 
 export async function ensureDefaultWorkspace(
@@ -50,8 +52,16 @@ export async function ensureDefaultWorkspace(
   if (existing.length > 0) return existing[0]
 
   const slug = `ws-${userId.slice(0, 8)}`
-  const name = userName ? `${userName}'s Workspace` : 'My Workspace'
-  return createWorkspace(name, slug, userId)
+  const wsName = userName ? `${userName}'s Workspace` : 'My Workspace'
+  try {
+    return await createWorkspace(wsName, slug, userId)
+  } catch {
+    // Race condition: another request created the workspace concurrently.
+    // The unique slug constraint prevents duplicates — return the existing one.
+    const retried = await getUserWorkspaces(userId)
+    if (retried.length > 0) return retried[0]
+    throw new Error('Failed to create default workspace')
+  }
 }
 
 export async function getDefaultWorkspace(

@@ -83,6 +83,10 @@ import { containsCjk, extractQueryTerms } from '@/lib/search/query-terms'
 type MemberRole = RagVisibilityRole
 type VisibilityContext = RagVisibilityContext
 
+function escapeLikePattern(s: string): string {
+  return s.replace(/[%_\\]/g, '\\$&')
+}
+
 /**
  * Build a SQL fragment that filters documents by visibility.
  * Admins/owners see everything. Members see public + partner + own + explicitly permitted.
@@ -126,7 +130,7 @@ async function searchDocumentKeywordRows(input: {
     ? sql`AND d.id = ${input.documentId}`
     : sql``
   const visibilityFilter = buildVisibilityFilter('d', input.visibility)
-  const likePatterns = input.terms.map((term) => `%${term}%`)
+  const likePatterns = input.terms.map((term) => `%${escapeLikePattern(term)}%`)
   const whereMatches = sql.join(
     likePatterns.map(
       (pattern) => sql`(d.title ILIKE ${pattern} OR d.content ILIKE ${pattern})`,
@@ -1449,7 +1453,7 @@ async function searchKeywordDocuments(input: {
   if (terms.length === 0) return []
 
   const topK = input.topK ?? TOP_K_KEYWORD_DOCUMENTS
-  const likePatterns = terms.map((term) => `%${term}%`)
+  const likePatterns = terms.map((term) => `%${escapeLikePattern(term)}%`)
   const whereMatches = sql.join(
     likePatterns.map(
       (pattern) => sql`(ks.title ILIKE ${pattern} OR ks.raw_content ILIKE ${pattern})`,
@@ -2071,7 +2075,16 @@ export async function listChatSessions(input: {
     .limit(input.limit ?? 20)
 }
 
-export async function getChatHistory(sessionId: string) {
+export async function getChatHistory(sessionId: string, workspaceId?: string) {
+  const conditions = [eq(aiChatMessages.sessionId, sessionId)]
+  if (workspaceId) {
+    conditions.push(
+      sql`${aiChatMessages.sessionId} IN (
+        SELECT id FROM ai_chat_sessions WHERE id = ${sessionId} AND workspace_id = ${workspaceId}
+      )` as ReturnType<typeof eq>,
+    )
+  }
+
   const rows = await db
     .select({
       id: aiChatMessages.id,
@@ -2082,7 +2095,7 @@ export async function getChatHistory(sessionId: string) {
       createdAt: aiChatMessages.createdAt,
     })
     .from(aiChatMessages)
-    .where(eq(aiChatMessages.sessionId, sessionId))
+    .where(and(...conditions))
     .orderBy(aiChatMessages.createdAt)
 
   return rows.map((row) => ({
@@ -2238,7 +2251,7 @@ export async function streamChatResponse(input: {
   }
 }) {
   // 1. Get chat history — preserve sources on each message for P1/P2
-  const history = await getChatHistory(input.sessionId)
+  const history = await getChatHistory(input.sessionId, input.workspaceId)
   const recentHistoryWithSources: HistoryMessageWithSources[] = history
     .slice(-MAX_HISTORY_MESSAGES)
     .filter((m) => m.role === 'user' || m.role === 'assistant')

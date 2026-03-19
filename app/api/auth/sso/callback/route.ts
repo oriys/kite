@@ -1,18 +1,26 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { users, accounts, workspaceMembers, ssoConfigs } from '@/lib/schema'
 import { encode } from 'next-auth/jwt'
+import { parsePublicHttpUrl } from '@/lib/outbound-http'
 
 interface SsoState {
   workspaceId: string
   configId: string
 }
 
-function parseState(raw: string | null): SsoState | null {
+function verifyState(raw: string | null): SsoState | null {
   if (!raw) return null
   try {
-    return JSON.parse(Buffer.from(raw, 'base64url').toString())
+    const { data, hmac } = JSON.parse(Buffer.from(raw, 'base64url').toString())
+    const expected = crypto
+      .createHmac('sha256', process.env.AUTH_SECRET || '')
+      .update(data)
+      .digest('base64url')
+    if (hmac !== expected) return null
+    return JSON.parse(data)
   } catch {
     return null
   }
@@ -37,7 +45,7 @@ export async function GET(request: NextRequest) {
     return signinError(request, 'sso_no_code')
   }
 
-  const state = parseState(stateRaw)
+  const state = verifyState(stateRaw)
   if (!state) {
     return signinError(request, 'sso_invalid_state')
   }
@@ -52,10 +60,20 @@ export async function GET(request: NextRequest) {
 
   const redirectUri = new URL('/api/auth/sso/callback', request.url).toString()
 
+  // Validate issuer URLs against SSRF before making outbound requests
+  const tokenEndpoint = `${config.issuerUrl}/token`
+  const userinfoEndpoint = `${config.issuerUrl}/userinfo`
+  try {
+    parsePublicHttpUrl(tokenEndpoint)
+    parsePublicHttpUrl(userinfoEndpoint)
+  } catch {
+    return signinError(request, 'sso_invalid_issuer_url')
+  }
+
   // Exchange code for tokens
   let tokenData: Record<string, unknown>
   try {
-    const tokenRes = await fetch(`${config.issuerUrl}/token`, {
+    const tokenRes = await fetch(tokenEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -82,7 +100,7 @@ export async function GET(request: NextRequest) {
   // Fetch user info
   let userInfo: Record<string, unknown>
   try {
-    const userRes = await fetch(`${config.issuerUrl}/userinfo`, {
+    const userRes = await fetch(userinfoEndpoint, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     if (!userRes.ok) {

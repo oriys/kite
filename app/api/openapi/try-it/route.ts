@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
+import { parsePublicHttpUrl } from '@/lib/outbound-http'
 
 interface TryItRequest {
   method: string
@@ -7,54 +9,29 @@ interface TryItRequest {
   body?: string
 }
 
-const BLOCKED_HOSTS = [
-  'localhost',
-  '127.0.0.1',
-  '0.0.0.0',
-  '::1',
-  '[::1]',
-  '169.254.169.254', // cloud metadata
-  'metadata.google.internal',
-]
-
-function isBlockedUrl(urlString: string): boolean {
-  try {
-    const parsed = new URL(urlString)
-    const hostname = parsed.hostname.toLowerCase()
-    if (BLOCKED_HOSTS.includes(hostname)) return true
-    // Block private IP ranges
-    if (/^10\./.test(hostname)) return true
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return true
-    if (/^192\.168\./.test(hostname)) return true
-    return false
-  } catch {
-    return true
-  }
-}
-
 export async function POST(request: NextRequest) {
+  const authResult = await withWorkspaceAuth('member')
+  if ('error' in authResult) return authResult.error
+
   let payload: TryItRequest
   try {
     payload = await request.json()
   } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body' },
-      { status: 400 },
-    )
+    return badRequest('Invalid JSON body')
   }
 
   const { method, url, headers, body } = payload
 
   if (!method || !url) {
-    return NextResponse.json(
-      { error: 'method and url are required' },
-      { status: 400 },
-    )
+    return badRequest('method and url are required')
   }
 
-  if (isBlockedUrl(url)) {
+  let targetUrl: URL
+  try {
+    targetUrl = parsePublicHttpUrl(url)
+  } catch (err) {
     return NextResponse.json(
-      { error: 'Requests to localhost and private networks are not allowed' },
+      { error: err instanceof Error ? err.message : 'Invalid URL' },
       { status: 403 },
     )
   }
@@ -73,7 +50,7 @@ export async function POST(request: NextRequest) {
     const timeout = setTimeout(() => controller.abort(), 30_000)
 
     const start = performance.now()
-    const response = await fetch(url, {
+    const response = await fetch(targetUrl.toString(), {
       method: upperMethod,
       headers: headers ?? {},
       body: ['GET', 'HEAD'].includes(upperMethod) ? undefined : (body ?? undefined),

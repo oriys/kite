@@ -55,6 +55,7 @@ export async function listAgentTasks(workspaceId: string, limit = 20) {
 }
 
 export async function updateAgentTaskStatus(
+  workspaceId: string,
   taskId: string,
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled',
   extra?: {
@@ -78,10 +79,11 @@ export async function updateAgentTaskStatus(
   if (extra?.modelId !== undefined) updates.modelId = extra.modelId
   if (extra?.progress !== undefined) updates.progress = extra.progress
 
-  await db.update(agentTasks).set(updates).where(eq(agentTasks.id, taskId))
+  await db.update(agentTasks).set(updates).where(and(eq(agentTasks.id, taskId), eq(agentTasks.workspaceId, workspaceId)))
 }
 
 export async function appendAgentTaskStep(
+  workspaceId: string,
   taskId: string,
   step: AgentStepRecord,
   options?: { maxSteps?: number },
@@ -99,5 +101,5 @@ export async function appendAgentTaskStep(
             : 'Generating response…',
       },
     })
-    .where(eq(agentTasks.id, taskId))
+    .where(and(eq(agentTasks.id, taskId), eq(agentTasks.workspaceId, workspaceId)))
 }

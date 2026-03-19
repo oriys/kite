@@ -17,7 +17,7 @@ export async function POST(
     return badRequest(`Cannot cancel a task with status "${task.status}"`)
   }
 
-  await updateAgentTaskStatus(id, 'cancelled')
+  await updateAgentTaskStatus(result.ctx.workspaceId, id, 'cancelled')
 
   return NextResponse.json({ task: { ...task, status: 'cancelled' } })
 }

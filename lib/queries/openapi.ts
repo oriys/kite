@@ -31,11 +31,15 @@ function buildApiEndpointValues(
   }))
 }
 
-async function hasOpenapiSource(id: string) {
+async function hasOpenapiSource(workspaceId: string, id: string) {
   const [source] = await db
     .select({ id: openapiSources.id })
     .from(openapiSources)
-    .where(and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)))
+    .where(and(
+      eq(openapiSources.id, id),
+      eq(openapiSources.workspaceId, workspaceId),
+      isNull(openapiSources.deletedAt),
+    ))
     .limit(1)
 
   return Boolean(source)
@@ -59,9 +63,13 @@ export async function createOpenapiSource(
   })
 }
 
-export async function getOpenapiSource(id: string) {
+export async function getOpenapiSource(workspaceId: string, id: string) {
   return db.query.openapiSources.findFirst({
-    where: and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)),
+    where: and(
+      eq(openapiSources.id, id),
+      eq(openapiSources.workspaceId, workspaceId),
+      isNull(openapiSources.deletedAt),
+    ),
     columns: {
       id: true,
       workspaceId: true,
@@ -89,9 +97,13 @@ export async function getOpenapiSource(id: string) {
   })
 }
 
-export async function getOpenapiSourceWithContent(id: string) {
+export async function getOpenapiSourceWithContent(workspaceId: string, id: string) {
   return db.query.openapiSources.findFirst({
-    where: and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)),
+    where: and(
+      eq(openapiSources.id, id),
+      eq(openapiSources.workspaceId, workspaceId),
+      isNull(openapiSources.deletedAt),
+    ),
   })
 }
 
@@ -122,16 +134,21 @@ export async function listOpenapiSources(workspaceId: string) {
  * and re-extract endpoints — all inside a transaction.
  */
 export async function syncOpenapiSource(
+  workspaceId: string,
   id: string,
   newContent: string,
   checksum: string,
 ) {
   return db.transaction(async (tx) => {
-    // Fetch current source
+    // Fetch current source, scoped to workspace
     const [current] = await tx
       .select()
       .from(openapiSources)
-      .where(and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)))
+      .where(and(
+        eq(openapiSources.id, id),
+        eq(openapiSources.workspaceId, workspaceId),
+        isNull(openapiSources.deletedAt),
+      ))
 
     if (!current) throw new Error('Source not found')
 
@@ -179,17 +196,21 @@ export async function syncOpenapiSource(
   })
 }
 
-export async function deleteOpenapiSource(id: string) {
+export async function deleteOpenapiSource(workspaceId: string, id: string) {
   const result = await db
     .update(openapiSources)
     .set({ deletedAt: new Date() })
-    .where(and(eq(openapiSources.id, id), isNull(openapiSources.deletedAt)))
+    .where(and(
+      eq(openapiSources.id, id),
+      eq(openapiSources.workspaceId, workspaceId),
+      isNull(openapiSources.deletedAt),
+    ))
     .returning()
   return result.length > 0
 }
 
-export async function getEndpointsBySource(sourceId: string) {
-  if (!(await hasOpenapiSource(sourceId))) return []
+export async function getEndpointsBySource(workspaceId: string, sourceId: string) {
+  if (!(await hasOpenapiSource(workspaceId, sourceId))) return []
 
   return db.query.apiEndpoints.findMany({
     where: eq(apiEndpoints.sourceId, sourceId),
@@ -198,10 +219,11 @@ export async function getEndpointsBySource(sourceId: string) {
 }
 
 export async function replaceOpenapiSourceEndpoints(
+  workspaceId: string,
   sourceId: string,
   endpoints: ParsedEndpoint[],
 ) {
-  if (!(await hasOpenapiSource(sourceId))) return []
+  if (!(await hasOpenapiSource(workspaceId, sourceId))) return []
 
   return db.transaction(async (tx) => {
     await tx
@@ -219,8 +241,8 @@ export async function replaceOpenapiSourceEndpoints(
   })
 }
 
-export async function getLatestSnapshot(sourceId: string) {
-  if (!(await hasOpenapiSource(sourceId))) return null
+export async function getLatestSnapshot(workspaceId: string, sourceId: string) {
+  if (!(await hasOpenapiSource(workspaceId, sourceId))) return null
 
   return db.query.openapiSnapshots.findFirst({
     where: eq(openapiSnapshots.sourceId, sourceId),

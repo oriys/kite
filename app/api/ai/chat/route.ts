@@ -11,6 +11,9 @@ import {
   streamChatResponse,
 } from '@/lib/ai-chat'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
+import { db } from '@/lib/db'
+import { aiChatSessions } from '@/lib/schema'
+import { eq, and } from 'drizzle-orm'
 import { isRagQueryMode } from '@/lib/rag/types'
 import { logServerError } from '@/lib/server-errors'
 
@@ -56,6 +59,16 @@ export async function POST(request: NextRequest) {
   if (!resume && !rawMessage) return badRequest('Message is required')
   if (resume && !sessionId) {
     return badRequest('Session is required to resume a reply')
+  }
+
+  if (sessionId) {
+    const session = await db.query.aiChatSessions.findFirst({
+      where: and(
+        eq(aiChatSessions.id, sessionId),
+        eq(aiChatSessions.workspaceId, result.ctx.workspaceId),
+      ),
+    })
+    if (!session) return badRequest('Invalid session')
   }
   if (!resume && rawMessage.length > MAX_MESSAGE_LENGTH) {
     return badRequest(`Message too long. Limit is ${MAX_MESSAGE_LENGTH} characters.`)

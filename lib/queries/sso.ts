@@ -12,9 +12,9 @@ export async function getSsoConfigs(workspaceId: string): Promise<SsoConfig[]> {
     .orderBy(ssoConfigs.createdAt)
 }
 
-export async function getSsoConfig(id: string): Promise<SsoConfig | undefined> {
+export async function getSsoConfig(workspaceId: string, id: string): Promise<SsoConfig | undefined> {
   return db.query.ssoConfigs.findFirst({
-    where: eq(ssoConfigs.id, id),
+    where: and(eq(ssoConfigs.id, id), eq(ssoConfigs.workspaceId, workspaceId)),
   })
 }
 
@@ -26,19 +26,20 @@ export async function createSsoConfig(
 }
 
 export async function updateSsoConfig(
+  workspaceId: string,
   id: string,
   data: Partial<Omit<typeof ssoConfigs.$inferInsert, 'id' | 'createdAt'>>,
 ): Promise<SsoConfig | undefined> {
   const [config] = await db
     .update(ssoConfigs)
     .set({ ...data, updatedAt: new Date() })
-    .where(eq(ssoConfigs.id, id))
+    .where(and(eq(ssoConfigs.id, id), eq(ssoConfigs.workspaceId, workspaceId)))
     .returning()
   return config
 }
 
-export async function deleteSsoConfig(id: string): Promise<boolean> {
-  const result = await db.delete(ssoConfigs).where(eq(ssoConfigs.id, id)).returning()
+export async function deleteSsoConfig(workspaceId: string, id: string): Promise<boolean> {
+  const result = await db.delete(ssoConfigs).where(and(eq(ssoConfigs.id, id), eq(ssoConfigs.workspaceId, workspaceId))).returning()
   return result.length > 0
 }
 

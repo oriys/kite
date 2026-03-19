@@ -20,18 +20,18 @@ export async function GET(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getOpenapiSourceWithContent(id)
+  const source = await getOpenapiSourceWithContent(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 
-  let endpoints = await getEndpointsBySource(id)
+  let endpoints = await getEndpointsBySource(ctx.workspaceId, id)
 
   if (endpoints.length === 0) {
     try {
       const spec = await parseOpenAPISpec(source.rawContent)
-      endpoints = await replaceOpenapiSourceEndpoints(id, spec.endpoints)
+      endpoints = await replaceOpenapiSourceEndpoints(ctx.workspaceId, id, spec.endpoints)
     } catch (error) {
       logServerError('Failed to hydrate OpenAPI endpoints from stored source.', error, {
         sourceId: id,

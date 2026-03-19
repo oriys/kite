@@ -54,12 +54,16 @@ export async function searchDocuments(
 /**
  * ILIKE fallback for when the tsvector column is unavailable.
  */
+function escapeLikePattern(s: string): string {
+  return s.replace(/[%_\\]/g, '\\$&')
+}
+
 async function searchDocumentsFallback(
   workspaceId: string,
   query: string,
   limit: number,
 ): Promise<SearchResult[]> {
-  const pattern = `%${query}%`
+  const pattern = `%${escapeLikePattern(query)}%`
   const rows = await db.execute(
     sql`SELECT
           id,

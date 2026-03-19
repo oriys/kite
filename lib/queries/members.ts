@@ -57,47 +57,50 @@ export async function updateMemberRole(
   newRole: MemberRole,
   actorId: string,
 ) {
-  const [current] = await db
-    .select({ role: workspaceMembers.role })
-    .from(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.userId, targetUserId),
-        eq(workspaceMembers.workspaceId, workspaceId),
-      ),
-    )
-
-  if (!current) throw new Error('Member not found')
-  if (current.role === 'owner' && newRole !== 'owner') {
-    const owners = await db
-      .select({ userId: workspaceMembers.userId })
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ role: workspaceMembers.role })
       .from(workspaceMembers)
       .where(
         and(
+          eq(workspaceMembers.userId, targetUserId),
           eq(workspaceMembers.workspaceId, workspaceId),
-          eq(workspaceMembers.role, 'owner'),
         ),
       )
-    if (owners.length <= 1) throw new Error('Cannot demote the last owner')
-  }
 
-  await db
-    .update(workspaceMembers)
-    .set({ role: newRole })
-    .where(
-      and(
-        eq(workspaceMembers.userId, targetUserId),
-        eq(workspaceMembers.workspaceId, workspaceId),
-      ),
-    )
+    if (!current) throw new Error('Member not found')
+    if (current.role === 'owner' && newRole !== 'owner') {
+      const owners = await tx
+        .select({ userId: workspaceMembers.userId })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.role, 'owner'),
+          ),
+        )
+        .for('update')
+      if (owners.length <= 1) throw new Error('Cannot demote the last owner')
+    }
 
-  await emitAuditEvent({
-    workspaceId,
-    actorId,
-    action: 'role_change',
-    resourceType: 'member',
-    resourceId: targetUserId,
-    metadata: { oldRole: current.role, newRole },
+    await tx
+      .update(workspaceMembers)
+      .set({ role: newRole })
+      .where(
+        and(
+          eq(workspaceMembers.userId, targetUserId),
+          eq(workspaceMembers.workspaceId, workspaceId),
+        ),
+      )
+
+    await emitAuditEvent({
+      workspaceId,
+      actorId,
+      action: 'role_change',
+      resourceType: 'member',
+      resourceId: targetUserId,
+      metadata: { oldRole: current.role, newRole },
+    })
   })
 }
 
@@ -136,45 +139,48 @@ export async function removeMember(
   targetUserId: string,
   actorId: string,
 ) {
-  const [current] = await db
-    .select({ role: workspaceMembers.role })
-    .from(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.userId, targetUserId),
-        eq(workspaceMembers.workspaceId, workspaceId),
-      ),
-    )
-
-  if (!current) throw new Error('Member not found')
-  if (current.role === 'owner') {
-    const owners = await db
-      .select({ userId: workspaceMembers.userId })
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ role: workspaceMembers.role })
       .from(workspaceMembers)
       .where(
         and(
+          eq(workspaceMembers.userId, targetUserId),
           eq(workspaceMembers.workspaceId, workspaceId),
-          eq(workspaceMembers.role, 'owner'),
         ),
       )
-    if (owners.length <= 1) throw new Error('Cannot remove the last owner')
-  }
 
-  await db
-    .delete(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.userId, targetUserId),
-        eq(workspaceMembers.workspaceId, workspaceId),
-      ),
-    )
+    if (!current) throw new Error('Member not found')
+    if (current.role === 'owner') {
+      const owners = await tx
+        .select({ userId: workspaceMembers.userId })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.role, 'owner'),
+          ),
+        )
+        .for('update')
+      if (owners.length <= 1) throw new Error('Cannot remove the last owner')
+    }
 
-  await emitAuditEvent({
-    workspaceId,
-    actorId,
-    action: 'member_remove',
-    resourceType: 'member',
-    resourceId: targetUserId,
+    await tx
+      .delete(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.userId, targetUserId),
+          eq(workspaceMembers.workspaceId, workspaceId),
+        ),
+      )
+
+    await emitAuditEvent({
+      workspaceId,
+      actorId,
+      action: 'member_remove',
+      resourceType: 'member',
+      resourceId: targetUserId,
+    })
   })
 }
 

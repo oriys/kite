@@ -82,9 +82,13 @@ export async function createGrpcSource(
   })
 }
 
-export async function getGrpcSource(id: string) {
+export async function getGrpcSource(workspaceId: string, id: string) {
   return db.query.grpcSources.findFirst({
-    where: and(eq(grpcSources.id, id), isNull(grpcSources.deletedAt)),
+    where: and(
+      eq(grpcSources.id, id),
+      eq(grpcSources.workspaceId, workspaceId),
+      isNull(grpcSources.deletedAt),
+    ),
   })
 }
 
@@ -108,11 +112,15 @@ export async function listGrpcSources(workspaceId: string) {
     .orderBy(desc(grpcSources.createdAt))
 }
 
-export async function deleteGrpcSource(id: string) {
+export async function deleteGrpcSource(workspaceId: string, id: string) {
   const result = await db
     .update(grpcSources)
     .set({ deletedAt: new Date() })
-    .where(and(eq(grpcSources.id, id), isNull(grpcSources.deletedAt)))
+    .where(and(
+      eq(grpcSources.id, id),
+      eq(grpcSources.workspaceId, workspaceId),
+      isNull(grpcSources.deletedAt),
+    ))
     .returning()
   return result.length > 0
 }
@@ -128,6 +136,7 @@ export async function listGrpcServices(sourceId: string) {
 }
 
 export async function syncGrpcSource(
+  workspaceId: string,
   id: string,
   newContent: string,
   checksum: string,
@@ -137,7 +146,11 @@ export async function syncGrpcSource(
     const [current] = await tx
       .select()
       .from(grpcSources)
-      .where(and(eq(grpcSources.id, id), isNull(grpcSources.deletedAt)))
+      .where(and(
+        eq(grpcSources.id, id),
+        eq(grpcSources.workspaceId, workspaceId),
+        isNull(grpcSources.deletedAt),
+      ))
 
     if (!current) throw new Error('Source not found')
 

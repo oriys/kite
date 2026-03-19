@@ -189,32 +189,34 @@ export async function acceptInvite(
   userId: string,
   userEmail?: string | null,
 ): Promise<{ workspaceId: string; role: MemberRole }> {
-  const [invite] = await db
-    .select({
-      id: workspaceInvites.id,
-      workspaceId: workspaceInvites.workspaceId,
-      email: workspaceInvites.email,
-      role: workspaceInvites.role,
-      type: workspaceInvites.type,
-      invitedBy: workspaceInvites.invitedBy,
-      expiresAt: workspaceInvites.expiresAt,
-      acceptedAt: workspaceInvites.acceptedAt,
-    })
-    .from(workspaceInvites)
-    .where(eq(workspaceInvites.token, token))
-
-  if (!invite) throw new Error('Invalid invite')
-  if (invite.acceptedAt) throw new Error('Invite already used')
-  if (invite.expiresAt < new Date()) throw new Error('Invite expired')
-
-  // For email invites, verify the accepting user's email matches
-  if (invite.type === 'email' && invite.email) {
-    if (!userEmail || userEmail.toLowerCase() !== invite.email.toLowerCase()) {
-      throw new Error('Email does not match the invite')
-    }
-  }
-
   return await db.transaction(async (tx) => {
+    // Lock the invite row to prevent concurrent acceptance
+    const [invite] = await tx
+      .select({
+        id: workspaceInvites.id,
+        workspaceId: workspaceInvites.workspaceId,
+        email: workspaceInvites.email,
+        role: workspaceInvites.role,
+        type: workspaceInvites.type,
+        invitedBy: workspaceInvites.invitedBy,
+        expiresAt: workspaceInvites.expiresAt,
+        acceptedAt: workspaceInvites.acceptedAt,
+      })
+      .from(workspaceInvites)
+      .where(eq(workspaceInvites.token, token))
+      .for('update')
+
+    if (!invite) throw new Error('Invalid invite')
+    if (invite.acceptedAt) throw new Error('Invite already used')
+    if (invite.expiresAt < new Date()) throw new Error('Invite expired')
+
+    // For email invites, verify the accepting user's email matches
+    if (invite.type === 'email' && invite.email) {
+      if (!userEmail || userEmail.toLowerCase() !== invite.email.toLowerCase()) {
+        throw new Error('Email does not match the invite')
+      }
+    }
+
     // Check if already a member
     const [existing] = await tx
       .select({ userId: workspaceMembers.userId })

@@ -17,9 +17,9 @@ export async function GET(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getOpenapiSource(id)
+  const source = await getOpenapiSource(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 
@@ -38,12 +38,12 @@ export async function DELETE(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getOpenapiSource(id)
+  const source = await getOpenapiSource(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 
-  await deleteOpenapiSource(id)
+  await deleteOpenapiSource(ctx.workspaceId, id)
   return NextResponse.json({ success: true })
 }

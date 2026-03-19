@@ -19,13 +19,13 @@ export async function GET(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getOpenapiSourceWithContent(id)
+  const source = await getOpenapiSourceWithContent(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 
-  const snapshot = await getLatestSnapshot(id)
+  const snapshot = await getLatestSnapshot(ctx.workspaceId, id)
 
   if (!snapshot) {
     return badRequest('No previous snapshot available for comparison')

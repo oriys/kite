@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withWorkspaceAuth } from '@/lib/api-utils'
 import { invokeGrpcMethod } from '@/lib/grpc/invoker'
 
 interface TryItRequest {
@@ -11,6 +12,9 @@ interface TryItRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const authResult = await withWorkspaceAuth('member')
+  if ('error' in authResult) return authResult.error
+
   let payload: TryItRequest
   try {
     payload = await request.json()

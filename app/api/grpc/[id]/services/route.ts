@@ -14,9 +14,9 @@ export async function GET(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getGrpcSource(id)
+  const source = await getGrpcSource(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 

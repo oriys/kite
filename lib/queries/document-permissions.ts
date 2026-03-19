@@ -265,37 +265,6 @@ export async function listDocumentPermissions(
   return rows as DocumentPermissionAssignment[]
 }
 
-async function ensureDocumentPermissionTarget(
-  documentId: string,
-  workspaceId: string,
-  userId: string,
-) {
-  const [target] = await db
-    .select({
-      userId: workspaceMembers.userId,
-      status: workspaceMembers.status,
-    })
-    .from(workspaceMembers)
-    .innerJoin(
-      documents,
-      and(
-        eq(documents.id, documentId),
-        eq(documents.workspaceId, workspaceId),
-      ),
-    )
-    .where(
-      and(
-        eq(workspaceMembers.workspaceId, workspaceId),
-        eq(workspaceMembers.userId, userId),
-      ),
-    )
-
-  if (!target) throw new Error('Member not found in this workspace')
-  if (target.status !== 'active') {
-    throw new Error('Only active members can receive document permissions')
-  }
-}
-
 export async function setDocumentPermission(input: {
   documentId: string
   workspaceId: string
@@ -303,48 +272,70 @@ export async function setDocumentPermission(input: {
   level: DocPermissionLevel
   actorId: string
 }) {
-  await ensureDocumentPermissionTarget(
-    input.documentId,
-    input.workspaceId,
-    input.userId,
-  )
+  return db.transaction(async (tx) => {
+    // Validate target member exists and is active (inlined for transaction safety)
+    const [target] = await tx
+      .select({
+        userId: workspaceMembers.userId,
+        status: workspaceMembers.status,
+      })
+      .from(workspaceMembers)
+      .innerJoin(
+        documents,
+        and(
+          eq(documents.id, input.documentId),
+          eq(documents.workspaceId, input.workspaceId),
+        ),
+      )
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, input.workspaceId),
+          eq(workspaceMembers.userId, input.userId),
+        ),
+      )
 
-  const now = new Date()
+    if (!target) throw new Error('Member not found in this workspace')
+    if (target.status !== 'active') {
+      throw new Error('Only active members can receive document permissions')
+    }
 
-  const [permission] = await db
-    .insert(documentPermissions)
-    .values({
-      documentId: input.documentId,
-      userId: input.userId,
-      level: input.level,
-      grantedBy: input.actorId,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [documentPermissions.documentId, documentPermissions.userId],
-      set: {
+    const now = new Date()
+
+    const [permission] = await tx
+      .insert(documentPermissions)
+      .values({
+        documentId: input.documentId,
+        userId: input.userId,
         level: input.level,
         grantedBy: input.actorId,
+        createdAt: now,
         updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [documentPermissions.documentId, documentPermissions.userId],
+        set: {
+          level: input.level,
+          grantedBy: input.actorId,
+          updatedAt: now,
+        },
+      })
+      .returning()
+
+    await emitAuditEvent({
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      action: 'update',
+      resourceType: 'document_permission',
+      resourceId: `${input.documentId}:${input.userId}`,
+      metadata: {
+        documentId: input.documentId,
+        targetUserId: input.userId,
+        level: input.level,
       },
     })
-    .returning()
 
-  await emitAuditEvent({
-    workspaceId: input.workspaceId,
-    actorId: input.actorId,
-    action: 'update',
-    resourceType: 'document_permission',
-    resourceId: `${input.documentId}:${input.userId}`,
-    metadata: {
-      documentId: input.documentId,
-      targetUserId: input.userId,
-      level: input.level,
-    },
+    return permission
   })
-
-  return permission
 }
 
 export async function clearDocumentPermission(input: {

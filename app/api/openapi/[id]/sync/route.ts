@@ -53,9 +53,9 @@ export async function POST(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getOpenapiSourceWithContent(id)
+  const source = await getOpenapiSourceWithContent(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 
@@ -114,7 +114,7 @@ export async function POST(
   let updated: Awaited<ReturnType<typeof syncOpenapiSource>>['source']
 
   try {
-    const syncResult = await syncOpenapiSource(id, newContent, newChecksum)
+    const syncResult = await syncOpenapiSource(ctx.workspaceId, id, newContent, newChecksum)
     updated = syncResult.source
   } catch (error) {
     logServerError('Failed to sync OpenAPI source.', error, {

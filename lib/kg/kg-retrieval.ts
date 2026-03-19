@@ -204,8 +204,8 @@ export async function expandEntityRelations(input: {
       JOIN kg_entities tgt ON tgt.id = r.target_entity_id
       WHERE r.workspace_id = ${input.workspaceId}
         AND (
-          r.source_entity_id IN ${sql.raw(`('${input.entityIds.join("','")}')`)}
-          OR r.target_entity_id IN ${sql.raw(`('${input.entityIds.join("','")}')`)}
+          r.source_entity_id IN ${sql`(${sql.join(input.entityIds.map(id => sql`${id}`), sql`, `)})`}
+          OR r.target_entity_id IN ${sql`(${sql.join(input.entityIds.map(id => sql`${id}`), sql`, `)})`}
         )
       ORDER BY r.weight DESC
       LIMIT ${maxRelations}

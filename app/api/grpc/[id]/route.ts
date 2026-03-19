@@ -14,9 +14,9 @@ export async function GET(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getGrpcSource(id)
+  const source = await getGrpcSource(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 
@@ -42,12 +42,12 @@ export async function DELETE(
   const { ctx } = authResult
 
   const { id } = await params
-  const source = await getGrpcSource(id)
+  const source = await getGrpcSource(ctx.workspaceId, id)
 
-  if (!source || source.workspaceId !== ctx.workspaceId) {
+  if (!source) {
     return notFound()
   }
 
-  await deleteGrpcSource(id)
+  await deleteGrpcSource(ctx.workspaceId, id)
   return NextResponse.json({ success: true })
 }

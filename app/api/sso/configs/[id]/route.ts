@@ -9,8 +9,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   if ('error' in result) return result.error
 
   const { id } = await params
-  const config = await getSsoConfig(id)
-  if (!config || config.workspaceId !== result.ctx.workspaceId) {
+  const config = await getSsoConfig(result.ctx.workspaceId, id)
+  if (!config) {
     return notFound()
   }
 
@@ -22,15 +22,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   if ('error' in result) return result.error
 
   const { id } = await params
-  const existing = await getSsoConfig(id)
-  if (!existing || existing.workspaceId !== result.ctx.workspaceId) {
+  const existing = await getSsoConfig(result.ctx.workspaceId, id)
+  if (!existing) {
     return notFound()
   }
 
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
 
-  const config = await updateSsoConfig(id, {
+  const config = await updateSsoConfig(result.ctx.workspaceId, id, {
     displayName: body.displayName,
     issuerUrl: body.issuerUrl,
     clientId: body.clientId,
@@ -49,11 +49,11 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   if ('error' in result) return result.error
 
   const { id } = await params
-  const existing = await getSsoConfig(id)
-  if (!existing || existing.workspaceId !== result.ctx.workspaceId) {
+  const existing = await getSsoConfig(result.ctx.workspaceId, id)
+  if (!existing) {
     return notFound()
   }
 
-  await deleteSsoConfig(id)
+  await deleteSsoConfig(result.ctx.workspaceId, id)
   return NextResponse.json({ success: true })
 }

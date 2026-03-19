@@ -1,5 +1,15 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSsoConfigByWorkspaceSlug } from '@/lib/queries/sso'
+
+function signState(payload: object): string {
+  const data = JSON.stringify(payload)
+  const hmac = crypto
+    .createHmac('sha256', process.env.AUTH_SECRET || '')
+    .update(data)
+    .digest('base64url')
+  return Buffer.from(JSON.stringify({ data, hmac })).toString('base64url')
+}
 
 export async function GET(request: NextRequest) {
   const workspace = request.nextUrl.searchParams.get('workspace')
@@ -22,9 +32,7 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const state = Buffer.from(
-    JSON.stringify({ workspaceId: config.workspaceId, configId: config.id }),
-  ).toString('base64url')
+  const state = signState({ workspaceId: config.workspaceId, configId: config.id })
 
   const redirectUri = new URL('/api/auth/sso/callback', request.url).toString()
 
