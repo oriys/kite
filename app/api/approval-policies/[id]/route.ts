@@ -32,7 +32,13 @@ export async function PATCH(
   const body = await request.json().catch(() => null)
   if (!body) return badRequest('Invalid JSON')
 
-  const policy = await updateApprovalPolicy(id, result.ctx.workspaceId, body)
+  const patch: Record<string, unknown> = {}
+  if (body.name !== undefined) patch.name = body.name
+  if (body.policyType !== undefined) patch.policyType = body.policyType
+  if (body.config !== undefined) patch.config = body.config
+  if (body.isDefault !== undefined) patch.isDefault = body.isDefault
+
+  const policy = await updateApprovalPolicy(id, result.ctx.workspaceId, patch)
   if (!policy) return notFound()
 
   return NextResponse.json(policy)

@@ -382,6 +382,7 @@ export async function rollbackTranslation(
 ) {
   const target = await db.query.publishedTranslationSnapshots.findFirst({
     where: and(
+      eq(publishedTranslationSnapshots.workspaceId, workspaceId),
       eq(publishedTranslationSnapshots.documentId, documentId),
       eq(publishedTranslationSnapshots.locale, locale),
       eq(publishedTranslationSnapshots.version, targetVersion),
@@ -396,6 +397,7 @@ export async function rollbackTranslation(
       .set({ isActive: false })
       .where(
         and(
+          eq(publishedTranslationSnapshots.workspaceId, workspaceId),
           eq(publishedTranslationSnapshots.documentId, documentId),
           eq(publishedTranslationSnapshots.locale, locale),
           eq(publishedTranslationSnapshots.isActive, true),
@@ -407,6 +409,7 @@ export async function rollbackTranslation(
       .from(publishedTranslationSnapshots)
       .where(
         and(
+          eq(publishedTranslationSnapshots.workspaceId, workspaceId),
           eq(publishedTranslationSnapshots.documentId, documentId),
           eq(publishedTranslationSnapshots.locale, locale),
         ),

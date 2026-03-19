@@ -6,25 +6,26 @@ import { transitionDocument } from './queries/documents'
 export async function processScheduledPublications() {
   const now = new Date()
 
-  const pending = await db
-    .select({
-      id: scheduledPublications.id,
-      documentId: scheduledPublications.documentId,
-      workspaceId: scheduledPublications.workspaceId,
-      createdBy: scheduledPublications.createdBy,
-    })
-    .from(scheduledPublications)
+  // Atomically claim pending rows to prevent double-publish from concurrent workers
+  const claimed = await db
+    .update(scheduledPublications)
+    .set({ status: 'processing', updatedAt: now })
     .where(
       and(
         eq(scheduledPublications.status, 'pending'),
         lte(scheduledPublications.scheduledAt, now),
       ),
     )
-    .limit(50)
+    .returning({
+      id: scheduledPublications.id,
+      documentId: scheduledPublications.documentId,
+      workspaceId: scheduledPublications.workspaceId,
+      createdBy: scheduledPublications.createdBy,
+    })
 
   const results: { id: string; success: boolean; error?: string }[] = []
 
-  for (const item of pending) {
+  for (const item of claimed) {
     try {
       // Verify document is still in a publishable state
       const [doc] = await db
@@ -39,7 +40,7 @@ export async function processScheduledPublications() {
         )
         .limit(1)
 
-      if (!doc || (doc.status !== 'review' && doc.status !== 'draft')) {
+      if (!doc || doc.status !== 'review') {
         await db
           .update(scheduledPublications)
           .set({ status: 'skipped', updatedAt: new Date() })

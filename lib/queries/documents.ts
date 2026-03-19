@@ -482,6 +482,7 @@ export async function transitionDocument(
         .where(
           and(
             eq(publishedSnapshots.documentId, id),
+            eq(publishedSnapshots.workspaceId, workspaceId),
             eq(publishedSnapshots.isActive, true),
           ),
         )
@@ -490,7 +491,12 @@ export async function transitionDocument(
       const [maxVersion] = await tx
         .select({ max: sql<number>`coalesce(max(${publishedSnapshots.version}), 0)` })
         .from(publishedSnapshots)
-        .where(eq(publishedSnapshots.documentId, id))
+        .where(
+          and(
+            eq(publishedSnapshots.documentId, id),
+            eq(publishedSnapshots.workspaceId, workspaceId),
+          ),
+        )
 
       // Create new active snapshot
       await tx.insert(publishedSnapshots).values({
@@ -519,6 +525,7 @@ export async function transitionDocument(
         .where(
           and(
             eq(publishedSnapshots.documentId, id),
+            eq(publishedSnapshots.workspaceId, workspaceId),
             eq(publishedSnapshots.isActive, true),
           ),
         )

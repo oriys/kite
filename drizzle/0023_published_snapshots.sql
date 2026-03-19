@@ -40,7 +40,10 @@ SELECT
   d."content", d."summary", d."category", d."tags", d."locale", d."nav_section",
   d."publish_order", d."visibility", d."updated_at", true
 FROM "documents" d
-WHERE d."status" = 'published' AND d."deleted_at" IS NULL;
+WHERE d."status" = 'published' AND d."deleted_at" IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM "published_snapshots" ps WHERE ps."document_id" = d."id"
+  );
 
 -- Published translation snapshots
 CREATE TABLE IF NOT EXISTS "published_translation_snapshots" (

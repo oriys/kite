@@ -11,7 +11,7 @@ export async function POST(
   if ('error' in result) return result.error
 
   const { id, deliveryId } = await params
-  const replayed = await replayChannelDelivery(deliveryId, id)
+  const replayed = await replayChannelDelivery(deliveryId, id, result.ctx.workspaceId)
   if (!replayed) return notFound()
 
   return NextResponse.json({ success: true })

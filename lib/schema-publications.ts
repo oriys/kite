@@ -7,6 +7,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  check,
 } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import { users } from './schema-auth'
@@ -54,6 +55,7 @@ export const publishedSnapshots = pgTable(
     uniqueIndex('published_snapshots_active_idx')
       .on(t.documentId)
       .where(sql`${t.isActive} = true`),
+    check('rollout_percentage_range', sql`${t.rolloutPercentage} >= 0 AND ${t.rolloutPercentage} <= 100`),
   ],
 )
 

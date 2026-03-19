@@ -1,6 +1,6 @@
 import { db } from './db'
 import { documents, documentRelations, documentTranslations } from './schema'
-import { eq, and, isNull } from 'drizzle-orm'
+import { eq, and, isNull, inArray } from 'drizzle-orm'
 
 interface PreflightCheck {
   name: string
@@ -106,29 +106,40 @@ export async function runPublishPreflight(
     }
   }
 
-  // 4. Check broken links in content (simple markdown link check)
+  // 4. Check broken links in content (batched slug lookup)
   const linkPattern = /\[([^\]]*)\]\(([^)]+)\)/g
   let match: RegExpExecArray | null
-  const brokenLinks: string[] = []
+  const slugsToCheck: string[] = []
+  const slugToHrefs = new Map<string, string>()
+
   while ((match = linkPattern.exec(doc.content)) !== null) {
     const href = match[2]
     if (href.startsWith('/docs/') || href.startsWith('./')) {
-      // Internal link — check if referenced doc slug exists
       const slug = href.replace(/^\/docs\//, '').replace(/^\.\//, '')
-      const [ref] = await db
-        .select({ id: documents.id })
-        .from(documents)
-        .where(
-          and(
-            eq(documents.workspaceId, workspaceId),
-            eq(documents.slug, slug),
-            isNull(documents.deletedAt),
-          ),
-        )
-        .limit(1)
+      if (!slugToHrefs.has(slug)) {
+        slugsToCheck.push(slug)
+        slugToHrefs.set(slug, href)
+      }
+    }
+  }
 
-      if (!ref) {
-        brokenLinks.push(href)
+  const brokenLinks: string[] = []
+  if (slugsToCheck.length > 0) {
+    const found = await db
+      .select({ slug: documents.slug })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.workspaceId, workspaceId),
+          inArray(documents.slug, slugsToCheck),
+          isNull(documents.deletedAt),
+        ),
+      )
+
+    const foundSlugs = new Set(found.map((r) => r.slug))
+    for (const slug of slugsToCheck) {
+      if (!foundSlugs.has(slug)) {
+        brokenLinks.push(slugToHrefs.get(slug)!)
       }
     }
   }

@@ -18,6 +18,7 @@ export const auditActionEnum = pgEnum('audit_action', [
   'archive',
   'approve',
   'reject',
+  'request_changes',
   'status_change',
   'visibility_change',
   'login',

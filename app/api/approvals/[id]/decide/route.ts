@@ -54,7 +54,12 @@ export async function POST(
   }
 
   // Audit event
-  const auditAction = decision === 'approved' ? 'approve' : 'reject'
+  const AUDIT_ACTIONS = {
+    approved: 'approve',
+    rejected: 'reject',
+    changes_requested: 'request_changes',
+  } as const
+  const auditAction = AUDIT_ACTIONS[decision as keyof typeof AUDIT_ACTIONS]
   emitAuditEvent({
     workspaceId: result.ctx.workspaceId,
     actorId: result.ctx.userId,
@@ -65,7 +70,12 @@ export async function POST(
   }).catch(() => {})
 
   // Webhook + channel dispatch
-  const webhookEvent = decision === 'approved' ? 'approval.approved' : 'approval.rejected'
+  const WEBHOOK_EVENTS: Record<string, string> = {
+    approved: 'approval.approved',
+    rejected: 'approval.rejected',
+    changes_requested: 'approval.changes_requested',
+  }
+  const webhookEvent = WEBHOOK_EVENTS[decision] ?? `approval.${decision}`
   dispatchWebhookEvent(result.ctx.workspaceId, webhookEvent, {
     approvalId: id,
     documentId: outcome.documentId,

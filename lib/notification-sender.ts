@@ -47,7 +47,16 @@ export async function deliverToSingleChannel(
   return deliverToChannel(channel, payload)
 }
 
-export async function replayChannelDelivery(deliveryId: string, channelId: string) {
+export async function replayChannelDelivery(deliveryId: string, channelId: string, workspaceId: string) {
+  const channel = await db.query.notificationChannels.findFirst({
+    where: and(
+      eq(notificationChannels.id, channelId),
+      eq(notificationChannels.workspaceId, workspaceId),
+    ),
+  })
+
+  if (!channel) return null
+
   const delivery = await db.query.channelDeliveries.findFirst({
     where: and(
       eq(channelDeliveries.id, deliveryId),
@@ -57,17 +66,11 @@ export async function replayChannelDelivery(deliveryId: string, channelId: strin
 
   if (!delivery) return null
 
-  const channel = await db.query.notificationChannels.findFirst({
-    where: eq(notificationChannels.id, channelId),
-  })
-
-  if (!channel) return null
-
   await deliverToChannel(channel, delivery.payload as unknown as NotificationPayload)
   return true
 }
 
-async function deliverToChannel(
+export async function deliverToChannel(
   channel: typeof notificationChannels.$inferSelect,
   payload: NotificationPayload,
 ) {
@@ -162,17 +165,44 @@ async function sendSlack(
   }
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function sanitizeLinkUrl(url: string): string {
+  try {
+    const parsed = new URL(url, 'https://placeholder.invalid')
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return escapeHtml(url)
+    }
+    return ''
+  } catch {
+    // Relative paths like /docs/editor?doc=xxx are fine
+    if (url.startsWith('/')) return escapeHtml(url)
+    return ''
+  }
+}
+
 function buildEmailHtml(payload: NotificationPayload): string {
+  const title = escapeHtml(payload.title)
+  const body = escapeHtml(payload.body)
+  const linkUrl = payload.linkUrl ? sanitizeLinkUrl(payload.linkUrl) : ''
+
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
       <div style="border-bottom: 1px solid #e5e5e5; padding-bottom: 16px; margin-bottom: 16px;">
         <strong style="font-size: 16px; color: #171717;">Kite</strong>
       </div>
-      <h2 style="font-size: 18px; color: #171717; margin: 0 0 8px;">${payload.title}</h2>
-      <p style="font-size: 14px; color: #525252; line-height: 1.6; margin: 0 0 16px;">${payload.body}</p>
+      <h2 style="font-size: 18px; color: #171717; margin: 0 0 8px;">${title}</h2>
+      <p style="font-size: 14px; color: #525252; line-height: 1.6; margin: 0 0 16px;">${body}</p>
       ${
-        payload.linkUrl
-          ? `<a href="${payload.linkUrl}" style="display: inline-block; padding: 8px 16px; background: #171717; color: #fff; text-decoration: none; border-radius: 6px; font-size: 13px;">View in Kite</a>`
+        linkUrl
+          ? `<a href="${linkUrl}" style="display: inline-block; padding: 8px 16px; background: #171717; color: #fff; text-decoration: none; border-radius: 6px; font-size: 13px;">View in Kite</a>`
           : ''
       }
       <div style="border-top: 1px solid #e5e5e5; padding-top: 16px; margin-top: 24px;">

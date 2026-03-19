@@ -61,6 +61,7 @@ export async function rollbackToSnapshot(
       .where(
         and(
           eq(publishedSnapshots.documentId, documentId),
+          eq(publishedSnapshots.workspaceId, workspaceId),
           eq(publishedSnapshots.isActive, true),
         ),
       )
@@ -69,7 +70,12 @@ export async function rollbackToSnapshot(
     const [maxVersion] = await tx
       .select({ max: sql<number>`coalesce(max(${publishedSnapshots.version}), 0)` })
       .from(publishedSnapshots)
-      .where(eq(publishedSnapshots.documentId, documentId))
+      .where(
+        and(
+          eq(publishedSnapshots.documentId, documentId),
+          eq(publishedSnapshots.workspaceId, workspaceId),
+        ),
+      )
 
     // Create new snapshot as rollback
     const [snapshot] = await tx
