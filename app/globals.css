@@ -297,6 +297,10 @@
   a {
     @apply transition-colors;
   }
+
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
 }
 
 @layer components {
