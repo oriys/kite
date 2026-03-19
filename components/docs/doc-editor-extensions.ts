@@ -21,6 +21,7 @@ export function createEditorExtensions() {
   return [
     StarterKit.configure({
       codeBlock: false,
+      link: false,
       dropcursor: { color: 'oklch(0.63 0.16 244)', width: 2 },
     }),
     TiptapTable.configure({
