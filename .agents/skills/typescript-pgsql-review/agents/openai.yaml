@@ -1,0 +1,4 @@
+interface:
+  display_name: "TypeScript PG Review"
+  short_description: "Review TypeScript backends and PostgreSQL changes."
+  default_prompt: "Use $typescript-pgsql-review to review this TypeScript backend or PostgreSQL change."
