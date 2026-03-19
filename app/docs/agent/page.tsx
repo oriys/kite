@@ -16,7 +16,7 @@ export default function AgentPage() {
         <div className="mb-6">
           <div className="flex items-center gap-2">
             <Bot className="size-5 text-muted-foreground" />
-            <h1 className="text-lg font-semibold tracking-tight text-foreground">Doc Agent</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Doc Agent</h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             AI agent that can search, create, update, and review your documentation autonomously.

@@ -255,7 +255,7 @@ export default function MembersPage() {
       {/* Page header */}
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">Members</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Members</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Manage workspace access and roles.
           </p>

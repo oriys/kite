@@ -12,7 +12,7 @@ export default function AnalyticsPage() {
     <FeatureGuard featureId="analytics">
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <div className="mb-6">
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Analytics
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">

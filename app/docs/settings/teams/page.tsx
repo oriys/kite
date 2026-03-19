@@ -189,7 +189,7 @@ export default function TeamsPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight">Teams</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Organize members into teams for easier permission management.
         </p>
