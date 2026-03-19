@@ -61,3 +61,20 @@
 **What:** Extracted `lib/ai/chat-sessions.ts` (107 lines) and `lib/ai/visibility-filter.ts` (39 lines) from `ai-chat.ts`. Reduced main file from 2,415 to 2,303 lines.
 **Why:** 2,415-line monolith. Module structure now in place for incremental extraction.
 **Completed:** 2026-03-20 (partial — session CRUD and visibility filter extracted, deeper extraction deferred)
+
+## Deferred Design Findings
+
+### FINDING-007: Editor toolbar overflow on mobile
+**Impact:** Medium | **Category:** Responsive
+**What:** On mobile (375px), the editor toolbar hides most formatting buttons with no scroll indicator or overflow menu.
+**Fix:** Add horizontal scroll with fade indicator, or collapse formatting tools into a "Format" button.
+
+### FINDING-010: Agent page empty loading spinner
+**Impact:** Medium | **Category:** Content Quality
+**What:** Left panel shows a permanent loading spinner in a grey box with no skeleton or context.
+**Fix:** Replace with skeleton placeholder matching expected content shape.
+
+### FINDING-012: Dark mode badge contrast
+**Impact:** Medium | **Category:** Color & Contrast
+**What:** Draft/Published badges use same colors in dark mode — yellow on dark may have insufficient contrast.
+**Fix:** Use desaturated/darker badge backgrounds in dark mode with lighter text.
