@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { MarkdownPreview } from '@/components/docs/markdown-preview'
 import { cn } from '@/lib/utils'
 import {
   ArrowLeft,
@@ -38,6 +39,11 @@ interface AgentTask {
   prompt: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   modelId: string | null
+  progress: {
+    currentStep: number
+    maxSteps: number
+    description?: string
+  } | null
   result: string | null
   error: string | null
   steps: AgentStepRecord[]
@@ -67,7 +73,12 @@ function DetailStep({ step }: { step: AgentStepRecord }) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Response</p>
-          <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">{step.text}</p>
+          {step.text ? (
+            <MarkdownPreview
+              content={step.text}
+              className="mt-1 max-w-none text-sm leading-6"
+            />
+          ) : null}
         </div>
       </div>
     )
@@ -202,8 +213,15 @@ export function DocAgentStepView({ taskId, onBack, className }: DocAgentStepView
           </Badge>
         </div>
         <p className="mt-2 text-sm text-foreground">{task.prompt}</p>
-        <div className="mt-1 flex items-center gap-3 text-[11px] text-muted-foreground">
-          {task.modelId && <span>{task.modelId}</span>}
+        <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+          {task.modelId && (
+            <span className="max-w-[20rem] truncate">{task.modelId}</span>
+          )}
+          {task.progress && (
+            <span>
+              Steps: {task.progress.currentStep}/{task.progress.maxSteps}
+            </span>
+          )}
           <span>{new Date(task.createdAt).toLocaleString()}</span>
           {task.completedAt && (
             <span>
@@ -211,6 +229,11 @@ export function DocAgentStepView({ taskId, onBack, className }: DocAgentStepView
             </span>
           )}
         </div>
+        {(task.status === 'pending' || task.status === 'running') && task.progress?.description && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {task.progress.description}
+          </p>
+        )}
       </div>
 
       {/* Steps timeline */}
@@ -238,7 +261,10 @@ export function DocAgentStepView({ taskId, onBack, className }: DocAgentStepView
         {task.status === 'completed' && task.result && (
           <div className="mx-4 mt-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
             <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Result</p>
-            <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">{task.result}</p>
+            <MarkdownPreview
+              content={task.result}
+              className="mt-1 max-w-none text-sm leading-6"
+            />
           </div>
         )}
       </ScrollArea>

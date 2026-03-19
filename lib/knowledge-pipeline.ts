@@ -18,11 +18,17 @@ import {
   extractKnowledgeSourceContent,
   type ExtractableKnowledgeSourceType,
 } from '@/lib/knowledge-source-content'
+import {
+  deriveTitleFromUrl,
+  fetchPublicUrlContent,
+} from '@/lib/public-url-content'
 import { sanitizePlainText } from '@/lib/sanitize'
 
 const MAX_KNOWLEDGE_SOURCE_ERROR_MESSAGE_LENGTH = 500
 const ZIP_CHUNK_PROGRESS_INTERVAL = 50
 const ZIP_DOCUMENT_CHUNK_INSERT_BATCH_SIZE = 50
+const URL_CONTENT_FETCH_TIMEOUT_MS = 30_000
+const MAX_URL_CONTENT_CHARS = 2_000_000
 
 export class KnowledgeSourceProcessingStoppedError extends Error {
   constructor(message = 'Processing stopped by user') {
@@ -123,6 +129,19 @@ export async function processKnowledgeSource(input: {
     }
   }
 
+  async function wasSourceRemovedDuringProcessing() {
+    const [current] = await db
+      .select({
+        status: knowledgeSources.status,
+        deletedAt: knowledgeSources.deletedAt,
+      })
+      .from(knowledgeSources)
+      .where(eq(knowledgeSources.id, source.id))
+      .limit(1)
+
+    return !current || current.deletedAt || current.status === 'archived'
+  }
+
   async function writeProgress(progress: number, stage: string, detail?: string) {
     await throwIfStopRequested()
 
@@ -157,15 +176,37 @@ export async function processKnowledgeSource(input: {
       throw new Error('No embedding provider configured')
     }
 
-    await writeProgress(0.05, 'extracting')
+    let sourceRawContent = source.rawContent
+    let fetchedUrlTitle = ''
+    const normalizedSourceUrl = source.sourceUrl?.trim() ?? ''
+    if (source.sourceType === 'url') {
+      if (!normalizedSourceUrl) {
+        throw new Error('URL knowledge source requires a source URL')
+      }
+
+      await writeProgress(0.05, 'extracting', 'Fetching URL content')
+      const fetched = await fetchPublicUrlContent(normalizedSourceUrl, {
+        timeoutMs: URL_CONTENT_FETCH_TIMEOUT_MS,
+        maxChars: MAX_URL_CONTENT_CHARS,
+      })
+      sourceRawContent = fetched.rawContent
+      fetchedUrlTitle = sanitizePlainText(fetched.title).trim()
+      userMetadata.lastFetchedAt = new Date().toISOString()
+      if (fetched.contentType) {
+        userMetadata.fetchedContentType = fetched.contentType
+      }
+    } else {
+      await writeProgress(0.05, 'extracting')
+    }
+
     let title = source.title || 'Untitled'
-    let contentHash = computeContentHash(title, source.rawContent)
+    let contentHash = computeContentHash(title, sourceRawContent)
     let chunks: ReturnType<typeof chunkDocument> = []
 
     if (source.sourceType === 'zip') {
-      const extractedDocuments = extractZipDocuments(source.rawContent)
+      const extractedDocuments = extractZipDocuments(sourceRawContent)
       title = source.title || 'Zip Archive'
-      contentHash = computeContentHash(title, source.rawContent)
+      contentHash = computeContentHash(title, sourceRawContent)
 
       await writeProgress(
         0.15,
@@ -208,11 +249,21 @@ export async function processKnowledgeSource(input: {
     } else {
       const { title: extractedTitle, content } = await extractKnowledgeSourceContent(
         source.sourceType as ExtractableKnowledgeSourceType,
-        source.rawContent,
+        sourceRawContent,
       )
       const normalizedContent = sanitizePlainText(content)
       const normalizedExtractedTitle = sanitizePlainText(extractedTitle).trim()
-      title = source.title || normalizedExtractedTitle || 'Untitled'
+      const existingTitle = sanitizePlainText(source.title).trim()
+      const shouldReplaceGeneratedTitle =
+        source.sourceType === 'url'
+        && (userMetadata.generatedTitleFromUrl === true || existingTitle.length === 0)
+      title = shouldReplaceGeneratedTitle
+        ? normalizedExtractedTitle
+          || fetchedUrlTitle
+          || deriveTitleFromUrl(normalizedSourceUrl).trim()
+          || existingTitle
+          || 'Untitled'
+        : existingTitle || normalizedExtractedTitle || fetchedUrlTitle || 'Untitled'
       contentHash = computeContentHash(title, normalizedContent)
 
       await writeProgress(0.15, 'chunking')
@@ -231,6 +282,8 @@ export async function processKnowledgeSource(input: {
       await db
         .update(knowledgeSources)
         .set({
+          title,
+          rawContent: sourceRawContent,
           status: 'ready',
           contentHash,
           metadata: userMetadata,
@@ -307,6 +360,8 @@ export async function processKnowledgeSource(input: {
     await db
       .update(knowledgeSources)
       .set({
+        title,
+        rawContent: sourceRawContent,
         status: 'ready',
         contentHash,
         metadata: userMetadata,
@@ -319,6 +374,10 @@ export async function processKnowledgeSource(input: {
 
     return { status: 'ready' as const, chunkCount: chunks.length }
   } catch (error) {
+    if (await wasSourceRemovedDuringProcessing()) {
+      return { status: 'cancelled' as const, chunkCount: 0 }
+    }
+
     if (
       error instanceof KnowledgeSourceProcessingStoppedError ||
       runtimeController.signal.aborted ||

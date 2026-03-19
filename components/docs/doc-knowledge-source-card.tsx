@@ -101,6 +101,33 @@ function getStopMessage(stage?: string) {
   return 'Stopping the current processing run…'
 }
 
+function getWorkspaceImportLabel(metadata: Record<string, unknown> | null) {
+  if (!metadata || typeof metadata !== 'object') return null
+
+  const workspaceImport =
+    'workspaceImport' in metadata
+      ? metadata.workspaceImport
+      : null
+
+  if (!workspaceImport || typeof workspaceImport !== 'object') return null
+
+  const record = workspaceImport as Record<string, unknown>
+  if (record.kind === 'document') {
+    const slug = typeof record.slug === 'string' && record.slug.trim()
+      ? record.slug.trim()
+      : null
+    return slug
+      ? `Imported from workspace document · ${slug}`
+      : 'Imported from workspace document'
+  }
+
+  if (record.kind === 'openapi') {
+    return 'Imported from workspace OpenAPI source'
+  }
+
+  return null
+}
+
 export function KnowledgeSourceCard({
   source,
   onEdit,
@@ -114,6 +141,7 @@ export function KnowledgeSourceCard({
   const status = STATUS_STYLES[source.status]
   const progress = getProcessingProgress(source)
   const stopRequested = Boolean(source.stopRequestedAt)
+  const workspaceImportLabel = getWorkspaceImportLabel(source.metadata)
 
   const stageLabel = stopRequested
     ? 'Stop requested…'
@@ -125,7 +153,7 @@ export function KnowledgeSourceCard({
       ? ` (${progress.detail})`
       : ''
   const pct = progress ? Math.round(progress.progress * 100) : 0
-  const disableContentActions = mutating || source.status === 'processing'
+  const disableEditAction = mutating || source.status === 'processing'
 
   return (
     <article className="rounded-md border border-border/70 bg-background/70 p-4">
@@ -145,6 +173,10 @@ export function KnowledgeSourceCard({
           {source.sourceUrl ? (
             <p className="mt-1 truncate text-xs text-muted-foreground">
               {source.sourceUrl}
+            </p>
+          ) : workspaceImportLabel ? (
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {workspaceImportLabel}
             </p>
           ) : null}
         </div>
@@ -196,7 +228,7 @@ export function KnowledgeSourceCard({
             variant="ghost"
             size="sm"
             onClick={() => onEdit(source)}
-            disabled={disableContentActions}
+            disabled={disableEditAction}
           >
             <PencilLine data-icon="inline-start" />
             Edit
@@ -205,10 +237,10 @@ export function KnowledgeSourceCard({
             variant="ghost"
             size="sm"
             onClick={() => onDelete(source)}
-            disabled={disableContentActions}
+            disabled={mutating}
           >
             <Trash2 data-icon="inline-start" />
-            Delete
+            {source.status === 'processing' ? 'Force Delete' : 'Delete'}
           </Button>
         </div>
       </div>

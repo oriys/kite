@@ -256,6 +256,11 @@ export function AiChatPanel({
 
   const handleSourceSelect = React.useCallback(
     (source: NonNullable<ChatMessage['sources']>[number]) => {
+      if (source.sourceType === 'knowledge_source') {
+        router.push('/docs/settings/knowledge-base')
+        return
+      }
+
       const targetDocumentIdentifier = source.documentSlug || source.documentId
       if (!targetDocumentIdentifier) {
         return

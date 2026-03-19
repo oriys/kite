@@ -21,6 +21,11 @@ interface AgentTask {
   prompt: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   modelId: string | null
+  progress: {
+    currentStep: number
+    maxSteps: number
+    description?: string
+  } | null
   documentId: string | null
   createdAt: string
   completedAt: string | null
@@ -53,10 +58,17 @@ function TaskRow({ task, onSelect }: { task: AgentTask; onSelect: (id: string) =
         <p className="truncate text-sm font-medium text-foreground">
           {task.prompt.length > 80 ? task.prompt.slice(0, 80) + '…' : task.prompt}
         </p>
-        <div className="mt-0.5 flex items-center gap-2">
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
           <span className="text-[11px] text-muted-foreground">{age}</span>
           {task.modelId && (
-            <span className="text-[11px] text-muted-foreground/70">{task.modelId}</span>
+            <span className="max-w-[16rem] truncate text-[11px] text-muted-foreground/70">
+              {task.modelId}
+            </span>
+          )}
+          {task.progress && (
+            <span className="text-[11px] text-muted-foreground/70">
+              {task.progress.currentStep}/{task.progress.maxSteps} steps
+            </span>
           )}
         </div>
       </div>

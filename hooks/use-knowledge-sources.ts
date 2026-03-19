@@ -24,12 +24,70 @@ export interface KnowledgeSourceItem {
   processedAt: string | null
 }
 
+export interface KnowledgeSourceImportableDocument {
+  id: string
+  title: string
+  slug: string | null
+  status: 'draft' | 'review' | 'published' | 'archived'
+  preview: string
+  updatedAt: string
+}
+
+export interface KnowledgeSourceImportableOpenApi {
+  id: string
+  name: string
+  sourceType: 'upload' | 'url'
+  sourceUrl: string | null
+  parsedVersion: string | null
+  openapiVersion: string | null
+  createdAt: string
+  lastSyncedAt: string | null
+}
+
+export interface KnowledgeSourceImportables {
+  documents: KnowledgeSourceImportableDocument[]
+  openapiSources: KnowledgeSourceImportableOpenApi[]
+}
+
 export interface KnowledgeSourceFormValues {
   title: string
   sourceType: KnowledgeSourceItem['sourceType']
   sourceUrl: string
+  sourceUrlsText: string
   rawContent: string
   file: File | null
+  sourceOrigin: 'manual' | 'workspace'
+  workspaceImportIds: string[]
+}
+
+function normalizeCreatedSourcesResponse(payload: unknown): KnowledgeSourceItem[] {
+  if (
+    payload
+    && typeof payload === 'object'
+    && 'items' in payload
+    && Array.isArray((payload as { items?: unknown }).items)
+  ) {
+    return (payload as { items: KnowledgeSourceItem[] }).items
+  }
+
+  if (Array.isArray(payload)) {
+    return payload as KnowledgeSourceItem[]
+  }
+
+  return payload && typeof payload === 'object' && 'id' in payload
+    ? [payload as KnowledgeSourceItem]
+    : []
+}
+
+export function parseKnowledgeSourceUrlLines(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  )
 }
 
 export function createDefaultKnowledgeSourceFormValues(): KnowledgeSourceFormValues {
@@ -37,8 +95,11 @@ export function createDefaultKnowledgeSourceFormValues(): KnowledgeSourceFormVal
     title: '',
     sourceType: 'markdown',
     sourceUrl: '',
+    sourceUrlsText: '',
     rawContent: '',
     file: null,
+    sourceOrigin: 'manual',
+    workspaceImportIds: [],
   }
 }
 
@@ -63,7 +124,13 @@ async function parseResponseError(response: Response) {
 
 export function useKnowledgeSources() {
   const [items, setItems] = React.useState<KnowledgeSourceItem[]>([])
+  const [importables, setImportables] = React.useState<KnowledgeSourceImportables>({
+    documents: [],
+    openapiSources: [],
+  })
+  const [importablesError, setImportablesError] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
+  const [loadingImportables, setLoadingImportables] = React.useState(true)
   const [mutating, setMutating] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -77,6 +144,18 @@ export function useKnowledgeSources() {
     }
 
     return (await response.json()) as KnowledgeSourceItem[]
+  }, [])
+
+  const fetchImportables = React.useCallback(async () => {
+    const response = await fetch('/api/ai/knowledge-sources/importable', {
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      throw new Error(await parseResponseError(response))
+    }
+
+    return (await response.json()) as KnowledgeSourceImportables
   }, [])
 
   const refresh = React.useCallback(async () => {
@@ -103,6 +182,35 @@ export function useKnowledgeSources() {
     void refresh().catch(() => undefined)
   }, [refresh])
 
+  React.useEffect(() => {
+    let cancelled = false
+
+    setLoadingImportables(true)
+    void fetchImportables()
+      .then((nextImportables) => {
+        if (cancelled) return
+        setImportables(nextImportables)
+        setImportablesError(null)
+      })
+      .catch((nextError) => {
+        if (cancelled) return
+        setImportables({ documents: [], openapiSources: [] })
+        setImportablesError(
+          nextError instanceof Error
+            ? nextError.message
+            : 'Unable to load workspace import options',
+        )
+      })
+      .finally(() => {
+        if (cancelled) return
+        setLoadingImportables(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [fetchImportables])
+
   // Poll while any item is processing
   const hasProcessing = items.some((item) => item.status === 'processing')
 
@@ -128,7 +236,7 @@ export function useKnowledgeSources() {
       try {
         let response: Response
 
-        if (values.file) {
+        if (values.file && values.sourceOrigin !== 'workspace') {
           const formData = new FormData()
           formData.set('title', values.title)
           formData.set('sourceType', values.sourceType)
@@ -146,7 +254,16 @@ export function useKnowledgeSources() {
             body: JSON.stringify({
               title: values.title,
               sourceType: values.sourceType,
+              sourceOrigin: values.sourceOrigin,
               sourceUrl: values.sourceUrl,
+              workspaceImportIds:
+                values.sourceOrigin === 'workspace'
+                  ? values.workspaceImportIds
+                  : undefined,
+              sourceUrls:
+                values.sourceType === 'url'
+                  ? parseKnowledgeSourceUrlLines(values.sourceUrlsText)
+                  : undefined,
               rawContent: values.rawContent,
             }),
           })
@@ -156,7 +273,7 @@ export function useKnowledgeSources() {
           throw new Error(await parseResponseError(response))
         }
 
-        const source: KnowledgeSourceItem = await response.json()
+        const source = normalizeCreatedSourcesResponse(await response.json())
         await refresh().catch(() => undefined)
         return source
       } finally {
@@ -290,7 +407,10 @@ export function useKnowledgeSources() {
 
   return {
     items,
+    importables,
+    importablesError,
     loading,
+    loadingImportables,
     mutating,
     error,
     refresh,

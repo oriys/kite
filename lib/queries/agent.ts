@@ -1,6 +1,13 @@
 import { eq, and, desc, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { agentTasks, type AgentStepRecord } from '@/lib/schema'
+import { DOC_AGENT_DEFAULT_MAX_STEPS } from '@/lib/agent/config'
+
+type AgentTaskProgress = {
+  currentStep: number
+  maxSteps: number
+  description?: string
+}
 
 export async function createAgentTask(input: {
   workspaceId: string
@@ -8,6 +15,7 @@ export async function createAgentTask(input: {
   prompt: string
   modelId?: string
   documentId?: string
+  progress?: AgentTaskProgress
 }) {
   const id = crypto.randomUUID()
   const [task] = await db
@@ -20,6 +28,7 @@ export async function createAgentTask(input: {
       modelId: input.modelId,
       documentId: input.documentId,
       status: 'pending',
+      progress: input.progress,
     })
     .returning()
 
@@ -53,7 +62,7 @@ export async function updateAgentTaskStatus(
     error?: string
     steps?: AgentStepRecord[]
     modelId?: string
-    progress?: { currentStep: number; maxSteps: number; description?: string }
+    progress?: AgentTaskProgress
   },
 ) {
   const updates: Record<string, unknown> = { status }
@@ -72,14 +81,18 @@ export async function updateAgentTaskStatus(
   await db.update(agentTasks).set(updates).where(eq(agentTasks.id, taskId))
 }
 
-export async function appendAgentTaskStep(taskId: string, step: AgentStepRecord) {
+export async function appendAgentTaskStep(
+  taskId: string,
+  step: AgentStepRecord,
+  options?: { maxSteps?: number },
+) {
   await db
     .update(agentTasks)
     .set({
       steps: sql`COALESCE(${agentTasks.steps}, '[]'::jsonb) || ${JSON.stringify([step])}::jsonb`,
       progress: {
         currentStep: step.index + 1,
-        maxSteps: 15,
+        maxSteps: options?.maxSteps ?? DOC_AGENT_DEFAULT_MAX_STEPS,
         description:
           step.type === 'tool_call'
             ? `Calling ${step.toolCalls?.[0]?.name ?? 'tool'}…`

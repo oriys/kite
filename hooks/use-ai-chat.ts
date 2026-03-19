@@ -3,6 +3,7 @@
 import * as React from 'react'
 
 import { createClientUuid } from '@/lib/client-uuid'
+import { parseAiChatStreamEvent } from '@/lib/ai-chat-stream'
 import {
   type ChatMessageAttribution,
   type ChatSource,
@@ -205,44 +206,104 @@ export function useAiChat(options: UseAiChatOptions = {}) {
           throw new Error(data?.error ?? `Request failed (${res.status})`)
         }
 
-        const newSessionId = res.headers.get('x-ai-chat-session')
-        if (newSessionId) {
-          activeSessionId = newSessionId
-          setSessionId(newSessionId)
-          void refreshSessions({ silent: true })
-        }
-
-        let sources: ChatMessage['sources'] = []
-        const sourcesHeader = res.headers.get('x-ai-chat-sources')
-        if (sourcesHeader) {
-          try {
-            const bytes = Uint8Array.from(atob(sourcesHeader), (char) =>
-              char.charCodeAt(0),
-            )
-            sources = JSON.parse(new TextDecoder().decode(bytes))
-          } catch {
-            // Sources are supplementary metadata. Keep the streamed answer even if decoding fails.
-          }
-        }
-
         const reader = res.body?.getReader()
         if (!reader) throw new Error('No response stream')
 
         const decoder = new TextDecoder()
         let fullText = ''
+        let sources: ChatMessage['sources'] = []
+        let buffer = ''
+        let currentEvent = ''
+        let currentDataLines: string[] = []
+        let serverError: string | null = null
+
+        const applyAssistantUpdate = (
+          nextContent: string,
+          nextSources: ChatMessage['sources'],
+        ) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? { ...message, content: nextContent, sources: nextSources }
+                : message,
+            ),
+          )
+        }
+
+        const handleStreamEvent = (eventName: string, rawData: string) => {
+          let event
+          try {
+            event = parseAiChatStreamEvent(eventName, rawData)
+          } catch {
+            event = null
+          }
+          if (!event) return
+
+          switch (event.type) {
+            case 'status':
+              return
+            case 'session':
+              activeSessionId = event.sessionId
+              setSessionId(event.sessionId)
+              void refreshSessions({ silent: true })
+              return
+            case 'sources':
+              sources = event.sources
+              applyAssistantUpdate(fullText, sources)
+              return
+            case 'chunk':
+              fullText += event.text
+              applyAssistantUpdate(fullText, sources)
+              return
+            case 'done':
+              return
+            case 'error':
+              serverError = event.message
+              return
+          }
+        }
 
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          fullText += decoder.decode(value, { stream: true })
+          buffer += decoder.decode(value, { stream: true })
 
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? { ...message, content: fullText, sources }
-                : message,
-            ),
-          )
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+
+          for (const line of lines) {
+            if (!line) {
+              if (currentEvent && currentDataLines.length > 0) {
+                handleStreamEvent(currentEvent, currentDataLines.join('\n'))
+              }
+              currentEvent = ''
+              currentDataLines = []
+              continue
+            }
+
+            if (line.startsWith(':')) {
+              continue
+            }
+
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7)
+              continue
+            }
+
+            if (line.startsWith('data: ')) {
+              currentDataLines.push(line.slice(6))
+            }
+          }
+        }
+
+        if (serverError) {
+          if (!fullText) {
+            throw new Error(serverError)
+          }
+
+          setError(serverError)
+          setCanResume(Boolean(activeSessionId))
+          return
         }
 
         if (activeSessionId) {

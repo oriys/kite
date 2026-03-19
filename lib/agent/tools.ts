@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { tool } from 'ai'
 import { db } from '@/lib/db'
+import { retrieveWorkspaceRagContext } from '@/lib/ai-chat'
+import { extractQueryTerms } from '@/lib/search/query-terms'
 import { documents, openapiSources, apiEndpoints } from '@/lib/schema'
 import { eq, and, sql, isNull, desc } from 'drizzle-orm'
 
@@ -9,6 +11,37 @@ import { eq, and, sql, isNull, desc } from 'drizzle-orm'
 export interface AgentToolContext {
   workspaceId: string
   userId: string
+  documentId?: string
+}
+
+function buildSearchPreview(
+  content: string | null | undefined,
+  summary: string | null | undefined,
+  terms: string[],
+) {
+  const normalizedSummary = typeof summary === 'string'
+    ? summary.replace(/\s+/g, ' ').trim()
+    : ''
+  const normalizedContent = typeof content === 'string'
+    ? content.replace(/\s+/g, ' ').trim()
+    : ''
+
+  const sources = [normalizedSummary, normalizedContent].filter(Boolean)
+  const rankedTerms = [...terms].sort((left, right) => right.length - left.length)
+
+  for (const source of sources) {
+    const lowerSource = source.toLowerCase()
+    for (const term of rankedTerms) {
+      const index = lowerSource.indexOf(term.toLowerCase())
+      if (index < 0) continue
+
+      const start = Math.max(0, index - 60)
+      const end = Math.min(source.length, index + 160)
+      return `${start > 0 ? '…' : ''}${source.slice(start, end).trim()}${end < source.length ? '…' : ''}`.slice(0, 240)
+    }
+  }
+
+  return (normalizedSummary || normalizedContent).slice(0, 240)
 }
 
 // ─── Tool factory ───────────────────────────────────────────
@@ -23,6 +56,38 @@ export function createAgentTools(ctx: AgentToolContext) {
         limit: z.number().optional().default(10).describe('Max results'),
       }),
       execute: async ({ query, limit }) => {
+        const terms = extractQueryTerms(query)
+        if (terms.length === 0) {
+          return { results: [], message: 'No documents found.' }
+        }
+
+        const normalizedLimit = Math.min(Math.max(limit, 1), 20)
+        const likePatterns = terms.map((term) => `%${term}%`)
+        const whereMatches = sql.join(
+          likePatterns.map(
+            (pattern) => sql`(
+              ${documents.title} ILIKE ${pattern}
+              OR ${documents.slug} ILIKE ${pattern}
+              OR ${documents.content} ILIKE ${pattern}
+            )`,
+          ),
+          sql` OR `,
+        )
+        const exactPattern = `%${query.trim()}%`
+        const keywordRank = sql<number>`
+          CASE WHEN ${documents.title} ILIKE ${exactPattern} THEN 18 ELSE 0 END +
+          CASE WHEN ${documents.slug} ILIKE ${exactPattern} THEN 14 ELSE 0 END +
+          CASE WHEN ${documents.content} ILIKE ${exactPattern} THEN 8 ELSE 0 END +
+          ${sql.join(
+            likePatterns.flatMap((pattern) => [
+              sql`CASE WHEN ${documents.title} ILIKE ${pattern} THEN 6 ELSE 0 END`,
+              sql`CASE WHEN ${documents.slug} ILIKE ${pattern} THEN 4 ELSE 0 END`,
+              sql`CASE WHEN ${documents.content} ILIKE ${pattern} THEN 2 ELSE 0 END`,
+            ]),
+            sql` + `,
+          )}
+        `
+
         const results = await db
           .select({
             id: documents.id,
@@ -30,20 +95,19 @@ export function createAgentTools(ctx: AgentToolContext) {
             slug: documents.slug,
             status: documents.status,
             summary: documents.summary,
+            content: documents.content,
+            rank: keywordRank,
           })
           .from(documents)
           .where(
             and(
               eq(documents.workspaceId, ctx.workspaceId),
               isNull(documents.deletedAt),
-              sql`(
-                ${documents.title} ILIKE ${'%' + query + '%'}
-                OR ${documents.slug} ILIKE ${'%' + query + '%'}
-                OR ${documents.content} ILIKE ${'%' + query + '%'}
-              )`,
+              sql`(${whereMatches})`,
             ),
           )
-          .limit(limit)
+          .orderBy(desc(keywordRank), desc(documents.updatedAt))
+          .limit(normalizedLimit)
 
         if (results.length === 0) return { results: [], message: 'No documents found.' }
         return {
@@ -52,7 +116,7 @@ export function createAgentTools(ctx: AgentToolContext) {
             title: d.title,
             slug: d.slug,
             status: d.status,
-            summary: d.summary?.slice(0, 200),
+            summary: buildSearchPreview(d.content, d.summary, terms),
           })),
         }
       },
@@ -327,6 +391,36 @@ export function createAgentTools(ctx: AgentToolContext) {
             summary: ep.summary,
             deprecated: ep.deprecated,
           })),
+        }
+      },
+    }),
+
+    search_knowledge_base: tool({
+      description:
+        'Search the workspace knowledge base with RAG and return grounded context snippets plus their sources.',
+      inputSchema: z.object({
+        query: z.string().describe('The question or search query to run against the knowledge base'),
+      }),
+      execute: async ({ query }) => {
+        const result = await retrieveWorkspaceRagContext({
+          workspaceId: ctx.workspaceId,
+          query,
+          documentId: ctx.documentId,
+          debug: false,
+        })
+
+        return {
+          query,
+          sourceCount: result.sources.length,
+          sources: result.sources.map((source) => ({
+            documentId: source.documentId,
+            chunkId: source.chunkId,
+            title: source.title,
+            preview: source.preview,
+            sourceType: source.sourceType ?? 'knowledge_source',
+            relationType: source.relationType ?? 'primary',
+          })),
+          contextText: result.contextText || 'No relevant knowledge base content found.',
         }
       },
     }),

@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { createAgentTask, listAgentTasks, updateAgentTaskStatus, appendAgentTaskStep } from '@/lib/queries/agent'
+import { runAgent } from '@/lib/agent/engine'
+import {
+  parseDocAgentMaxSteps,
+  parseDocAgentModelId,
+  parseDocAgentTemperature,
+} from '@/lib/agent/config'
 import { logServerError } from '@/lib/server-errors'
 
 const MAX_PROMPT_LENGTH = 4000
@@ -32,31 +38,58 @@ export async function POST(request: NextRequest) {
     return badRequest(`Prompt too long. Limit is ${MAX_PROMPT_LENGTH} characters.`)
   }
 
-  const model = typeof body.model === 'string' ? body.model.trim() : undefined
+  const parsedModel = parseDocAgentModelId(body.model)
+  if ('error' in parsedModel) return badRequest(parsedModel.error)
+
+  const parsedMaxSteps = parseDocAgentMaxSteps(body.maxSteps)
+  if ('error' in parsedMaxSteps) return badRequest(parsedMaxSteps.error)
+
+  const parsedTemperature = parseDocAgentTemperature(body.temperature)
+  if ('error' in parsedTemperature) return badRequest(parsedTemperature.error)
+
   const documentId = typeof body.documentId === 'string' ? body.documentId.trim() : undefined
+  const runSettings = {
+    modelId: parsedModel.value,
+    maxSteps: parsedMaxSteps.value,
+    temperature: parsedTemperature.value,
+  }
 
   const task = await createAgentTask({
     workspaceId: result.ctx.workspaceId,
     userId: result.ctx.userId,
     prompt,
-    modelId: model,
+    modelId: runSettings.modelId ?? undefined,
     documentId,
+    progress: {
+      currentStep: 0,
+      maxSteps: runSettings.maxSteps,
+      description: 'Queued...',
+    },
   })
 
   // Fire-and-forget: run the agent in the background
   void (async () => {
     try {
-      await updateAgentTaskStatus(task.id, 'running')
+      await updateAgentTaskStatus(task.id, 'running', {
+        progress: {
+          currentStep: 0,
+          maxSteps: runSettings.maxSteps,
+          description: 'Preparing agent...',
+        },
+      })
 
-      const { runAgent } = await import('@/lib/agent/engine')
       const agentResult = await runAgent({
         workspaceId: result.ctx.workspaceId,
         userId: result.ctx.userId,
         prompt,
         documentId,
-        modelId: model,
+        modelId: runSettings.modelId ?? undefined,
+        maxSteps: runSettings.maxSteps,
+        temperature: runSettings.temperature,
         onStep: (step) => {
-          void appendAgentTaskStep(task.id, step).catch((err) => {
+          void appendAgentTaskStep(task.id, step, {
+            maxSteps: runSettings.maxSteps,
+          }).catch((err) => {
             logServerError('Failed to persist agent step', err, { taskId: task.id })
           })
         },
@@ -65,7 +98,12 @@ export async function POST(request: NextRequest) {
       await updateAgentTaskStatus(task.id, 'completed', {
         result: agentResult.result,
         steps: agentResult.steps,
-        modelId: agentResult.modelId,
+        modelId: agentResult.modelRef,
+        progress: {
+          currentStep: agentResult.steps.length,
+          maxSteps: runSettings.maxSteps,
+          description: 'Completed',
+        },
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Agent execution failed'

@@ -1,5 +1,3 @@
-import 'server-only'
-
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '0.0.0.0', '::1'])
 
 function normalizeHostname(hostname: string) {
@@ -89,12 +87,14 @@ export function getOutboundRequestErrorMessage(
   return 'Request failed'
 }
 
-export async function fetchTextFromUrl(
+interface FetchFromUrlOptions {
+  timeoutMs?: number
+  headers?: HeadersInit
+}
+
+export async function fetchResponseFromUrl(
   input: string | URL,
-  options: {
-    timeoutMs?: number
-    headers?: HeadersInit
-  } = {},
+  options: FetchFromUrlOptions = {},
 ) {
   const timeoutMs = options.timeoutMs ?? 15_000
   const targetUrl =
@@ -114,5 +114,21 @@ export async function fetchTextFromUrl(
     throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`)
   }
 
+  return response
+}
+
+export async function fetchTextFromUrl(
+  input: string | URL,
+  options: FetchFromUrlOptions = {},
+) {
+  const response = await fetchResponseFromUrl(input, options)
   return response.text()
+}
+
+export async function fetchBytesFromUrl(
+  input: string | URL,
+  options: FetchFromUrlOptions = {},
+) {
+  const response = await fetchResponseFromUrl(input, options)
+  return new Uint8Array(await response.arrayBuffer())
 }

@@ -8,10 +8,14 @@ const TOOL_DESCRIPTIONS = `You have access to these tools to work with the docum
 - **publish_document**: Publish a document (transition draft/review → published)
 - **get_openapi_spec**: Read an OpenAPI specification source
 - **list_api_endpoints**: List all API endpoints from an OpenAPI source
+- **search_knowledge_base**: Query the workspace knowledge base with RAG
 - **translate_text**: Translate text to a target language
 - **lint_document**: Check a document for quality issues`
 
-export function buildAgentSystemPrompt(opts?: { documentContext?: string }) {
+export function buildAgentSystemPrompt(opts?: {
+  documentContext?: string
+  knowledgeContext?: string
+}) {
   const parts = [
     `You are a documentation agent inside a Kite workspace. Your job is to autonomously complete documentation tasks by using the available tools.`,
     '',
@@ -27,6 +31,7 @@ export function buildAgentSystemPrompt(opts?: { documentContext?: string }) {
     `6. **Stay within scope.** Only modify documents relevant to the user's request. Do not make unrelated changes.`,
     `7. **Use Markdown.** All document content should be proper Markdown with headings, lists, code blocks, and links as appropriate.`,
     `8. **Respect status.** Draft documents are work-in-progress. Don't publish unless explicitly asked.`,
+    `9. **Use the knowledge base.** For factual workspace context, consult the knowledge base with RAG before guessing. Re-run knowledge-base search if the task evolves.`,
   ]
 
   if (opts?.documentContext) {
@@ -35,6 +40,15 @@ export function buildAgentSystemPrompt(opts?: { documentContext?: string }) {
       `## Current Document Context`,
       '',
       opts.documentContext,
+    )
+  }
+
+  if (opts?.knowledgeContext) {
+    parts.push(
+      '',
+      `## Knowledge Base Context`,
+      '',
+      opts.knowledgeContext,
     )
   }
 

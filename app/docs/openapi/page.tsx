@@ -54,6 +54,57 @@ interface EndpointDiff {
   }[]
 }
 
+interface OpenApiEndpointsResponse {
+  endpoints: Endpoint[]
+}
+
+interface OpenApiDiffResponse {
+  diff: EndpointDiff
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isOpenApiSource(value: unknown): value is OpenApiSource {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    (value.sourceType === 'upload' || value.sourceType === 'url')
+  )
+}
+
+function isEndpoint(value: unknown): value is Endpoint {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.path === 'string' &&
+    typeof value.method === 'string' &&
+    Array.isArray(value.tags)
+  )
+}
+
+function isEndpointDiff(value: unknown): value is EndpointDiff {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  return (
+    Array.isArray(value.added) &&
+    Array.isArray(value.removed) &&
+    Array.isArray(value.changed)
+  )
+}
+
+function isOpenApiEndpointsResponse(value: unknown): value is OpenApiEndpointsResponse {
+  return isRecord(value) && Array.isArray(value.endpoints) && value.endpoints.every(isEndpoint)
+}
+
+function isOpenApiDiffResponse(value: unknown): value is OpenApiDiffResponse {
+  return isRecord(value) && isEndpointDiff(value.diff)
+}
+
 function formatSourceTimestamp(source: OpenApiSource) {
   const rawValue = source.lastSyncedAt ?? source.updatedAt ?? source.createdAt
   if (!rawValue) return source.sourceType === 'url' ? 'Sync time unavailable' : 'Import time unavailable'
@@ -83,7 +134,10 @@ export default function OpenApiPage() {
     try {
       const res = await fetch('/api/openapi')
       if (!res.ok) throw new Error('Failed to fetch sources')
-      const data = await res.json()
+      const data = (await res.json()) as unknown
+      if (!Array.isArray(data) || !data.every(isOpenApiSource)) {
+        throw new Error('Invalid OpenAPI sources response')
+      }
       setSources(data)
     } catch {
       toast.error('Failed to load OpenAPI sources')
@@ -98,17 +152,27 @@ export default function OpenApiPage() {
 
   const fetchDetails = useCallback(async (id: string) => {
     setDetailLoading(true)
+    setDiff(null)
     try {
       const [endpointsRes, diffRes] = await Promise.all([
         fetch(`/api/openapi/${id}/endpoints`),
         fetch(`/api/openapi/${id}/diff`),
       ])
       if (endpointsRes.ok) {
-        const data = await endpointsRes.json()
-        setEndpoints(Array.isArray(data) ? data : data.endpoints ?? [])
+        const data = (await endpointsRes.json()) as unknown
+        if (Array.isArray(data) && data.every(isEndpoint)) {
+          setEndpoints(data)
+        } else if (isOpenApiEndpointsResponse(data)) {
+          setEndpoints(data.endpoints)
+        } else {
+          setEndpoints([])
+        }
+      } else {
+        setEndpoints([])
       }
       if (diffRes.ok) {
-        setDiff(await diffRes.json())
+        const data = (await diffRes.json()) as unknown
+        setDiff(isOpenApiDiffResponse(data) ? data.diff : null)
       }
     } catch {
       toast.error('Failed to load source details')

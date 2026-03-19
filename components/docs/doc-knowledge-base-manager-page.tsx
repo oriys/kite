@@ -28,7 +28,10 @@ import { KnowledgeSourceFormDialog } from './doc-knowledge-source-form-dialog'
 export function DocKnowledgeBaseManagerPage() {
   const {
     items,
+    importables,
+    importablesError,
     loading,
+    loadingImportables,
     mutating,
     error: listError,
     createSource,
@@ -71,8 +74,11 @@ export function DocKnowledgeBaseManagerPage() {
       title: source.title,
       sourceType: source.sourceType,
       sourceUrl: source.sourceUrl ?? '',
+      sourceUrlsText: source.sourceUrl ?? '',
       rawContent: source.rawContent ?? '',
       file: null,
+      sourceOrigin: 'manual',
+      workspaceImportIds: [],
     })
     setFormError(null)
     setFormOpen(true)
@@ -84,8 +90,12 @@ export function DocKnowledgeBaseManagerPage() {
 
     try {
       if (formMode === 'create') {
-        await createSource(formValues)
-        toast.success('Knowledge source added')
+        const created = await createSource(formValues)
+        toast.success(
+          created.length === 1
+            ? 'Knowledge source added'
+            : `${created.length} knowledge sources added`,
+        )
       } else if (editingSourceId) {
         await updateSource(editingSourceId, formValues)
         toast.success('Knowledge source updated')
@@ -104,13 +114,23 @@ export function DocKnowledgeBaseManagerPage() {
     if (!deleteTarget) return
     try {
       await deleteSource(deleteTarget.id)
-      toast.success(`"${deleteTarget.title}" deleted`)
+      toast.success(
+        deleteTarget.status === 'processing'
+          ? `Stopped and deleted "${deleteTarget.title}"`
+          : `"${deleteTarget.title}" deleted`,
+      )
     } catch {
-      toast.error('Failed to delete knowledge source')
+      toast.error(
+        deleteTarget.status === 'processing'
+          ? 'Failed to stop processing and delete knowledge source'
+          : 'Failed to delete knowledge source',
+      )
     } finally {
       setDeleteTarget(null)
     }
   }
+
+  const deletingProcessingSource = deleteTarget?.status === 'processing'
 
   async function handleProcess(source: KnowledgeSourceItem) {
     setProcessingIds((prev) => new Set(prev).add(source.id))
@@ -160,8 +180,9 @@ export function DocKnowledgeBaseManagerPage() {
           Knowledge Base
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Add documents, URLs, and FAQ content that the AI assistant can
-          reference during conversations.
+          Add documents, OpenAPI specs, URLs, FAQ content, and imported
+          workspace content that the AI assistant can reference during
+          conversations.
         </p>
       </div>
 
@@ -237,6 +258,9 @@ export function DocKnowledgeBaseManagerPage() {
         onSubmit={handleSubmit}
         error={formError}
         mutating={mutating}
+        importables={importables}
+        importablesError={importablesError}
+        loadingImportables={loadingImportables}
       />
 
       {/* Delete confirmation */}
@@ -246,10 +270,25 @@ export function DocKnowledgeBaseManagerPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete knowledge source?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {deletingProcessingSource
+                ? 'Force delete knowledge source?'
+                : 'Delete knowledge source?'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              &ldquo;{deleteTarget?.title}&rdquo; will be permanently removed.
-              All indexed content from this source will be deleted.
+              {deletingProcessingSource ? (
+                <>
+                  &ldquo;{deleteTarget?.title}&rdquo; is still processing.
+                  Deleting it will stop the current run and permanently remove
+                  the source. All indexed content from this source will be
+                  deleted.
+                </>
+              ) : (
+                <>
+                  &ldquo;{deleteTarget?.title}&rdquo; will be permanently
+                  removed. All indexed content from this source will be deleted.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -259,7 +298,13 @@ export function DocKnowledgeBaseManagerPage() {
               disabled={mutating}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              {mutating ? 'Deleting…' : 'Delete'}
+              {mutating
+                ? deletingProcessingSource
+                  ? 'Force deleting…'
+                  : 'Deleting…'
+                : deletingProcessingSource
+                  ? 'Force Delete'
+                  : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

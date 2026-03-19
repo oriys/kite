@@ -78,6 +78,7 @@ import {
   type RagVisibilityContext,
   type RagVisibilityRole,
 } from '@/lib/rag/types'
+import { containsCjk, extractQueryTerms } from '@/lib/search/query-terms'
 
 type MemberRole = RagVisibilityRole
 type VisibilityContext = RagVisibilityContext
@@ -103,6 +104,88 @@ function buildVisibilityFilter(
         AND dp.user_id = ${ctx.userId}
     )
   )`
+}
+
+function isMissingSearchVectorColumnError(error: unknown) {
+  return (
+    error instanceof Error
+    && error.message.includes('search_vector')
+    && error.message.includes('does not exist')
+  )
+}
+
+async function searchDocumentKeywordRows(input: {
+  workspaceId: string
+  terms: string[]
+  limit: number
+  visibility?: VisibilityContext
+  documentId?: string
+  preferIlike?: boolean
+}) {
+  const documentFilter = input.documentId
+    ? sql`AND d.id = ${input.documentId}`
+    : sql``
+  const visibilityFilter = buildVisibilityFilter('d', input.visibility)
+  const likePatterns = input.terms.map((term) => `%${term}%`)
+  const whereMatches = sql.join(
+    likePatterns.map(
+      (pattern) => sql`(d.title ILIKE ${pattern} OR d.content ILIKE ${pattern})`,
+    ),
+    sql` OR `,
+  )
+  const keywordRank = sql.join(
+    likePatterns.flatMap((pattern) => [
+      sql`CASE WHEN d.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
+      sql`CASE WHEN d.content ILIKE ${pattern} THEN 1 ELSE 0 END`,
+    ]),
+    sql` + `,
+  )
+
+  if (!input.preferIlike) {
+    const tsQuery = input.terms.join(' ')
+
+    try {
+      return await db.execute(sql`
+        SELECT
+          d.id,
+          d.title,
+          d.slug,
+          d.content,
+          d.updated_at,
+          ts_rank(d.search_vector, plainto_tsquery('english', ${tsQuery})) AS keyword_rank
+        FROM documents d
+        WHERE d.workspace_id = ${input.workspaceId}
+          AND d.deleted_at IS NULL
+          ${documentFilter}
+          ${visibilityFilter}
+          AND d.search_vector @@ plainto_tsquery('english', ${tsQuery})
+        ORDER BY keyword_rank DESC, d.updated_at DESC
+        LIMIT ${input.limit}
+      `) as unknown as Array<Record<string, unknown>>
+    } catch (error) {
+      if (!isMissingSearchVectorColumnError(error)) {
+        throw error
+      }
+    }
+  }
+
+  return await db.execute(sql`
+    SELECT
+      d.id,
+      d.title,
+      d.slug,
+      d.content,
+      d.updated_at,
+      ${keywordRank} AS keyword_rank
+    FROM documents d
+    WHERE d.workspace_id = ${input.workspaceId}
+      AND d.deleted_at IS NULL
+      ${documentFilter}
+      ${visibilityFilter}
+      AND (${whereMatches})
+    ORDER BY keyword_rank DESC, d.updated_at DESC
+    LIMIT ${input.limit}
+  `) as unknown as Array<Record<string, unknown>>
 }
 
 interface RetrievedContextSection {
@@ -277,43 +360,31 @@ export async function searchSimilarChunks(input: {
   const queryVector = `[${embeddings[0].join(',')}]`
   const topK = input.topK ?? TOP_K_CHUNKS
 
-  const documentFilter = input.documentId
-    ? sql`AND dc.document_id = ${input.documentId}`
-    : sql``
-  const visibilityFilter = buildVisibilityFilter('d', input.visibility)
-
   const results = await db.execute(sql`
     SELECT
       dc.id AS chunk_id,
-      dc.document_id,
       dc.chunk_text,
       dc.chunk_index,
       dc.knowledge_source_id,
-      COALESCE(d.title, ks.title, 'Untitled') AS document_title,
-      d.slug AS document_slug,
+      COALESCE(ks.title, 'Untitled') AS document_title,
       1 - (dc.embedding <=> ${queryVector}::vector) AS similarity
     FROM document_chunks dc
-    LEFT JOIN documents d ON d.id = dc.document_id AND d.deleted_at IS NULL AND dc.knowledge_source_id IS NULL
-    LEFT JOIN knowledge_sources ks ON ks.id = dc.knowledge_source_id AND ks.deleted_at IS NULL
+    JOIN knowledge_sources ks ON ks.id = dc.knowledge_source_id AND ks.deleted_at IS NULL
     WHERE dc.workspace_id = ${input.workspaceId}
       AND dc.embedding IS NOT NULL
-      AND (d.id IS NOT NULL OR ks.id IS NOT NULL)
-      ${documentFilter}
-      ${visibilityFilter}
+      AND dc.knowledge_source_id IS NOT NULL
     ORDER BY dc.embedding <=> ${queryVector}::vector
     LIMIT ${topK}
   `)
 
   const hits = (results as unknown as Array<Record<string, unknown>>).map((row) => ({
     chunkId: row.chunk_id as string,
-    documentId: (row.document_id as string) ?? (row.knowledge_source_id as string),
+    documentId: row.knowledge_source_id as string,
     chunkText: row.chunk_text as string,
     chunkIndex: row.chunk_index as number,
     documentTitle: row.document_title as string,
-    documentSlug:
-      row.document_slug === undefined || row.document_slug === null
-        ? null
-        : String(row.document_slug),
+    documentSlug: null,
+    sourceType: 'knowledge_source' as const,
     similarity: Number(row.similarity ?? 0),
   }))
 
@@ -321,46 +392,6 @@ export async function searchSimilarChunks(input: {
 }
 
 // ─── RAG context builder ────────────────────────────────────────
-
-function containsCjk(text: string) {
-  return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text)
-}
-
-function extractQueryTerms(query: string) {
-  const normalized = query.trim()
-  if (!normalized) return []
-
-  const seen = new Set<string>()
-  const terms: string[] = []
-
-  const addTerm = (value: string) => {
-    const trimmed = value.trim()
-    if (!trimmed) return
-
-    const key = trimmed.toLowerCase()
-    if (seen.has(key)) return
-
-    seen.add(key)
-    terms.push(trimmed)
-  }
-
-  addTerm(normalized)
-  addTerm(normalized.replace(/[_-]+/g, ' '))
-  addTerm(normalized.replace(/[\s_-]+/g, ''))
-
-  for (const token of normalized.match(/[A-Za-z][A-Za-z0-9:_-]{2,}/g) ?? []) {
-    addTerm(token)
-    addTerm(token.replace(/[_-]+/g, ' '))
-    addTerm(token.replace(/[\s_-]+/g, ''))
-    addTerm(token.replace(/([a-z0-9])([A-Z])/g, '$1 $2'))
-  }
-
-  for (const token of normalized.match(/[\u4e00-\u9fff]{2,}/g) ?? []) {
-    addTerm(token)
-  }
-
-  return terms.slice(0, 8)
-}
 
 function buildRetrievalQueries(query: string, rules: CompiledExpansionRule[] = DEFAULT_COMPILED_RULES) {
   const queries: string[] = []
@@ -1003,62 +1034,14 @@ async function searchReferenceCandidateDocuments(input: {
   const searchTerms = input.candidate.searchTerms
   if (searchTerms.length === 0) return []
 
-  const visibilityFilter = buildVisibilityFilter('d', input.visibility)
   const useCjkFallback = searchTerms.some((term) => containsCjk(term))
-
-  let results: Array<Record<string, unknown>>
-
-  if (useCjkFallback) {
-    const likePatterns = searchTerms.map((term) => `%${term}%`)
-    const whereMatches = sql.join(
-      likePatterns.map(
-        (pattern) => sql`(d.title ILIKE ${pattern} OR d.content ILIKE ${pattern})`,
-      ),
-      sql` OR `,
-    )
-    const keywordRank = sql.join(
-      likePatterns.flatMap((pattern) => [
-        sql`CASE WHEN d.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
-        sql`CASE WHEN d.content ILIKE ${pattern} THEN 1 ELSE 0 END`,
-      ]),
-      sql` + `,
-    )
-
-    results = await db.execute(sql`
-      SELECT
-        d.id,
-        d.title,
-        d.slug,
-        d.content,
-        d.updated_at,
-        ${keywordRank} AS keyword_rank
-      FROM documents d
-      WHERE d.workspace_id = ${input.workspaceId}
-        AND d.deleted_at IS NULL
-        ${visibilityFilter}
-        AND (${whereMatches})
-      ORDER BY keyword_rank DESC, d.updated_at DESC
-      LIMIT ${MAX_REFERENCE_SEARCH_RESULTS * 8}
-    `) as unknown as Array<Record<string, unknown>>
-  } else {
-    const tsQuery = searchTerms.join(' ')
-    results = await db.execute(sql`
-      SELECT
-        d.id,
-        d.title,
-        d.slug,
-        d.content,
-        d.updated_at,
-        ts_rank(d.search_vector, plainto_tsquery('english', ${tsQuery})) AS keyword_rank
-      FROM documents d
-      WHERE d.workspace_id = ${input.workspaceId}
-        AND d.deleted_at IS NULL
-        ${visibilityFilter}
-        AND d.search_vector @@ plainto_tsquery('english', ${tsQuery})
-      ORDER BY keyword_rank DESC, d.updated_at DESC
-      LIMIT ${MAX_REFERENCE_SEARCH_RESULTS * 8}
-    `) as unknown as Array<Record<string, unknown>>
-  }
+  const results = await searchDocumentKeywordRows({
+    workspaceId: input.workspaceId,
+    terms: searchTerms,
+    limit: MAX_REFERENCE_SEARCH_RESULTS * 8,
+    visibility: input.visibility,
+    preferIlike: useCjkFallback,
+  })
 
   const candidateUrlParts = getReferenceUrlParts(input.candidate.url)
 
@@ -1201,7 +1184,7 @@ async function loadChunkNeighborhoods(input: {
     }
 
     clauses.push(
-      sql`(dc.document_id = ${chunk.documentId} AND dc.chunk_index IN (${sql.join(
+      sql`(dc.knowledge_source_id = ${chunk.documentId} AND dc.chunk_index IN (${sql.join(
         indexes.map((index) => sql`${index}`),
         sql`, `,
       )}))`,
@@ -1210,13 +1193,13 @@ async function loadChunkNeighborhoods(input: {
 
   const rows = await db.execute(sql`
     SELECT
-      dc.document_id,
+      dc.knowledge_source_id AS document_id,
       dc.chunk_index,
       dc.chunk_text
     FROM document_chunks dc
     WHERE dc.workspace_id = ${input.workspaceId}
       AND (${sql.join(clauses, sql` OR `)})
-    ORDER BY dc.document_id ASC, dc.chunk_index ASC
+    ORDER BY dc.knowledge_source_id ASC, dc.chunk_index ASC
   `)
 
   const byDocument = new Map<string, Map<number, string>>()
@@ -1284,6 +1267,7 @@ function buildSemanticSections(input: {
       source: {
         documentId: chunk.documentId,
         documentSlug: chunk.documentSlug,
+        sourceType: 'knowledge_source',
         chunkId: chunk.chunkId,
         title: chunk.documentTitle,
         preview: chunk.chunkText.slice(0, 150),
@@ -1464,90 +1448,54 @@ async function searchKeywordDocuments(input: {
   const terms = extractQueryTerms(input.query)
   if (terms.length === 0) return []
 
-  const documentFilter = input.documentId
-    ? sql`AND d.id = ${input.documentId}`
-    : sql``
-  const visibilityFilter = buildVisibilityFilter('d', input.visibility)
   const topK = input.topK ?? TOP_K_KEYWORD_DOCUMENTS
-  const useCjkFallback = containsCjk(input.query)
-
-  let results: Array<Record<string, unknown>>
-
-  if (useCjkFallback) {
-    // CJK queries: tsvector doesn't handle CJK well, use ILIKE
-    const likePatterns = terms.map((term) => `%${term}%`)
-    const whereMatches = sql.join(
-      likePatterns.map(
-        (pattern) => sql`(d.title ILIKE ${pattern} OR d.content ILIKE ${pattern})`,
-      ),
-      sql` OR `,
-    )
-    const keywordRank = sql.join(
-      likePatterns.flatMap((pattern) => [
-        sql`CASE WHEN d.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
-        sql`CASE WHEN d.content ILIKE ${pattern} THEN 1 ELSE 0 END`,
-      ]),
-      sql` + `,
-    )
-
-    results = await db.execute(sql`
-      SELECT
-        d.id,
-        d.title,
-        d.slug,
-        d.content,
-        d.updated_at,
-        ${keywordRank} AS keyword_rank
-      FROM documents d
-      WHERE d.workspace_id = ${input.workspaceId}
-        AND d.deleted_at IS NULL
-        ${documentFilter}
-        ${visibilityFilter}
-        AND (${whereMatches})
-      ORDER BY keyword_rank DESC, d.updated_at DESC
-      LIMIT ${topK}
-    `) as unknown as Array<Record<string, unknown>>
-  } else {
-    // Non-CJK: use tsvector with ts_rank for proper stemming and ranking
-    const tsQuery = terms.join(' ')
-    results = await db.execute(sql`
-      SELECT
-        d.id,
-        d.title,
-        d.slug,
-        d.content,
-        d.updated_at,
-        ts_rank(d.search_vector, plainto_tsquery('english', ${tsQuery})) AS keyword_rank
-      FROM documents d
-      WHERE d.workspace_id = ${input.workspaceId}
-        AND d.deleted_at IS NULL
-        ${documentFilter}
-        ${visibilityFilter}
-        AND d.search_vector @@ plainto_tsquery('english', ${tsQuery})
-      ORDER BY keyword_rank DESC, d.updated_at DESC
-      LIMIT ${topK}
-    `) as unknown as Array<Record<string, unknown>>
-  }
+  const likePatterns = terms.map((term) => `%${term}%`)
+  const whereMatches = sql.join(
+    likePatterns.map(
+      (pattern) => sql`(ks.title ILIKE ${pattern} OR ks.raw_content ILIKE ${pattern})`,
+    ),
+    sql` OR `,
+  )
+  const keywordRank = sql.join(
+    likePatterns.flatMap((pattern) => [
+      sql`CASE WHEN ks.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
+      sql`CASE WHEN ks.raw_content ILIKE ${pattern} THEN 1 ELSE 0 END`,
+    ]),
+    sql` + `,
+  )
+  const results = await db.execute(sql`
+    SELECT
+      ks.id,
+      ks.title,
+      ks.raw_content AS content,
+      ks.updated_at,
+      ${keywordRank} AS keyword_rank
+    FROM knowledge_sources ks
+    WHERE ks.workspace_id = ${input.workspaceId}
+      AND ks.deleted_at IS NULL
+      AND ks.status = 'ready'
+      AND (${whereMatches})
+    ORDER BY keyword_rank DESC, ks.updated_at DESC
+    LIMIT ${topK}
+  `) as unknown as Array<Record<string, unknown>>
 
   const sections: RetrievedContextSection[] = []
 
   for (const row of results as unknown as Array<Record<string, unknown>>) {
     const content = String(row.content ?? '')
-    const snippet = buildSnippetFromDocument(content, terms)
+    const title = (row.title as string) || 'Untitled'
+    const snippet = buildSnippetFromDocument(content, terms) || title
 
     if (!snippet) continue
 
     const documentId = row.id as string
-    const title = (row.title as string) || 'Untitled'
 
     sections.push({
       source: {
         documentId,
-        documentSlug:
-          row.slug === undefined || row.slug === null
-            ? null
-            : String(row.slug),
-        chunkId: `document:${documentId}:keyword`,
+        documentSlug: null,
+        sourceType: 'knowledge_source',
+        chunkId: `knowledge-source:${documentId}:keyword`,
         title,
         preview: snippet.slice(0, 150),
         relationType: 'primary',
@@ -1627,10 +1575,15 @@ function buildContextFromSections(
     const relationLine =
       section.source.relationDescription ||
       'Direct retrieval match for the user question.'
+    const sourceLabel = section.source.sourceType === 'knowledge_source'
+      ? 'Knowledge source'
+      : section.source.relationType === 'reference'
+        ? 'Related document'
+        : 'Primary document'
 
     contextParts.push(
       [
-        `${label} ${section.source.relationType === 'reference' ? 'Related document' : 'Primary document'}`,
+        `${label} ${sourceLabel}`,
         `Title: "${section.source.title}"`,
         `Relation: ${relationLine}`,
         '',
@@ -1713,12 +1666,11 @@ async function retrieveChatContext(input: {
     }
   }
 
-  const shouldUseKg = resolvedMode !== 'naive'
-  const shouldIncludeEntityContext =
-    resolvedMode === 'hybrid' || resolvedMode === 'mix' || resolvedMode === 'local'
-  const shouldIncludeRelationContext =
-    resolvedMode === 'hybrid' || resolvedMode === 'mix' || resolvedMode === 'global'
-  const shouldExpandRelatedDocs = resolvedMode === 'hybrid'
+  // Chat RAG is intentionally knowledge-source only.
+  const shouldUseKg = false
+  const shouldIncludeEntityContext = false
+  const shouldIncludeRelationContext = false
+  const shouldExpandRelatedDocs = false
   const shouldRerank = resolvedMode !== 'naive'
   const queryVariants = buildRetrievalQueries(input.query, expansionRules)
 
@@ -2402,8 +2354,8 @@ export async function streamChatResponse(input: {
     })
   ) {
     const noContextMessage = containsCjk(input.userMessage)
-      ? '我没有在当前工作区文档或已启用的 MCP 工具中找到足够的信息来回答这个问题。请先确认相关文档已经导入并重新生成 embeddings，或者检查 MCP Server 是否已启用且可用后再试。'
-      : 'I could not find enough information in the current workspace documents or enabled MCP tools to answer that. Please confirm the relevant documents exist and rerun embeddings if needed, or verify the MCP server is enabled and reachable, then try again.'
+      ? '我没有在当前工作区知识库或已启用的 MCP 工具中找到足够的信息来回答这个问题。请先确认相关内容已导入知识库，或者检查 MCP Server 是否已启用且可用后再试。'
+      : 'I could not find enough information in the current workspace knowledge sources or enabled MCP tools to answer that. Please confirm the relevant content has been imported into the knowledge base, or verify the MCP server is enabled and reachable, then try again.'
 
     return {
       stream: createStaticStream(noContextMessage),

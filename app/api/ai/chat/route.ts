@@ -1,7 +1,10 @@
-import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-import { AiCompletionError } from '@/lib/ai-server'
+import {
+  formatAiChatStreamComment,
+  formatAiChatStreamEvent,
+  type AiChatStreamEvent,
+} from '@/lib/ai-chat-stream'
 import {
   createChatSession,
   saveChatMessage,
@@ -12,6 +15,7 @@ import { isRagQueryMode } from '@/lib/rag/types'
 import { logServerError } from '@/lib/server-errors'
 
 const MAX_MESSAGE_LENGTH = 4000
+const CHAT_STREAM_KEEPALIVE_MS = 10_000
 const RESUME_REPLY_PROMPT =
   'Continue your previous answer from where you stopped. Do not repeat completed sections unless necessary.'
 
@@ -57,82 +61,166 @@ export async function POST(request: NextRequest) {
     return badRequest(`Message too long. Limit is ${MAX_MESSAGE_LENGTH} characters.`)
   }
 
-  try {
-    let activeSessionId = sessionId
-    if (!activeSessionId) {
-      const session = await createChatSession({
-        workspaceId: result.ctx.workspaceId,
-        userId: result.ctx.userId,
-        documentId,
-        title: rawMessage.slice(0, 80),
-      })
-      activeSessionId = session.id
+  const encoder = new TextEncoder()
+  let heartbeat: ReturnType<typeof setInterval> | null = null
+  let closed = false
+
+  const cleanup = () => {
+    if (heartbeat) {
+      clearInterval(heartbeat)
+      heartbeat = null
     }
-
-    if (!resume) {
-      await saveChatMessage({
-        sessionId: activeSessionId,
-        role: 'user',
-        content: rawMessage,
-      })
-    }
-
-    const { stream, sources, attributionPromise } = await streamChatResponse({
-      workspaceId: result.ctx.workspaceId,
-      sessionId: activeSessionId,
-      userMessage: message,
-      documentId,
-        model,
-        userId: result.ctx.userId,
-        role: result.ctx.role,
-        ragMode,
-        mcpPrompt,
-      })
-
-    const [browserStream, persistStream] = stream.tee()
-
-    void Promise.all([
-      collectStreamText(persistStream),
-      attributionPromise.catch((error) => {
-        logServerError('Failed to collect AI chat attribution.', error, {
-          sessionId: activeSessionId,
-        })
-        return undefined
-      }),
-    ])
-      .then(async ([fullText, attribution]) => {
-        await saveChatMessage({
-          sessionId: activeSessionId,
-          role: 'assistant',
-          content: fullText,
-          sources,
-          attribution,
-        })
-      })
-      .catch((error) => {
-        logServerError('Failed to persist assistant chat message.', error, {
-          sessionId: activeSessionId,
-        })
-      })
-
-    return new Response(browserStream, {
-      headers: {
-        'content-type': 'text/plain; charset=utf-8',
-        'cache-control': 'no-store',
-        'x-ai-chat-session': activeSessionId,
-        'x-ai-chat-sources': Buffer.from(
-          JSON.stringify(sources),
-          'utf8',
-        ).toString('base64'),
-      },
-    })
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'The AI provider request failed.'
-    const status = error instanceof AiCompletionError ? error.status : 502
-
-    return NextResponse.json({ error: message }, { status })
   }
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let activeSessionId = sessionId
+
+      const close = () => {
+        if (closed) return
+        closed = true
+        cleanup()
+        controller.close()
+      }
+
+      const sendRaw = (value: string) => {
+        if (closed) return
+        controller.enqueue(encoder.encode(value))
+      }
+
+      const sendEvent = (
+        event: AiChatStreamEvent,
+      ) => {
+        sendRaw(formatAiChatStreamEvent(event))
+      }
+
+      try {
+        sendEvent({ type: 'status', phase: 'accepted' })
+        heartbeat = setInterval(() => {
+          try {
+            sendRaw(formatAiChatStreamComment())
+          } catch {
+            cleanup()
+          }
+        }, CHAT_STREAM_KEEPALIVE_MS)
+
+        if (!activeSessionId) {
+          const session = await createChatSession({
+            workspaceId: result.ctx.workspaceId,
+            userId: result.ctx.userId,
+            documentId,
+            title: rawMessage.slice(0, 80),
+          })
+          activeSessionId = session.id
+        }
+
+        sendEvent({ type: 'session', sessionId: activeSessionId })
+
+        if (!resume) {
+          await saveChatMessage({
+            sessionId: activeSessionId,
+            role: 'user',
+            content: rawMessage,
+          })
+        }
+
+        sendEvent({ type: 'status', phase: 'preparing' })
+
+        const { stream, sources, attributionPromise } = await streamChatResponse({
+          workspaceId: result.ctx.workspaceId,
+          sessionId: activeSessionId,
+          userMessage: message,
+          documentId,
+          model,
+          userId: result.ctx.userId,
+          role: result.ctx.role,
+          ragMode,
+          mcpPrompt,
+        })
+
+        sendEvent({ type: 'sources', sources })
+        sendEvent({ type: 'status', phase: 'streaming' })
+
+        const [browserStream, persistStream] = stream.tee()
+
+        void Promise.all([
+          collectStreamText(persistStream),
+          attributionPromise.catch((error) => {
+            logServerError('Failed to collect AI chat attribution.', error, {
+              sessionId: activeSessionId,
+            })
+            return undefined
+          }),
+        ])
+          .then(async ([fullText, attribution]) => {
+            await saveChatMessage({
+              sessionId: activeSessionId,
+              role: 'assistant',
+              content: fullText,
+              sources,
+              attribution,
+            })
+          })
+          .catch((error) => {
+            logServerError('Failed to persist assistant chat message.', error, {
+              sessionId: activeSessionId,
+            })
+          })
+
+        const reader = browserStream.getReader()
+        const decoder = new TextDecoder()
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            const text = decoder.decode(value, { stream: true })
+            if (text) {
+              sendEvent({ type: 'chunk', text })
+            }
+          }
+
+          const trailing = decoder.decode()
+          if (trailing) {
+            sendEvent({ type: 'chunk', text: trailing })
+          }
+        } finally {
+          reader.releaseLock()
+        }
+
+        sendEvent({ type: 'done' })
+        close()
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'The AI provider request failed.'
+
+        logServerError(
+          'AI chat stream failed.',
+          error instanceof Error ? error : new Error(message),
+          {
+            sessionId: activeSessionId,
+          },
+        )
+
+        sendEvent({ type: 'error', message })
+        close()
+      }
+    },
+    cancel() {
+      closed = true
+      cleanup()
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+    },
+  })
 }
 
 async function collectStreamText(stream: ReadableStream<Uint8Array>) {
@@ -150,5 +238,6 @@ async function collectStreamText(stream: ReadableStream<Uint8Array>) {
     reader.releaseLock()
   }
 
+  text += decoder.decode()
   return text
 }

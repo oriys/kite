@@ -62,7 +62,6 @@ export async function PATCH(
     tags?: string[]
     content?: string
     visibility?: (typeof visibilityEnum.enumValues)[number]
-    ragEnabled?: boolean
   } = {}
   if (typeof body.title === 'string') patch.title = body.title
   if (typeof body.slug === 'string') patch.slug = body.slug
@@ -75,7 +74,6 @@ export async function PATCH(
     patch.tags = tags
   }
   if (typeof body.content === 'string') patch.content = body.content
-  if (typeof body.ragEnabled === 'boolean') patch.ragEnabled = body.ragEnabled
   if (body.visibility !== undefined) {
     if (
       typeof body.visibility !== 'string'

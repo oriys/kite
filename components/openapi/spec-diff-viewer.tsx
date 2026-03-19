@@ -20,12 +20,21 @@ interface EndpointDiff {
 }
 
 interface SpecDiffViewerProps {
-  diff: EndpointDiff
+  diff: EndpointDiff | Record<string, unknown>
   className?: string
 }
 
 export function SpecDiffViewer({ diff, className }: SpecDiffViewerProps) {
-  const totalChanges = diff.added.length + diff.removed.length + diff.changed.length
+  const added: EndpointDiff['added'] = Array.isArray(diff.added)
+    ? (diff.added as EndpointDiff['added'])
+    : []
+  const removed: EndpointDiff['removed'] = Array.isArray(diff.removed)
+    ? (diff.removed as EndpointDiff['removed'])
+    : []
+  const changed: EndpointDiff['changed'] = Array.isArray(diff.changed)
+    ? (diff.changed as EndpointDiff['changed'])
+    : []
+  const totalChanges = added.length + removed.length + changed.length
 
   if (totalChanges === 0) {
     return (
@@ -39,34 +48,34 @@ export function SpecDiffViewer({ diff, className }: SpecDiffViewerProps) {
     <div className={cn('space-y-6', className)}>
       {/* Summary */}
       <div className="flex items-center gap-3 text-sm">
-        {diff.added.length > 0 && (
+        {added.length > 0 && (
           <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-            {diff.added.length} added
+            {added.length} added
           </span>
         )}
-        {diff.removed.length > 0 && (
+        {removed.length > 0 && (
           <span className="inline-flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
             <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
-            {diff.removed.length} removed
+            {removed.length} removed
           </span>
         )}
-        {diff.changed.length > 0 && (
+        {changed.length > 0 && (
           <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
             <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
-            {diff.changed.length} changed
+            {changed.length} changed
           </span>
         )}
       </div>
 
       {/* Added endpoints */}
-      {diff.added.length > 0 && (
+       {added.length > 0 && (
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
             Added Endpoints
           </h3>
           <div className="space-y-1">
-            {diff.added.map((ep) => (
+            {added.map((ep) => (
               <div
                 key={`${ep.method} ${ep.path}`}
                 className="flex items-center gap-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2"
@@ -91,13 +100,13 @@ export function SpecDiffViewer({ diff, className }: SpecDiffViewerProps) {
       )}
 
       {/* Removed endpoints */}
-      {diff.removed.length > 0 && (
+      {removed.length > 0 && (
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-400">
             Removed Endpoints
           </h3>
           <div className="space-y-1">
-            {diff.removed.map((ep) => (
+            {removed.map((ep) => (
               <div
                 key={`${ep.method} ${ep.path}`}
                 className="flex items-center gap-3 rounded-md border border-rose-500/20 bg-rose-500/5 px-3 py-2"
@@ -124,13 +133,13 @@ export function SpecDiffViewer({ diff, className }: SpecDiffViewerProps) {
       )}
 
       {/* Changed endpoints */}
-      {diff.changed.length > 0 && (
+      {changed.length > 0 && (
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
             Changed Endpoints
           </h3>
           <Accordion type="multiple" className="space-y-1">
-            {diff.changed.map((ep) => (
+            {changed.map((ep) => (
               <AccordionItem
                 key={`${ep.method} ${ep.path}`}
                 value={`${ep.method} ${ep.path}`}

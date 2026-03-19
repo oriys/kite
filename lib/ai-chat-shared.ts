@@ -1,8 +1,10 @@
 export type ChatSourceRelationType = 'primary' | 'reference'
+export type ChatSourceType = 'document' | 'knowledge_source'
 
 export interface ChatSource {
   documentId: string
   documentSlug?: string | null
+  sourceType?: ChatSourceType
   chunkId: string
   title: string
   preview: string

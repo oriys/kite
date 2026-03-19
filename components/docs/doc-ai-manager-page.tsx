@@ -69,6 +69,9 @@ import {
 import { Switch } from '@/components/ui/switch'
 
 const numberFormatter = new Intl.NumberFormat('en-US')
+const INITIAL_ENABLED_MODEL_SUMMARY_LIMIT = 6
+const INITIAL_PROVIDER_CARD_LIMIT = 4
+const INITIAL_PROVIDER_GROUP_MODEL_LIMIT = 12
 
 function formatFetchedAt(value: string) {
   if (!value) return 'Not synced yet'
@@ -134,9 +137,14 @@ export function DocAiManagerPage() {
     deleteProvider,
   } = useAiProviders()
   const [search, setSearch] = React.useState('')
+  const [showAllEnabledModelSummaries, setShowAllEnabledModelSummaries] =
+    React.useState(false)
+  const [showAllProviderCards, setShowAllProviderCards] = React.useState(false)
   const [openProviderGroup, setOpenProviderGroup] = React.useState<string | null>(
     null,
   )
+  const [expandedProviderModelGroups, setExpandedProviderModelGroups] =
+    React.useState<string[]>([])
   const [formOpen, setFormOpen] = React.useState(false)
   const [formMode, setFormMode] = React.useState<'create' | 'edit'>('create')
   const [editingProviderId, setEditingProviderId] = React.useState<string | null>(
@@ -291,26 +299,58 @@ export function DocAiManagerPage() {
     providerCardById,
   ])
 
+  const enabledModelSummaries = React.useMemo(
+    () =>
+      enabledModels.map((model) => {
+        const provider = providerCardById.get(model.providerId)
+
+        return {
+          ...model,
+          providerName: provider?.name ?? model.provider,
+          providerLabel:
+            provider?.providerLabel ?? provider?.providerType ?? model.providerType,
+          contextWindowLabel: formatAiContextWindow(model.contextWindow),
+        }
+      }),
+    [enabledModels, providerCardById],
+  )
+
+  const enabledProviderSummaryCount = React.useMemo(
+    () => new Set(enabledModels.map((model) => model.providerId)).size,
+    [enabledModels],
+  )
+
+  const visibleEnabledModelSummaries = showAllEnabledModelSummaries
+    ? enabledModelSummaries
+    : enabledModelSummaries.slice(0, INITIAL_ENABLED_MODEL_SUMMARY_LIMIT)
+
+  const visibleProviderCards = showAllProviderCards
+    ? providerCards
+    : providerCards.slice(0, INITIAL_PROVIDER_CARD_LIMIT)
+
   React.useEffect(() => {
     if (providerGroups.length === 0) {
-      setOpenProviderGroup(null)
+      if (openProviderGroup !== null) {
+        setOpenProviderGroup(null)
+      }
       return
     }
 
     if (
       openProviderGroup &&
-      providerGroups.some((group) => group.providerId === openProviderGroup)
+      !providerGroups.some((group) => group.providerId === openProviderGroup)
     ) {
-      return
+      setOpenProviderGroup(null)
     }
-
-    setOpenProviderGroup(
-      providerGroups.find((group) => group.activeGroupModel)?.providerId ??
-        providerGroups.find((group) => group.enabledCountInGroup > 0)?.providerId ??
-        providerGroups[0]?.providerId ??
-        null,
-    )
   }, [openProviderGroup, providerGroups])
+
+  React.useEffect(() => {
+    setExpandedProviderModelGroups((current) =>
+      current.filter((providerId) =>
+        providerGroups.some((group) => group.providerId === providerId),
+      ),
+    )
+  }, [providerGroups])
 
   const activeLabel = activeModel?.label || activeModel?.id || 'Not selected'
   const enabledCount = numberFormatter.format(enabledModels.length)
@@ -320,6 +360,14 @@ export function DocAiManagerPage() {
   const dbProviderCount = providerCards.filter(
     (provider) => provider.source === 'database',
   ).length
+
+  const toggleExpandedProviderModelGroup = React.useCallback((providerId: string) => {
+    setExpandedProviderModelGroups((current) =>
+      current.includes(providerId)
+        ? current.filter((value) => value !== providerId)
+        : [...current, providerId],
+    )
+  }, [])
 
   const handleProviderTypeChange = React.useCallback((value: string) => {
     setFormValues((current) => {
@@ -514,6 +562,140 @@ export function DocAiManagerPage() {
           </Alert>
         ) : null}
       </div>
+
+      <section className="editorial-surface overflow-hidden editorial-reveal">
+        <div className="border-b border-border/70 px-4 py-4 sm:px-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="editorial-section-kicker">Enabled Workspace Models</p>
+              <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
+                Keep the editor-visible set in one place
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                These are the models currently exposed in slash and bubble menus. Quick
+                actions here cover the most common changes without opening every provider
+                group.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={enabledModels.length > 0 ? 'secondary' : 'outline'}>
+                {enabledCount} enabled
+              </Badge>
+              <Badge variant="outline">
+                {numberFormatter.format(enabledProviderSummaryCount)} providers represented
+              </Badge>
+              <Badge
+                variant={activeModel ? 'secondary' : 'outline'}
+                className="max-w-full truncate sm:max-w-[22rem]"
+              >
+                {activeModel ? `Default ${activeLabel}` : 'No default selected'}
+              </Badge>
+            </div>
+          </div>
+        </div>
+
+        {enabledModelSummaries.length === 0 ? (
+          <Empty className="min-h-[220px]">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <BrainCircuit />
+              </EmptyMedia>
+              <EmptyTitle>No enabled models yet</EmptyTitle>
+              <EmptyDescription>
+                Turn models on below to expose them in the editor and make one the
+                workspace default.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <div className="grid gap-3 px-4 py-4 sm:px-5 lg:grid-cols-2 xl:grid-cols-3">
+            {visibleEnabledModelSummaries.map((model) => {
+              const isActive = activeModelId === model.id
+
+              return (
+                <article
+                  key={model.id}
+                  className={cn(
+                    'rounded-xl border border-border/70 bg-background/70 p-4',
+                    isActive && 'border-primary/25 bg-primary/[0.04]',
+                  )}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3
+                          className="truncate text-sm font-semibold tracking-tight text-foreground"
+                          title={model.label}
+                        >
+                          {model.label}
+                        </h3>
+                        <Badge variant={isActive ? 'secondary' : 'outline'}>
+                          {isActive ? 'Default' : 'Enabled'}
+                        </Badge>
+                        <Badge variant="outline">{model.providerLabel}</Badge>
+                        {model.contextWindowLabel ? (
+                          <Badge variant="outline">{model.contextWindowLabel} ctx</Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 text-xs font-medium text-foreground/85">
+                        {model.providerName}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {model.modelId}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!isActive ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setActiveModelId(model.id)}
+                          disabled={savingModelSettings}
+                        >
+                          Set default
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleModel(model.id, false)}
+                        disabled={savingModelSettings}
+                      >
+                        Hide
+                      </Button>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
+
+        {enabledModelSummaries.length > INITIAL_ENABLED_MODEL_SUMMARY_LIMIT ? (
+          <div className="border-t border-border/70 px-4 py-3 sm:px-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs leading-5 text-muted-foreground">
+                {showAllEnabledModelSummaries
+                  ? `Showing all ${enabledCount} enabled models.`
+                  : `Showing ${numberFormatter.format(visibleEnabledModelSummaries.length)} of ${enabledCount} enabled models.`}
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  setShowAllEnabledModelSummaries((current) => !current)
+                }
+              >
+                {showAllEnabledModelSummaries
+                  ? 'Show fewer'
+                  : `Show all ${enabledCount}`}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <div className="grid gap-4">
         <section className="editorial-surface overflow-hidden editorial-reveal">
           <div className="border-b border-border/70 px-4 py-4 sm:px-5">
@@ -549,7 +731,7 @@ export function DocAiManagerPage() {
             </Empty>
           ) : (
             <div className="grid gap-3 px-4 py-4 sm:px-5 lg:grid-cols-2">
-              {providerCards.map((provider) => (
+              {visibleProviderCards.map((provider) => (
                 <ProviderCardItem
                   key={provider.id}
                   provider={provider}
@@ -561,6 +743,27 @@ export function DocAiManagerPage() {
               ))}
             </div>
           )}
+
+          {providerCards.length > INITIAL_PROVIDER_CARD_LIMIT ? (
+            <div className="border-t border-border/70 px-4 py-3 sm:px-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {showAllProviderCards
+                    ? `Showing all ${providerCount} provider connections.`
+                    : `Showing ${numberFormatter.format(visibleProviderCards.length)} of ${providerCount} provider connections.`}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAllProviderCards((current) => !current)}
+                >
+                  {showAllProviderCards
+                    ? 'Show fewer'
+                    : `Show all ${providerCount}`}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="editorial-surface overflow-hidden editorial-reveal">
@@ -627,23 +830,18 @@ export function DocAiManagerPage() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{enabledCount} enabled</Badge>
-                {enabledModels.length === 0 ? (
-                  <Badge variant="outline">No enabled models yet</Badge>
-                ) : (
-                  enabledModels.slice(0, 5).map((model) => (
-                    <Badge
-                      key={model.id}
-                      variant={activeModelId === model.id ? 'secondary' : 'outline'}
-                    >
-                      {model.label}
-                    </Badge>
-                  ))
-                )}
-                {enabledModels.length > 5 ? (
-                  <Badge variant="outline">+{enabledModels.length - 5} more</Badge>
-                ) : null}
+              <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">{enabledCount} enabled</Badge>
+                  <Badge variant={activeModel ? 'secondary' : 'outline'}>
+                    {activeModel ? `Current default ${activeLabel}` : 'No default selected'}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {enabledModels.length === 0
+                    ? 'Enable one or more models below to expose them in the editor.'
+                    : 'The full enabled set now stays summarized above, so this picker can stay focused on the default route.'}
+                </p>
               </div>
             </div>
           </div>
@@ -668,116 +866,146 @@ export function DocAiManagerPage() {
               onValueChange={(value) => setOpenProviderGroup(value || null)}
               className="px-4 sm:px-5"
             >
-              {providerGroups.map((group) => (
-                <AccordionItem key={group.providerId} value={group.providerId}>
-                  <AccordionTrigger className="py-4 hover:no-underline">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold tracking-tight text-foreground">
-                          {group.providerName}
-                        </span>
-                        <Badge variant="outline">{group.providerLabel}</Badge>
-                        <Badge variant="outline">
-                          {numberFormatter.format(group.models.length)} models
-                        </Badge>
-                        <Badge
-                          variant={
-                            group.enabledCountInGroup > 0 ? 'secondary' : 'outline'
-                          }
-                        >
-                          {numberFormatter.format(group.enabledCountInGroup)} enabled
-                        </Badge>
-                        {group.activeGroupModel ? (
-                          <Badge variant="secondary">
-                            Default {group.activeGroupModel.label}
+              {providerGroups.map((group) => {
+                const showAllModels = expandedProviderModelGroups.includes(
+                  group.providerId,
+                )
+                const visibleModels = showAllModels
+                  ? group.models
+                  : group.models.slice(0, INITIAL_PROVIDER_GROUP_MODEL_LIMIT)
+
+                return (
+                  <AccordionItem key={group.providerId} value={group.providerId}>
+                    <AccordionTrigger className="py-4 hover:no-underline">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold tracking-tight text-foreground">
+                            {group.providerName}
+                          </span>
+                          <Badge variant="outline">{group.providerLabel}</Badge>
+                          <Badge variant="outline">
+                            {numberFormatter.format(group.models.length)} models
                           </Badge>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {group.enabledCountInGroup > 0
-                          ? 'Contains models currently visible in the editor.'
-                          : 'All models in this provider are currently hidden from the editor.'}
-                      </p>
-                    </div>
-                  </AccordionTrigger>
-
-                  <AccordionContent className="pb-5">
-                    <div className="divide-y divide-border/70 border-t border-border/70">
-                      {group.models.map((model) => {
-                        const isEnabled = enabledModelIds.includes(model.id)
-                        const isActive = activeModelId === model.id
-                        const contextWindow = formatAiContextWindow(
-                          model.contextWindow,
-                        )
-
-                        return (
-                          <article
-                            key={model.id}
-                            className={cn(
-                              'grid gap-3 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center',
-                              isActive && 'bg-primary/[0.04]',
-                            )}
+                          <Badge
+                            variant={
+                              group.enabledCountInGroup > 0 ? 'secondary' : 'outline'
+                            }
                           >
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3
-                                  className="truncate text-sm font-semibold tracking-tight text-foreground"
-                                  title={model.label}
-                                >
-                                  {model.label}
-                                </h3>
-                                {isActive ? (
-                                  <Badge variant="secondary">Default</Badge>
-                                ) : null}
-                                {!isActive && isEnabled ? (
-                                  <Badge variant="outline">Enabled</Badge>
-                                ) : null}
-                                {contextWindow ? (
-                                  <Badge variant="outline">{contextWindow} ctx</Badge>
-                                ) : null}
-                              </div>
-                              <p className="mt-1 truncate text-xs text-muted-foreground">
-                                {model.modelId}
-                              </p>
-                              {model.description ? (
-                                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                                  {model.description}
-                                </p>
-                              ) : null}
-                            </div>
+                            {numberFormatter.format(group.enabledCountInGroup)} enabled
+                          </Badge>
+                          {group.activeGroupModel ? (
+                            <Badge variant="secondary">
+                              Default {group.activeGroupModel.label}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          {group.enabledCountInGroup > 0
+                            ? 'Contains models currently visible in the editor.'
+                            : 'All models in this provider are currently hidden from the editor.'}
+                        </p>
+                      </div>
+                    </AccordionTrigger>
 
-                            <div className="flex flex-wrap items-center justify-between gap-2 md:justify-end">
-                              {isActive ? (
-                                <Badge variant="secondary">Default route</Badge>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setActiveModelId(model.id)}
-                                >
-                                  Set default
-                                </Button>
+                    <AccordionContent className="pb-5">
+                      <div className="divide-y divide-border/70 border-t border-border/70">
+                        {visibleModels.map((model) => {
+                          const isEnabled = enabledModelIds.includes(model.id)
+                          const isActive = activeModelId === model.id
+                          const contextWindow = formatAiContextWindow(
+                            model.contextWindow,
+                          )
+
+                          return (
+                            <article
+                              key={model.id}
+                              className={cn(
+                                'grid gap-3 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center',
+                                isActive && 'bg-primary/[0.04]',
                               )}
-                              <div className="flex items-center gap-3">
-                                <span className="text-xs text-muted-foreground">
-                                  {isEnabled ? 'Enabled' : 'Hidden'}
-                                </span>
-                                <Switch
-                                  checked={isEnabled}
-                                  onCheckedChange={(checked) =>
-                                    toggleModel(model.id, checked)
-                                  }
-                                  aria-label={`Enable ${model.label}`}
-                                />
+                            >
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h3
+                                    className="truncate text-sm font-semibold tracking-tight text-foreground"
+                                    title={model.label}
+                                  >
+                                    {model.label}
+                                  </h3>
+                                  {isActive ? (
+                                    <Badge variant="secondary">Default</Badge>
+                                  ) : null}
+                                  {!isActive && isEnabled ? (
+                                    <Badge variant="outline">Enabled</Badge>
+                                  ) : null}
+                                  {contextWindow ? (
+                                    <Badge variant="outline">{contextWindow} ctx</Badge>
+                                  ) : null}
+                                </div>
+                                <p className="mt-1 truncate text-xs text-muted-foreground">
+                                  {model.modelId}
+                                </p>
+                                {model.description ? (
+                                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                    {model.description}
+                                  </p>
+                                ) : null}
                               </div>
-                            </div>
-                          </article>
-                        )
-                      })}
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
+
+                              <div className="flex flex-wrap items-center justify-between gap-2 md:justify-end">
+                                {isActive ? (
+                                  <Badge variant="secondary">Default route</Badge>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setActiveModelId(model.id)}
+                                  >
+                                    Set default
+                                  </Button>
+                                )}
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs text-muted-foreground">
+                                    {isEnabled ? 'Enabled' : 'Hidden'}
+                                  </span>
+                                  <Switch
+                                    checked={isEnabled}
+                                    onCheckedChange={(checked) =>
+                                      toggleModel(model.id, checked)
+                                    }
+                                    aria-label={`Enable ${model.label}`}
+                                  />
+                                </div>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+
+                      {group.models.length > INITIAL_PROVIDER_GROUP_MODEL_LIMIT ? (
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-3">
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            {showAllModels
+                              ? `Showing all ${numberFormatter.format(group.models.length)} models in this provider.`
+                              : `Showing ${numberFormatter.format(visibleModels.length)} of ${numberFormatter.format(group.models.length)} models in this provider.`}
+                          </p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              toggleExpandedProviderModelGroup(group.providerId)
+                            }
+                          >
+                            {showAllModels
+                              ? 'Show fewer'
+                              : `Show all ${numberFormatter.format(group.models.length)}`}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </AccordionContent>
+                  </AccordionItem>
+                )
+              })}
             </Accordion>
           )}
         </section>

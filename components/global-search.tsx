@@ -451,11 +451,11 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
       <DialogContent
         className="overflow-hidden border-border/60 bg-popover p-0 text-popover-foreground shadow-lg sm:max-w-[min(640px,96vw)]"
         showCloseButton={false}
-      >
-        <DialogTitle className="sr-only">Search or ask documentation</DialogTitle>
-        <DialogDescription className="sr-only">
-          Search workspace documents or ask AI about your API documentation.
-        </DialogDescription>
+        >
+          <DialogTitle className="sr-only">Search or ask documentation</DialogTitle>
+          <DialogDescription className="sr-only">
+            Search workspace documents or ask AI using your knowledge base.
+          </DialogDescription>
 
         <div className="relative flex h-[min(68vh,540px)] flex-col overflow-hidden">
           {/* Header with tabs */}
@@ -630,8 +630,8 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                       </p>
                     </div>
                     <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-                      Get answers grounded in your workspace docs — endpoints, schemas,
-                      auth flows, and everything published in Kite.
+                      Get answers grounded in your knowledge base — endpoints, schemas,
+                      auth flows, and imported API materials in Kite.
                     </p>
                     <div className="mt-5 space-y-1">
                       {ASK_EXAMPLES.map((q) => (

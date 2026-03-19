@@ -8,6 +8,7 @@ import {
   MAX_IMPORT_COUNT,
   MAX_TITLE_LENGTH,
   MAX_CONTENT_SIZE,
+  MAX_DOCUMENT_CATEGORY_LENGTH,
   MAX_DOCUMENT_TAG_COUNT,
   MAX_DOCUMENT_TAG_LENGTH,
 } from '@/lib/constants'
@@ -21,6 +22,7 @@ interface ImportVersionPayload {
 interface ImportDocumentPayload {
   title: string
   content: string
+  category?: string
   tags?: string[]
   status?: DocStatus
   createdAt?: string
@@ -48,11 +50,13 @@ function normalizeDocument(raw: unknown): ImportDocumentPayload | null {
   const doc = raw as Record<string, unknown>
   const titleValue = typeof doc.title === 'string' ? doc.title.trim() : ''
   const content = typeof doc.content === 'string' ? doc.content : null
+  const category = typeof doc.category === 'string' ? doc.category.trim() : ''
   const status = typeof doc.status === 'string' ? doc.status : undefined
   const tags = coerceDocumentTagsInput(doc.tags)
 
   if (content === null) return null
   if (titleValue.length > MAX_TITLE_LENGTH || content.length > MAX_CONTENT_SIZE) return null
+  if (category.length > MAX_DOCUMENT_CATEGORY_LENGTH) return null
   if (status && !isValidStatus(status)) return null
   if (tags === null) return null
   if (tags.length > MAX_DOCUMENT_TAG_COUNT) return null
@@ -67,6 +71,7 @@ function normalizeDocument(raw: unknown): ImportDocumentPayload | null {
   return {
     title: titleValue || 'Untitled',
     content,
+    category,
     tags: tags ?? [],
     status: status as DocStatus | undefined,
     createdAt: typeof doc.createdAt === 'string' ? doc.createdAt : undefined,

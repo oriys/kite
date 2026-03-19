@@ -45,6 +45,7 @@ interface ImportDocumentInput {
   slug?: string
   content: string
   summary?: string
+  category?: string
   tags?: string[]
   status?: DocStatusValue
   createdAt?: string
@@ -286,6 +287,7 @@ export async function importDocuments(
         workspaceId,
         title: sourceDoc.title,
         slug: allocateSlug(sourceDoc.slug?.trim() || sourceDoc.title),
+        category: sourceDoc.category ?? '',
         content: sourceDoc.content,
         summary: sourceDoc.summary ?? '',
         tags: normalizeDocumentTags(sourceDoc.tags),
@@ -343,7 +345,6 @@ export async function updateDocument(
     tags?: string[]
     content?: string
     visibility?: VisibilityValue
-    ragEnabled?: boolean
   },
 ) {
   const [existing] = await db
@@ -403,7 +404,6 @@ export async function updateDocument(
     tags?: string[]
     content?: string
     visibility?: VisibilityValue
-    ragEnabled?: boolean
   } = { ...patch }
   if (patch.tags !== undefined) {
     documentPatch.tags = normalizeDocumentTags(patch.tags)

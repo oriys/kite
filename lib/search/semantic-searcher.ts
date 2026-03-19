@@ -1,10 +1,3 @@
-import { sql } from 'drizzle-orm'
-import { db } from '@/lib/db'
-import {
-  requestAiEmbedding,
-  resolveEmbeddingProvider,
-} from '@/lib/ai-server'
-import { logServerError } from '@/lib/server-errors'
 import { SEMANTIC_TOP_K } from '@/lib/ai-config'
 import type { SearchResult } from './searcher'
 import { searchDocuments } from './searcher'
@@ -15,71 +8,15 @@ export interface HybridSearchResult extends SearchResult {
 }
 
 /**
- * Semantic-only search: embed query and find similar document chunks.
+ * Semantic search is disabled for documents (no document chunks in RAG).
+ * Knowledge source chunks are used for AI chat only, not public search.
  */
 async function semanticSearch(
-  workspaceId: string,
-  query: string,
-  limit: number,
+  _workspaceId: string,
+  _query: string,
+  _limit: number,
 ): Promise<HybridSearchResult[]> {
-  const resolved = await resolveEmbeddingProvider(workspaceId)
-  if (!resolved) return []
-
-  let queryEmbedding: number[]
-  try {
-    const { embeddings } = await requestAiEmbedding({
-      provider: resolved.provider,
-      texts: [query],
-      model: resolved.modelId,
-    })
-    if (embeddings.length === 0) return []
-    queryEmbedding = embeddings[0]
-  } catch (error) {
-    logServerError('Semantic search embedding failed', error, { workspaceId })
-    return []
-  }
-
-  const queryVector = `[${queryEmbedding.join(',')}]`
-
-  const rows = await db.execute(sql`
-    SELECT
-      d.id,
-      d.title,
-      d.status,
-      d.updated_at,
-      dc.chunk_text AS headline,
-      1 - (dc.embedding <=> ${queryVector}::vector) AS rank
-    FROM document_chunks dc
-    JOIN documents d ON d.id = dc.document_id AND d.deleted_at IS NULL
-    WHERE dc.workspace_id = ${workspaceId}
-      AND dc.embedding IS NOT NULL
-      AND d.visibility IN ('public', 'partner')
-    ORDER BY dc.embedding <=> ${queryVector}::vector
-    LIMIT ${limit * 2}
-  `)
-
-  // Deduplicate by document ID, keeping highest-ranked chunk per document
-  const seen = new Map<string, HybridSearchResult>()
-  for (const row of rows as unknown as Array<Record<string, unknown>>) {
-    const docId = row.id as string
-    if (seen.has(docId)) continue
-
-    const chunkText = row.headline as string
-    seen.set(docId, {
-      id: docId,
-      title: row.title as string,
-      headline: chunkText.slice(0, 300),
-      status: row.status as string,
-      updatedAt: new Date(row.updated_at as string),
-      rank: Number(row.rank ?? 0),
-      matchType: 'semantic',
-      chunkPreview: chunkText.slice(0, 300),
-    })
-
-    if (seen.size >= limit) break
-  }
-
-  return Array.from(seen.values())
+  return []
 }
 
 /**

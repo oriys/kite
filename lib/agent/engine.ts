@@ -4,7 +4,13 @@ import {
   resolveWorkspaceAiProviders,
   createLanguageModel,
 } from '@/lib/ai-server'
+import { retrieveWorkspaceRagContext } from '@/lib/ai-chat'
+import { getDocumentByIdentifier } from '@/lib/queries/documents'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
+import {
+  DOC_AGENT_DEFAULT_MAX_STEPS,
+  DOC_AGENT_DEFAULT_TEMPERATURE,
+} from './config'
 import { createAgentTools, type AgentToolContext } from './tools'
 import { buildAgentSystemPrompt } from './prompts'
 import type { AgentStepRecord } from '@/lib/schema-agent'
@@ -18,6 +24,7 @@ export interface AgentRunOptions {
   documentId?: string
   modelId?: string
   maxSteps?: number
+  temperature?: number
   onStep?: (step: AgentStepRecord) => void
   signal?: AbortSignal
 }
@@ -26,12 +33,8 @@ export interface AgentRunResult {
   steps: AgentStepRecord[]
   result: string
   modelId: string
+  modelRef: string
 }
-
-// ─── Constants ───────────────────────────────────────────────
-
-const DEFAULT_MAX_STEPS = 15
-const AGENT_TEMPERATURE = 0.2
 
 // ─── Engine ──────────────────────────────────────────────────
 
@@ -41,7 +44,8 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     userId,
     prompt,
     documentId,
-    maxSteps = DEFAULT_MAX_STEPS,
+    maxSteps = DOC_AGENT_DEFAULT_MAX_STEPS,
+    temperature = DOC_AGENT_DEFAULT_TEMPERATURE,
     onStep,
     signal,
   } = options
@@ -68,27 +72,31 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
   console.log(`[agent] Model resolved: ${selection.modelId} via ${selection.provider.providerType} (${selection.provider.baseUrl})`)
 
   // 2. Build tools
-  const toolCtx: AgentToolContext = { workspaceId, userId }
+  const toolCtx: AgentToolContext = { workspaceId, userId, documentId }
   const tools = createAgentTools(toolCtx)
 
-  // 3. Build system prompt — fetch document context directly if needed
-  let documentContext: string | undefined
-  if (documentId) {
-    const { documents: docsTable } = await import('@/lib/schema')
-    const { db: database } = await import('@/lib/db')
-    const { eq: eqOp, and: andOp } = await import('drizzle-orm')
-    const [doc] = await database
-      .select({ title: docsTable.title, slug: docsTable.slug, content: docsTable.content })
-      .from(docsTable)
-      .where(andOp(eqOp(docsTable.workspaceId, workspaceId), eqOp(docsTable.slug, documentId)))
-      .limit(1)
-    if (doc) {
-      const content = typeof doc.content === 'string' ? doc.content.slice(0, 4000) : '(empty)'
-      documentContext = `Working on: **${doc.title}** (${doc.slug})\n\nCurrent content:\n${content}`
-    }
-  }
+  // 3. Build system prompt — fetch current document + KB context up front
+  const [document, knowledgeResult] = await Promise.all([
+    documentId ? getDocumentByIdentifier(documentId, workspaceId) : Promise.resolve(null),
+    retrieveWorkspaceRagContext({
+      workspaceId,
+      query: prompt,
+      documentId,
+      debug: false,
+    }),
+  ])
 
-  const systemPrompt = buildAgentSystemPrompt({ documentContext })
+  const documentContext = document
+    ? `Working on: **${document.title}** (${document.slug ?? document.id})\n\nCurrent content:\n${(typeof document.content === 'string' ? document.content : '(empty)').slice(0, 4000)}`
+    : undefined
+  const knowledgeContext = knowledgeResult.contextText.trim()
+    ? knowledgeResult.contextText
+    : undefined
+
+  const systemPrompt = buildAgentSystemPrompt({
+    documentContext,
+    knowledgeContext,
+  })
 
   // 4. Run the agent loop
   const model = createLanguageModel(selection.provider, selection.modelId)
@@ -100,7 +108,9 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
 
   let stepIndex = 0
 
-  console.log(`[agent] Starting generateText with ${Object.keys(tools).length} tools, maxSteps=${maxSteps}`)
+  console.log(
+    `[agent] Starting generateText with ${Object.keys(tools).length} tools, maxSteps=${maxSteps}, temperature=${temperature}`,
+  )
 
   const result = await generateText({
     model,
@@ -108,7 +118,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     messages,
     tools,
     stopWhen: stepCountIs(maxSteps),
-    temperature: AGENT_TEMPERATURE,
+    temperature,
     abortSignal: signal,
     onStepFinish(event) {
       try {
@@ -164,5 +174,6 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     steps,
     result: finalText,
     modelId: selection.modelId,
+    modelRef: selection.modelRef,
   }
 }

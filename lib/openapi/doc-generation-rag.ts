@@ -6,6 +6,11 @@ import {
 } from '@/lib/knowledge-source-content'
 import { type OpenApiDocumentType, getOpenApiDocumentTypeMeta } from '@/lib/openapi/document-types'
 import { type ParsedEndpoint } from '@/lib/openapi/parser'
+import {
+  deriveTitleFromUrl,
+  fetchPublicUrlContent,
+  type PublicUrlContentError,
+} from '@/lib/public-url-content'
 import { resolveWorkspaceRagQueryMode } from '@/lib/rag/settings'
 import { type RagQueryMode, type RagVisibilityContext } from '@/lib/rag/types'
 import { sanitizePlainText } from '@/lib/sanitize'
@@ -49,22 +54,12 @@ interface RankedMaterialChunk {
 
 const MAX_DOC_GENERATION_MATERIALS = 8
 const MAX_MATERIAL_CONTENT_CHARS = 200_000
-const MAX_URL_FETCH_CHARS = 200_000
 const MAX_CONTEXT_CHARS = 12_000
 const MAX_RETRIEVED_CHUNKS = 6
 const MAX_CHUNKS_PER_MATERIAL = 2
 const MIN_MULTI_TURN_RESULTS = 3
 const MAX_MULTI_TURN_QUERIES = 2
 const URL_FETCH_TIMEOUT_MS = 8_000
-
-const HTML_ENTITY_MAP: Record<string, string> = {
-  amp: '&',
-  apos: "'",
-  gt: '>',
-  lt: '<',
-  nbsp: ' ',
-  quot: '"',
-}
 
 export class DocGenerationMaterialError extends Error {
   readonly status: number
@@ -84,153 +79,26 @@ export function isDocGenerationMaterialSourceType(
   )
 }
 
-function decodeHtmlEntities(value: string) {
-  return value.replace(
-    /&(#x?[0-9a-f]+|[a-z]+);/gi,
-    (entity, token: string) => {
-      const normalized = token.toLowerCase()
-      if (normalized.startsWith('#x')) {
-        const codePoint = Number.parseInt(normalized.slice(2), 16)
-        return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : entity
-      }
-      if (normalized.startsWith('#')) {
-        const codePoint = Number.parseInt(normalized.slice(1), 10)
-        return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : entity
-      }
-      return HTML_ENTITY_MAP[normalized] ?? entity
-    },
-  )
-}
-
-function deriveTitleFromUrl(value: string) {
-  try {
-    const url = new URL(value)
-    const lastSegment =
-      url.pathname
-        .split('/')
-        .filter(Boolean)
-        .at(-1)
-        ?.replace(/[-_]+/g, ' ')
-        .trim() ?? ''
-
-    return lastSegment || url.hostname
-  } catch {
-    return value
-  }
-}
-
-function stripHtmlToText(html: string) {
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
-  const title = titleMatch ? decodeHtmlEntities(titleMatch[1]).trim() : ''
-
-  const text = decodeHtmlEntities(
-    html
-      .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
-      .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/(p|div|section|article|main|header|footer|aside|li|ul|ol|table|thead|tbody|tfoot|tr|td|th|h[1-6])>/gi, '\n')
-      .replace(/<(li|tr)\b[^>]*>/gi, '\n- ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim(),
-  )
-
-  return {
-    title,
-    text,
-  }
-}
-
 async function fetchUrlMaterial(sourceUrl: string) {
-  let parsedUrl: URL
-
   try {
-    parsedUrl = new URL(sourceUrl)
-  } catch {
-    throw new DocGenerationMaterialError(
-      `Invalid supplemental URL: ${sourceUrl}`,
-      400,
-    )
-  }
-
-  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-    throw new DocGenerationMaterialError(
-      `Supplemental URL must use http or https: ${sourceUrl}`,
-      400,
-    )
-  }
-
-  let response: Response
-  try {
-    response = await fetch(parsedUrl, {
-      signal: AbortSignal.timeout(URL_FETCH_TIMEOUT_MS),
-      headers: {
-        Accept: [
-          'text/html',
-          'text/plain',
-          'text/markdown',
-          'application/json',
-          'application/yaml',
-          'text/yaml',
-          'text/x-markdown',
-        ].join(', '),
-      },
+    const fetched = await fetchPublicUrlContent(sourceUrl, {
+      timeoutMs: URL_FETCH_TIMEOUT_MS,
+      maxChars: MAX_MATERIAL_CONTENT_CHARS,
     })
-  } catch (error) {
-    throw new DocGenerationMaterialError(
-      error instanceof Error
-        ? `Failed to fetch supplemental URL: ${error.message}`
-        : 'Failed to fetch supplemental URL.',
-      502,
-    )
-  }
-
-  if (!response.ok) {
-    throw new DocGenerationMaterialError(
-      `Failed to fetch supplemental URL (${response.status}).`,
-      502,
-    )
-  }
-
-  const rawContent = await response.text()
-  if (rawContent.length > MAX_URL_FETCH_CHARS) {
-    throw new DocGenerationMaterialError(
-      'Supplemental URL content is too large. Keep it under 200,000 characters.',
-      400,
-    )
-  }
-
-  const contentType = response.headers.get('content-type') ?? ''
-  if (/text\/html|application\/xhtml\+xml/i.test(contentType)) {
-    const { title, text } = stripHtmlToText(rawContent)
     return {
-      title: title || deriveTitleFromUrl(sourceUrl),
-      sourceType: 'markdown' as const,
-      rawContent: text,
+      title: fetched.title,
+      sourceType: 'document' as const,
+      rawContent: fetched.rawContent,
       sourceUrl,
     }
-  }
-
-  if (
-    contentType &&
-    !/text\/|application\/json|application\/yaml|text\/yaml|text\/x-markdown|application\/xml|text\/xml/i.test(
-      contentType,
-    )
-  ) {
+  } catch (error) {
+    const urlError = error as PublicUrlContentError
     throw new DocGenerationMaterialError(
-      `Unsupported URL content type for supplemental material: ${contentType}`,
-      400,
+      error instanceof Error
+        ? error.message
+        : 'Failed to fetch supplemental URL.',
+      urlError?.code === 'fetch_failed' ? 502 : 400,
     )
-  }
-
-  return {
-    title: deriveTitleFromUrl(sourceUrl),
-    sourceType: 'document' as const,
-    rawContent,
-    sourceUrl,
   }
 }
 
