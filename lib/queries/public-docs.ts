@@ -1,7 +1,8 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { db } from '../db'
 import {
-  documents,
+  publishedSnapshots,
+  publishedTranslationSnapshots,
   workspaceBranding,
   workspaces,
   openapiSources,
@@ -34,13 +35,12 @@ export async function getPublishedWorkspace(slug: string) {
 
   const [publishedCount] = await db
     .select({ count: sql<number>`count(*)::int` })
-    .from(documents)
+    .from(publishedSnapshots)
     .where(
       and(
-        eq(documents.workspaceId, workspace.id),
-        eq(documents.status, 'published'),
-        eq(documents.visibility, 'public'),
-        isNull(documents.deletedAt),
+        eq(publishedSnapshots.workspaceId, workspace.id),
+        eq(publishedSnapshots.isActive, true),
+        eq(publishedSnapshots.visibility, 'public'),
       ),
     )
 
@@ -54,25 +54,24 @@ export type PublishedWorkspace = NonNullable<Awaited<ReturnType<typeof getPublis
 export async function getPublishedDocuments(workspaceId: string) {
   const docs = await db
     .select({
-      id: documents.id,
-      title: documents.title,
-      summary: documents.summary,
-      publishedSlug: documents.publishedSlug,
-      slug: documents.slug,
-      navSection: documents.navSection,
-      publishOrder: documents.publishOrder,
-      updatedAt: documents.updatedAt,
+      id: publishedSnapshots.documentId,
+      title: publishedSnapshots.title,
+      summary: publishedSnapshots.summary,
+      publishedSlug: publishedSnapshots.publishedSlug,
+      slug: publishedSnapshots.slug,
+      navSection: publishedSnapshots.navSection,
+      publishOrder: publishedSnapshots.publishOrder,
+      updatedAt: publishedSnapshots.publishedAt,
     })
-    .from(documents)
+    .from(publishedSnapshots)
     .where(
       and(
-        eq(documents.workspaceId, workspaceId),
-        eq(documents.status, 'published'),
-        eq(documents.visibility, 'public'),
-        isNull(documents.deletedAt),
+        eq(publishedSnapshots.workspaceId, workspaceId),
+        eq(publishedSnapshots.isActive, true),
+        eq(publishedSnapshots.visibility, 'public'),
       ),
     )
-    .orderBy(asc(documents.publishOrder), asc(documents.title))
+    .orderBy(asc(publishedSnapshots.publishOrder), asc(publishedSnapshots.title))
 
   const sections = new Map<string, typeof docs>()
   for (const doc of docs) {
@@ -89,29 +88,68 @@ export type PublishedDocument = Awaited<ReturnType<typeof getPublishedDocuments>
 export async function getPublishedDocument(workspaceId: string, docSlug: string) {
   const [doc] = await db
     .select({
-      id: documents.id,
-      title: documents.title,
-      content: documents.content,
-      summary: documents.summary,
-      publishedSlug: documents.publishedSlug,
-      slug: documents.slug,
-      navSection: documents.navSection,
-      updatedAt: documents.updatedAt,
-      category: documents.category,
+      id: publishedSnapshots.documentId,
+      title: publishedSnapshots.title,
+      content: publishedSnapshots.content,
+      summary: publishedSnapshots.summary,
+      publishedSlug: publishedSnapshots.publishedSlug,
+      slug: publishedSnapshots.slug,
+      navSection: publishedSnapshots.navSection,
+      updatedAt: publishedSnapshots.publishedAt,
+      category: publishedSnapshots.category,
     })
-    .from(documents)
+    .from(publishedSnapshots)
     .where(
       and(
-        eq(documents.workspaceId, workspaceId),
-        eq(documents.status, 'published'),
-        eq(documents.visibility, 'public'),
-        isNull(documents.deletedAt),
-        sql`coalesce(${documents.publishedSlug}, ${documents.slug}) = ${docSlug}`,
+        eq(publishedSnapshots.workspaceId, workspaceId),
+        eq(publishedSnapshots.isActive, true),
+        eq(publishedSnapshots.visibility, 'public'),
+        sql`coalesce(${publishedSnapshots.publishedSlug}, ${publishedSnapshots.slug}) = ${docSlug}`,
       ),
     )
     .limit(1)
 
   return doc ?? null
+}
+
+export async function getPublishedDocumentByLocale(
+  workspaceId: string,
+  docSlug: string,
+  locale: string,
+) {
+  // First get the base document to find its ID
+  const baseDoc = await getPublishedDocument(workspaceId, docSlug)
+  if (!baseDoc) return null
+
+  if (locale === 'en') return baseDoc
+
+  const [translation] = await db
+    .select({
+      id: publishedTranslationSnapshots.documentId,
+      title: publishedTranslationSnapshots.title,
+      content: publishedTranslationSnapshots.content,
+      locale: publishedTranslationSnapshots.locale,
+      updatedAt: publishedTranslationSnapshots.publishedAt,
+    })
+    .from(publishedTranslationSnapshots)
+    .where(
+      and(
+        eq(publishedTranslationSnapshots.workspaceId, workspaceId),
+        eq(publishedTranslationSnapshots.documentId, baseDoc.id),
+        eq(publishedTranslationSnapshots.locale, locale),
+        eq(publishedTranslationSnapshots.isActive, true),
+      ),
+    )
+    .limit(1)
+
+  if (!translation) return baseDoc
+
+  return {
+    ...baseDoc,
+    title: translation.title,
+    content: translation.content,
+    updatedAt: translation.updatedAt,
+  }
 }
 
 export async function getPublishedEndpoints(workspaceId: string) {
@@ -133,7 +171,7 @@ export async function getPublishedEndpoints(workspaceId: string) {
     .where(
       and(
         eq(openapiSources.workspaceId, workspaceId),
-        isNull(openapiSources.deletedAt),
+        sql`${openapiSources.deletedAt} is null`,
         eq(apiEndpoints.visibility, 'public'),
       ),
     )

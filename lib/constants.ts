@@ -19,7 +19,7 @@ export const DOCUMENT_PERMISSION_LEVELS = ['view', 'edit', 'manage'] as const
 export const ALLOWED_TRANSITIONS: Record<DocStatus, readonly DocStatus[]> = {
   draft: ['review', 'archived'],
   review: ['draft', 'published', 'archived'],
-  published: ['archived'],
+  published: ['draft', 'archived'],
   archived: ['draft'],
 }
 

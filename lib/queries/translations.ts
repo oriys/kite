@@ -4,6 +4,7 @@ import {
   documents,
   documentTranslations,
   documentTranslationVersions,
+  publishedTranslationSnapshots,
 } from '../schema'
 
 export const SUPPORTED_LOCALES = [
@@ -311,4 +312,135 @@ export async function deleteTranslation(workspaceId: string, id: string) {
         isNull(documentTranslations.deletedAt),
       ),
     )
+}
+
+export async function publishTranslation(
+  workspaceId: string,
+  translationId: string,
+  actorId: string,
+) {
+  const translation = await getTranslation(workspaceId, translationId)
+  if (!translation) return null
+
+  const latestVersion = await getLatestTranslationVersion(workspaceId, translationId)
+  if (!latestVersion) return null
+
+  return db.transaction(async (tx) => {
+    // Deactivate existing active snapshot for this doc+locale
+    await tx
+      .update(publishedTranslationSnapshots)
+      .set({ isActive: false })
+      .where(
+        and(
+          eq(publishedTranslationSnapshots.documentId, translation.documentId),
+          eq(publishedTranslationSnapshots.locale, translation.locale),
+          eq(publishedTranslationSnapshots.isActive, true),
+        ),
+      )
+
+    // Get next version
+    const [maxVersion] = await tx
+      .select({ max: sql<number>`coalesce(max(${publishedTranslationSnapshots.version}), 0)` })
+      .from(publishedTranslationSnapshots)
+      .where(
+        and(
+          eq(publishedTranslationSnapshots.documentId, translation.documentId),
+          eq(publishedTranslationSnapshots.locale, translation.locale),
+        ),
+      )
+
+    const [snapshot] = await tx
+      .insert(publishedTranslationSnapshots)
+      .values({
+        workspaceId,
+        documentId: translation.documentId,
+        locale: translation.locale,
+        version: (maxVersion?.max ?? 0) + 1,
+        title: latestVersion.title,
+        content: latestVersion.content,
+        publishedBy: actorId,
+        isActive: true,
+      })
+      .returning()
+
+    // Update translation status
+    await tx
+      .update(documentTranslations)
+      .set({ status: 'published', updatedAt: new Date() })
+      .where(eq(documentTranslations.id, translationId))
+
+    return snapshot
+  })
+}
+
+export async function rollbackTranslation(
+  workspaceId: string,
+  documentId: string,
+  locale: string,
+  targetVersion: number,
+  actorId: string,
+) {
+  const target = await db.query.publishedTranslationSnapshots.findFirst({
+    where: and(
+      eq(publishedTranslationSnapshots.documentId, documentId),
+      eq(publishedTranslationSnapshots.locale, locale),
+      eq(publishedTranslationSnapshots.version, targetVersion),
+    ),
+  })
+
+  if (!target) return null
+
+  return db.transaction(async (tx) => {
+    await tx
+      .update(publishedTranslationSnapshots)
+      .set({ isActive: false })
+      .where(
+        and(
+          eq(publishedTranslationSnapshots.documentId, documentId),
+          eq(publishedTranslationSnapshots.locale, locale),
+          eq(publishedTranslationSnapshots.isActive, true),
+        ),
+      )
+
+    const [maxVersion] = await tx
+      .select({ max: sql<number>`coalesce(max(${publishedTranslationSnapshots.version}), 0)` })
+      .from(publishedTranslationSnapshots)
+      .where(
+        and(
+          eq(publishedTranslationSnapshots.documentId, documentId),
+          eq(publishedTranslationSnapshots.locale, locale),
+        ),
+      )
+
+    const [snapshot] = await tx
+      .insert(publishedTranslationSnapshots)
+      .values({
+        workspaceId,
+        documentId,
+        locale,
+        version: (maxVersion?.max ?? 0) + 1,
+        title: target.title,
+        content: target.content,
+        publishedBy: actorId,
+        isActive: true,
+      })
+      .returning()
+
+    return snapshot
+  })
+}
+
+export async function getTranslationCompleteness(workspaceId: string, documentId: string) {
+  const translations = await getTranslationsForDocument(workspaceId, documentId)
+  const total = translations.length
+  const published = translations.filter((t) => t.status === 'published').length
+  const approved = translations.filter((t) => t.status === 'approved' || t.status === 'published').length
+
+  return {
+    total,
+    published,
+    approved,
+    completionRate: total > 0 ? Math.round((approved / total) * 100) : 100,
+    locales: translations.map((t) => ({ locale: t.locale, status: t.status })),
+  }
 }

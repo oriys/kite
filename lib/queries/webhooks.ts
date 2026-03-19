@@ -96,6 +96,35 @@ export async function listWebhookDeliveries(
     .offset(offset)
 }
 
+export async function getWebhookDelivery(deliveryId: string, webhookId: string) {
+  return (await db.query.webhookDeliveries.findFirst({
+    where: and(
+      eq(webhookDeliveries.id, deliveryId),
+      eq(webhookDeliveries.webhookId, webhookId),
+    ),
+  })) ?? null
+}
+
+export async function replayWebhookDelivery(deliveryId: string, webhookId: string, workspaceId: string) {
+  const wh = await getWebhook(webhookId, workspaceId)
+  if (!wh) return null
+
+  const delivery = await getWebhookDelivery(deliveryId, webhookId)
+  if (!delivery) return null
+
+  // Re-deliver with original event and payload
+  await deliverWebhookPublic(wh, delivery.event, delivery.payload as Record<string, unknown>)
+  return true
+}
+
+async function deliverWebhookPublic(
+  wh: typeof webhooks.$inferSelect,
+  event: string,
+  payload: Record<string, unknown>,
+) {
+  return deliverWebhook(wh, event, payload)
+}
+
 /** Dispatch a webhook event to all matching webhooks in a workspace */
 export async function dispatchWebhookEvent(
   workspaceId: string,

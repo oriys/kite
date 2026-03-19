@@ -14,6 +14,14 @@ import {
   attachDocumentAccess,
   buildDocumentAccessMap,
 } from '@/lib/queries/document-permissions'
+import {
+  getPendingApprovalsForDocument,
+  getApprovedApprovalForDocument,
+} from '@/lib/queries/approvals'
+import { emitAuditEvent } from '@/lib/queries/audit-logs'
+import { dispatchWebhookEvent } from '@/lib/queries/webhooks'
+import { dispatchToChannels } from '@/lib/notification-sender'
+import { runPublishPreflight } from '@/lib/publish-preflight'
 import type { DocStatus } from '@/lib/documents'
 import { isValidStatus, ALLOWED_TRANSITIONS } from '@/lib/constants'
 
@@ -46,12 +54,73 @@ export async function POST(
     )
   }
 
-  const doc = await transitionDocument(existing.id, result.ctx.workspaceId, newStatus)
+  // Enforce approval gate for review → published
+  if (existing.status === 'review' && newStatus === 'published') {
+    // Run preflight checks
+    const preflight = await runPublishPreflight(existing.id, result.ctx.workspaceId)
+    if (!preflight.pass) {
+      return NextResponse.json(
+        { error: 'Publish preflight failed', checks: preflight.checks },
+        { status: 422 },
+      )
+    }
+
+    const pending = await getPendingApprovalsForDocument(existing.id, result.ctx.workspaceId)
+    if (pending) {
+      return badRequest('Cannot publish while an approval request is still pending')
+    }
+
+    const approved = await getApprovedApprovalForDocument(existing.id, result.ctx.workspaceId)
+    if (!approved) {
+      return badRequest('An approved approval request is required before publishing')
+    }
+  }
+
+  const doc = await transitionDocument(existing.id, result.ctx.workspaceId, newStatus, result.ctx.userId)
   if (!doc) return notFound()
 
   const updatedAccess = (
     await buildDocumentAccessMap([doc], result.ctx.userId, result.ctx.role)
   ).get(doc.id)
+
+  // Audit events (fire-and-forget)
+  emitAuditEvent({
+    workspaceId: result.ctx.workspaceId,
+    actorId: result.ctx.userId,
+    action: 'status_change',
+    resourceType: 'document',
+    resourceId: existing.id,
+    resourceTitle: existing.title,
+    metadata: { from: existing.status, to: newStatus },
+  }).catch(() => {})
+
+  if (newStatus === 'published') {
+    emitAuditEvent({
+      workspaceId: result.ctx.workspaceId,
+      actorId: result.ctx.userId,
+      action: 'publish',
+      resourceType: 'document',
+      resourceId: existing.id,
+      resourceTitle: existing.title,
+    }).catch(() => {})
+  }
+
+  // Webhook + channel dispatch (fire-and-forget)
+  dispatchWebhookEvent(result.ctx.workspaceId, `document.${newStatus}`, {
+    documentId: existing.id,
+    title: existing.title,
+    status: newStatus,
+    previousStatus: existing.status,
+    actorId: result.ctx.userId,
+  }).catch(() => {})
+
+  dispatchToChannels({
+    type: `document.${newStatus}`,
+    title: `Document ${newStatus}: ${existing.title}`,
+    body: `"${existing.title}" has been moved to ${newStatus}.`,
+    workspaceId: result.ctx.workspaceId,
+    linkUrl: `/docs/editor?doc=${existing.id}`,
+  }).catch(() => {})
 
   return NextResponse.json(attachDocumentAccess(doc, updatedAccess!))
 }

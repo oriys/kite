@@ -84,7 +84,7 @@ function resolveDocumentAccess(
   const creator = document.createdBy === userId
   const canView =
     document.visibility === 'private'
-      ? !hasCustomPermissions || privileged || creator || explicitLevel !== null
+      ? privileged || creator || explicitLevel !== null
       : true
 
   let accessLevel: DocPermissionLevel | null = null
@@ -216,18 +216,18 @@ export async function buildDocumentAccessMap<T extends AccessDocumentShape>(
         )
         const pendingReview = pendingReviewAccessByDocumentId.get(doc.id)
 
-        if (!pendingReview || pendingReview.reviewerIds.has(userId)) {
-          return access
+        if (pendingReview && !pendingReview.reviewerIds.has(userId) && !isPrivilegedRole(role)) {
+          return {
+            ...access,
+            canEdit: false,
+            canManagePermissions: false,
+            canDelete: false,
+            canDuplicate: false,
+            canTransition: false,
+          }
         }
 
-        return {
-          ...access,
-          canEdit: false,
-          canManagePermissions: false,
-          canDelete: false,
-          canDuplicate: false,
-          canTransition: false,
-        }
+        return access
       })(),
     ]),
   )

@@ -6,6 +6,7 @@ import {
   attachDocumentAccess,
   buildDocumentAccessMap,
 } from '@/lib/queries/document-permissions'
+import { emitAuditEvent } from '@/lib/queries/audit-logs'
 import {
   isValidStatus,
   MAX_TITLE_LENGTH,
@@ -158,6 +159,15 @@ export async function POST(request: NextRequest) {
     result.ctx.userId,
     result.ctx.role,
   )
+
+  emitAuditEvent({
+    workspaceId: result.ctx.workspaceId,
+    actorId: result.ctx.userId,
+    action: 'create',
+    resourceType: 'document',
+    resourceId: doc.id,
+    resourceTitle: doc.title,
+  }).catch(() => {})
 
   return NextResponse.json(
     attachDocumentAccess(doc, accessMap.get(doc.id)!),

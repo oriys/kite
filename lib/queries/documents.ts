@@ -24,6 +24,7 @@ import {
 import {
   documents,
   documentVersions,
+  publishedSnapshots,
   type docStatusEnum,
   type visibilityEnum,
 } from '../schema'
@@ -440,23 +441,97 @@ export async function transitionDocument(
   id: string,
   workspaceId: string,
   newStatus: DocStatusValue,
+  actorId?: string,
 ) {
-  const [updated] = await db
-    .update(documents)
-    .set({ status: newStatus, updatedAt: new Date() })
-    .where(
-      and(
-        eq(documents.id, id),
-        eq(documents.workspaceId, workspaceId),
-        isNull(documents.deletedAt),
-      ),
-    )
-    .returning()
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(documents)
+      .where(
+        and(
+          eq(documents.id, id),
+          eq(documents.workspaceId, workspaceId),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .limit(1)
 
-  return updated ? await getDocument(id, workspaceId) : null
+    if (!existing) return null
+
+    const previousStatus = existing.status as string
+
+    const [updated] = await tx
+      .update(documents)
+      .set({ status: newStatus, updatedAt: new Date() })
+      .where(
+        and(
+          eq(documents.id, id),
+          eq(documents.workspaceId, workspaceId),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .returning()
+
+    if (!updated) return null
+
+    if (newStatus === 'published') {
+      // Deactivate any existing active snapshot
+      await tx
+        .update(publishedSnapshots)
+        .set({ isActive: false })
+        .where(
+          and(
+            eq(publishedSnapshots.documentId, id),
+            eq(publishedSnapshots.isActive, true),
+          ),
+        )
+
+      // Compute next version number
+      const [maxVersion] = await tx
+        .select({ max: sql<number>`coalesce(max(${publishedSnapshots.version}), 0)` })
+        .from(publishedSnapshots)
+        .where(eq(publishedSnapshots.documentId, id))
+
+      // Create new active snapshot
+      await tx.insert(publishedSnapshots).values({
+        workspaceId,
+        documentId: id,
+        version: (maxVersion?.max ?? 0) + 1,
+        title: existing.title,
+        slug: existing.slug,
+        publishedSlug: existing.publishedSlug,
+        content: existing.content,
+        summary: existing.summary,
+        category: existing.category,
+        tags: existing.tags,
+        locale: existing.locale,
+        navSection: existing.navSection,
+        publishOrder: existing.publishOrder,
+        visibility: existing.visibility,
+        publishedBy: actorId ?? null,
+        isActive: true,
+      })
+    } else if (previousStatus === 'published') {
+      // Deactivate active snapshot when leaving published state
+      await tx
+        .update(publishedSnapshots)
+        .set({ isActive: false })
+        .where(
+          and(
+            eq(publishedSnapshots.documentId, id),
+            eq(publishedSnapshots.isActive, true),
+          ),
+        )
+    }
+
+    return updated
+  }).then(async (updated) => {
+    if (!updated) return null
+    return getDocument(id, workspaceId)
+  })
 }
 
-export async function deleteDocument(id: string, workspaceId: string) {
+export async function deleteDocument(id: string, workspaceId: string, actorId?: string) {
   const result = await db
     .update(documents)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -471,6 +546,18 @@ export async function deleteDocument(id: string, workspaceId: string) {
 
   if (result.length > 0) {
     await refreshWorkspaceRelationsAfterMutation(workspaceId, 'deleteDocument')
+
+    if (actorId) {
+      const { emitAuditEvent } = await import('./audit-logs')
+      emitAuditEvent({
+        workspaceId,
+        actorId,
+        action: 'delete',
+        resourceType: 'document',
+        resourceId: id,
+        resourceTitle: result[0].title,
+      }).catch(() => {})
+    }
   }
 
   return result.length > 0

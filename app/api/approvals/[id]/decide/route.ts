@@ -3,6 +3,9 @@ import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
 import { submitApprovalDecision } from '@/lib/queries/approvals'
 import { createNotification } from '@/lib/queries/notifications'
+import { emitAuditEvent } from '@/lib/queries/audit-logs'
+import { dispatchWebhookEvent } from '@/lib/queries/webhooks'
+import { dispatchToChannels } from '@/lib/notification-sender'
 
 const DECISION_LABELS: Record<string, string> = {
   approved: 'approved',
@@ -49,6 +52,35 @@ export async function POST(
       actorId: result.ctx.userId,
     })
   }
+
+  // Audit event
+  const auditAction = decision === 'approved' ? 'approve' : 'reject'
+  emitAuditEvent({
+    workspaceId: result.ctx.workspaceId,
+    actorId: result.ctx.userId,
+    action: auditAction,
+    resourceType: 'approval',
+    resourceId: id,
+    metadata: { decision, comment: body.comment, documentId: outcome.documentId },
+  }).catch(() => {})
+
+  // Webhook + channel dispatch
+  const webhookEvent = decision === 'approved' ? 'approval.approved' : 'approval.rejected'
+  dispatchWebhookEvent(result.ctx.workspaceId, webhookEvent, {
+    approvalId: id,
+    documentId: outcome.documentId,
+    decision,
+    reviewerId: result.ctx.userId,
+    comment: body.comment,
+  }).catch(() => {})
+
+  dispatchToChannels({
+    type: webhookEvent,
+    title: `Approval ${decision}`,
+    body: `A reviewer has ${DECISION_LABELS[decision] ?? decision} a document.`,
+    workspaceId: result.ctx.workspaceId,
+    linkUrl: outcome.documentId ? `/docs/editor?doc=${outcome.documentId}` : undefined,
+  }).catch(() => {})
 
   return NextResponse.json(outcome)
 }

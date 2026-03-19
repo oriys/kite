@@ -11,12 +11,14 @@ import { relations } from 'drizzle-orm'
 import { users } from './schema-auth'
 import { workspaces } from './schema-workspace'
 import { documents } from './schema-documents'
+import { approvalPolicies } from './schema-approval-policies'
 
 export const approvalStatusEnum = pgEnum('approval_status', [
   'pending',
   'approved',
   'rejected',
   'cancelled',
+  'rework',
 ])
 
 export const approvalDecisionEnum = pgEnum('approval_decision', [
@@ -45,6 +47,9 @@ export const approvalRequests = pgTable(
     description: text('description').notNull().default(''),
     requiredApprovals: integer('required_approvals').notNull().default(1),
     deadline: timestamp('deadline', { mode: 'date' }),
+    policyId: text('policy_id').references(() => approvalPolicies.id, {
+      onDelete: 'set null',
+    }),
     resolvedAt: timestamp('resolved_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'date' }).notNull().defaultNow(),

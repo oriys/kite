@@ -6,6 +6,9 @@ import {
   listApprovalRequests,
 } from '@/lib/queries/approvals'
 import { createBulkNotifications } from '@/lib/queries/notifications'
+import { emitAuditEvent } from '@/lib/queries/audit-logs'
+import { dispatchWebhookEvent } from '@/lib/queries/webhooks'
+import { dispatchToChannels } from '@/lib/notification-sender'
 
 export async function GET(request: NextRequest) {
   const result = await withWorkspaceAuth('guest')
@@ -71,6 +74,32 @@ export async function POST(request: NextRequest) {
       actorId: result.ctx.userId,
     })),
   )
+
+  emitAuditEvent({
+    workspaceId: result.ctx.workspaceId,
+    actorId: result.ctx.userId,
+    action: 'create',
+    resourceType: 'approval',
+    resourceId: approval.id,
+    resourceTitle: title,
+    metadata: { documentId, reviewerIds },
+  }).catch(() => {})
+
+  dispatchWebhookEvent(result.ctx.workspaceId, 'approval.requested', {
+    approvalId: approval.id,
+    documentId,
+    title,
+    requesterId: result.ctx.userId,
+    reviewerIds,
+  }).catch(() => {})
+
+  dispatchToChannels({
+    type: 'approval.requested',
+    title: 'Approval requested',
+    body: `Review requested for: ${title}`,
+    workspaceId: result.ctx.workspaceId,
+    linkUrl: `/docs/editor?doc=${documentId}`,
+  }).catch(() => {})
 
   return NextResponse.json(approval, { status: 201 })
 }

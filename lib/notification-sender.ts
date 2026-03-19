@@ -47,6 +47,26 @@ export async function deliverToSingleChannel(
   return deliverToChannel(channel, payload)
 }
 
+export async function replayChannelDelivery(deliveryId: string, channelId: string) {
+  const delivery = await db.query.channelDeliveries.findFirst({
+    where: and(
+      eq(channelDeliveries.id, deliveryId),
+      eq(channelDeliveries.channelId, channelId),
+    ),
+  })
+
+  if (!delivery) return null
+
+  const channel = await db.query.notificationChannels.findFirst({
+    where: eq(notificationChannels.id, channelId),
+  })
+
+  if (!channel) return null
+
+  await deliverToChannel(channel, delivery.payload as unknown as NotificationPayload)
+  return true
+}
+
 async function deliverToChannel(
   channel: typeof notificationChannels.$inferSelect,
   payload: NotificationPayload,

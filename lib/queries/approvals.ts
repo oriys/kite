@@ -183,6 +183,8 @@ export async function submitApprovalDecision(
       newStatus = 'approved'
     } else if (rejectedCount > 0) {
       newStatus = 'rejected'
+    } else if (decision === 'changes_requested') {
+      newStatus = 'rework'
     }
 
     if (newStatus !== 'pending') {
@@ -221,6 +223,22 @@ export async function getPendingApprovalsForDocument(documentId: string, workspa
       eq(approvalRequests.documentId, documentId),
       eq(approvalRequests.workspaceId, workspaceId),
       eq(approvalRequests.status, 'pending'),
+    ),
+    with: {
+      reviewers: {
+        with: { reviewer: true },
+      },
+      requester: true,
+    },
+  })
+}
+
+export async function getApprovedApprovalForDocument(documentId: string, workspaceId: string) {
+  return db.query.approvalRequests.findFirst({
+    where: and(
+      eq(approvalRequests.documentId, documentId),
+      eq(approvalRequests.workspaceId, workspaceId),
+      eq(approvalRequests.status, 'approved'),
     ),
     with: {
       reviewers: {
