@@ -15,6 +15,7 @@ export type PersonalFeatureVisibility = Record<PersonalFeatureId, boolean>
 export const NAV_ITEM_KEYS = [
   'documents',
   'compare',
+  'agent',
   'openApi',
   'grpc',
   'analytics',

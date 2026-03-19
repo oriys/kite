@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BarChart3,
+  Bot,
   Braces,
   ChevronDown,
   ClipboardCheck,
@@ -53,6 +54,7 @@ const NAV_ITEMS: ReadonlyArray<{
 }> = [
   { key: 'documents', href: '/docs', label: 'Documents', icon: FileText },
   { key: 'compare', href: '/docs/compare', label: 'Compare', icon: GitCompareArrows },
+  { key: 'agent', href: '/docs/agent', label: 'Agent', icon: Bot },
   {
     key: 'openApi',
     href: '/docs/openapi',

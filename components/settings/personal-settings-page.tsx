@@ -59,6 +59,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 const NAV_ITEM_LABELS: Record<NavItemKey, string> = {
   documents: 'Documents',
   compare: 'Compare',
+  agent: 'Agent',
   openApi: 'OpenAPI',
   grpc: 'gRPC',
   analytics: 'Analytics',

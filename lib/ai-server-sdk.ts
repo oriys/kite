@@ -33,7 +33,7 @@ export function createLanguageModel(
         baseURL: provider.baseUrl,
         apiKey: provider.apiKey,
       })
-      return instance(modelId)
+      return instance.chat(modelId)
     }
     case 'anthropic': {
       const instance = createAnthropic({
