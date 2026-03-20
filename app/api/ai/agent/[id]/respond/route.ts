@@ -2,42 +2,16 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
 import { getAgentTaskInteraction } from '@/lib/queries/agent'
-import { resolveInteraction } from '@/lib/agent/interactions'
-import type { AgentInteractionResponse, AgentInteraction } from '@/lib/schema-agent'
-import { parseDocAgentInteractivePageResponse } from '@/lib/agent/interactive-page'
-
-function validateResponse(
-  interaction: AgentInteraction,
-  body: Record<string, unknown>,
-): AgentInteractionResponse | null {
-  switch (interaction.type) {
-    case 'confirm': {
-      if (typeof body.accepted !== 'boolean') return null
-      const feedback = typeof body.feedback === 'string' ? body.feedback.trim() : undefined
-      return { type: 'confirm', accepted: body.accepted, feedback }
-    }
-    case 'select': {
-      if (typeof body.selected !== 'string') return null
-      if (!interaction.options.includes(body.selected)) return null
-      return { type: 'select', selected: body.selected }
-    }
-    case 'input': {
-      if (typeof body.text !== 'string') return null
-      return { type: 'input', text: body.text.trim() }
-    }
-    case 'page': {
-      const parsed = parseDocAgentInteractivePageResponse(body)
-      if (!parsed.success) return null
-      return {
-        type: 'page',
-        action: parsed.data.action,
-        values: parsed.data.values,
-      }
-    }
-    default:
-      return null
-  }
-}
+import {
+  createDefaultDocAgentRunSettings,
+  sanitizeDocAgentRunSettings,
+} from '@/lib/agent/config'
+import {
+  buildAgentInteractionToolResultMessage,
+  parseAgentConversation,
+} from '@/lib/agent/conversation'
+import { validateAgentInteractionResponse } from '@/lib/agent/interactive-tools'
+import { startAgentTaskRun } from '@/lib/agent/task-runner'
 
 export async function POST(
   request: NextRequest,
@@ -61,15 +35,40 @@ export async function POST(
   const body = await request.json().catch(() => null)
   if (!body || typeof body !== 'object') return badRequest('Invalid JSON')
 
-  const response = validateResponse(task.interaction, body as Record<string, unknown>)
+  const response = validateAgentInteractionResponse(
+    task.interaction,
+    body as Record<string, unknown>,
+  )
   if (!response) {
     return badRequest('Invalid response for this interaction type')
   }
 
-  const resolved = resolveInteraction(id, response)
-  if (!resolved) {
-    return badRequest('No pending interaction to resolve (may have timed out)')
+  const conversation = parseAgentConversation(task.conversation ?? [])
+  if (!conversation.success) {
+    return badRequest(`Task conversation is invalid: ${conversation.error}`)
   }
+
+  const runSettings = sanitizeDocAgentRunSettings(
+    task.runSettings ?? {
+      ...createDefaultDocAgentRunSettings(),
+      modelId: task.modelId ?? null,
+      maxSteps: task.progress?.maxSteps ?? createDefaultDocAgentRunSettings().maxSteps,
+    },
+  )
+
+  startAgentTaskRun({
+    workspaceId: result.ctx.workspaceId,
+    userId: result.ctx.userId,
+    taskId: id,
+    prompt: task.prompt,
+    documentId: task.documentId ?? undefined,
+    runSettings,
+    conversation: [
+      ...conversation.data,
+      buildAgentInteractionToolResultMessage(task.interaction, response),
+    ],
+    initialStepIndex: Array.isArray(task.steps) ? task.steps.length : 0,
+  })
 
   return NextResponse.json({ ok: true })
 }

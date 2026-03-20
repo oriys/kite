@@ -1,9 +1,3 @@
-import { buildDocAgentInteractivePagePrompt } from '@/lib/agent/interactive-page'
-import { buildDocAgentInteractivePageTemplatePrompt } from '@/lib/agent/interactive-page-templates'
-
-const INTERACTIVE_PAGE_PROMPT = buildDocAgentInteractivePagePrompt()
-const INTERACTIVE_PAGE_TEMPLATE_PROMPT = buildDocAgentInteractivePageTemplatePrompt()
-
 const TOOL_DESCRIPTIONS = `You have access to these tools to work with the documentation workspace:
 
 - **search_documents**: Search documents by keyword
@@ -19,9 +13,7 @@ const TOOL_DESCRIPTIONS = `You have access to these tools to work with the docum
 - **lint_document**: Check a document for quality issues
 - **ask_confirm**: Ask the user for confirmation before proceeding with a plan or destructive action
 - **ask_select**: Present 2-6 options for the user to choose from
-- **ask_input**: Ask the user for free-form text input when you need more information
-- **ask_page_template**: Use a built-in interaction-page template for common flows such as approval, brief collection, revision strategy selection, or bulk confirmation
-- **ask_page**: Ask the user to interact with a custom compact structured page when you need a layout not covered by the built-in templates`
+- **ask_input**: Ask the user for free-form text input when you need more information`
 
 export function buildAgentSystemPrompt(opts?: {
   documentContext?: string
@@ -43,9 +35,10 @@ export function buildAgentSystemPrompt(opts?: {
     `7. **Use Markdown.** All document content should be proper Markdown with headings, lists, code blocks, and links as appropriate.`,
     `8. **Respect status.** Draft documents are work-in-progress. Don't publish unless explicitly asked.`,
     `9. **Use the knowledge base.** For factual workspace context, consult the knowledge base with RAG before guessing. Re-run knowledge-base search if the task evolves.`,
-    `10. **Ask before destructive actions.** Use ask_confirm before publishing, bulk-updating, or deleting. Use ask_select when the user's intent is ambiguous and there are distinct options. Use ask_input when you need details the prompt didn't provide. Don't overuse — only ask when the answer genuinely affects your next action.`,
-    `11. **Prefer built-in page templates first.** When you need approval, a project brief, a revision-strategy chooser, or a bulk confirmation flow, use ask_page_template before attempting a custom page.`,
-    `12. **Use ask_page for custom richer interaction.** When you need multiple inputs, a structured mini-form, or a richer review flow that templates do not cover, use ask_page instead of chaining several simple prompts. Keep the page compact and focused.`,
+    `10. **Ask before destructive actions.** Use ask_confirm before publishing, bulk-updating, or deleting. Use ask_select when the user's intent is ambiguous and there are distinct options. Use ask_input when you need details the prompt didn't provide. Keep every checkpoint simple and explicit.`,
+    `11. **Prefer plain-text checkpoints.** When you need extra guidance, constraints, or missing context, ask with ask_input instead of designing a structured mini-flow.`,
+    `12. **Drive progress through checkpoints.** For multi-step work, pause for a short user reply before broad edits or when you need the user's preference. Do not try to finish the entire task in one uninterrupted run.`,
+    `13. **Pause after meaningful progress.** After a substantial draft or update batch, ask for the next checkpoint with ask_input or ask_confirm instead of guessing the rest of the workflow.`,
   ]
 
   if (opts?.documentContext) {
@@ -65,17 +58,6 @@ export function buildAgentSystemPrompt(opts?: {
       opts.knowledgeContext,
     )
   }
-
-  parts.push(
-    '',
-    `## Interactive Page Templates`,
-    '',
-    INTERACTIVE_PAGE_TEMPLATE_PROMPT,
-    '',
-    `## Interactive Page Catalog`,
-    '',
-    INTERACTIVE_PAGE_PROMPT,
-  )
 
   return parts.join('\n')
 }

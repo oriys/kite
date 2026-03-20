@@ -34,9 +34,7 @@ import {
   createDefaultDocAgentRunSettings,
   sanitizeDocAgentRunSettings,
 } from '@/lib/agent/config'
-import { getDocAgentInteractivePagePreviewFromToolCall } from '@/lib/agent/interactive-page-templates'
 import { DocAgentInteractionWidget } from '@/components/docs/doc-agent-interaction-widget'
-import { DocAgentInteractivePage } from '@/components/docs/doc-agent-interactive-page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -304,11 +302,6 @@ function StepItem({ step }: { step: AgentStepRecord }) {
   return (
     <div className="py-1.5">
       {calls.map((tc, i) => {
-        const interactivePreview = getDocAgentInteractivePagePreviewFromToolCall(
-          tc.name,
-          tc.args,
-        )
-
         return (
           <div key={i} className="group">
             <button
@@ -328,13 +321,6 @@ function StepItem({ step }: { step: AgentStepRecord }) {
             </button>
             {expanded && (
               <div className="ml-6 mt-1 space-y-1">
-                {interactivePreview ? (
-                  <DocAgentInteractivePage
-                    message={interactivePreview.message}
-                    spec={interactivePreview.spec}
-                    className="mb-2"
-                  />
-                ) : null}
                 <pre className="overflow-x-auto rounded bg-muted/50 p-2 text-[11px] text-muted-foreground">
                   {JSON.stringify(tc.args, null, 2)}
                 </pre>

@@ -5,7 +5,6 @@ import { Loader2 } from 'lucide-react'
 import type { AgentInteraction } from '@/lib/agent/shared'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { DocAgentInteractivePage } from '@/components/docs/doc-agent-interactive-page'
 
 interface InteractionWidgetProps {
   interaction: AgentInteraction
@@ -93,18 +92,6 @@ export function DocAgentInteractionWidget({
     [onRespond],
   )
 
-  if (interaction.type === 'page') {
-    return (
-      <DocAgentInteractivePage
-        message={interaction.message}
-        spec={interaction.spec}
-        submitting={submitting}
-        error={error}
-        onRespond={handleRespond}
-      />
-    )
-  }
-
   if (interaction.type === 'confirm') {
     return (
       <InlineInteractionShell
@@ -167,22 +154,22 @@ export function DocAgentInteractionWidget({
     )
   }
 
-  if (interaction.type === 'input') {
+  if (interaction.type === 'page') {
     return (
       <InlineInteractionShell
-        eyebrow="Quick reply"
+        eyebrow="Reply"
         message={interaction.message}
         submitting={submitting}
         error={error}
-        footer="Press Enter to send. Use Shift+Enter for a new line."
+        footer="Structured forms are disabled here for reliability. Reply in plain text and the agent will continue from your notes."
       >
         <Textarea
           value={inputValue}
           onChange={(event) => setInputValue(event.target.value)}
-          placeholder={interaction.placeholder ?? 'Type your response...'}
+          placeholder="Type your response..."
           disabled={submitting}
-          className="min-h-[88px] resize-none text-sm"
-          rows={3}
+          className="min-h-[104px] resize-none text-sm"
+          rows={4}
           onKeyDown={(event) => {
             if (
               event.key === 'Enter'
@@ -191,7 +178,12 @@ export function DocAgentInteractionWidget({
               && inputValue.trim()
             ) {
               event.preventDefault()
-              void handleRespond({ text: inputValue.trim() })
+              void handleRespond({
+                action: 'submit',
+                values: {
+                  response: inputValue.trim(),
+                },
+              })
             }
           }}
         />
@@ -200,7 +192,12 @@ export function DocAgentInteractionWidget({
           className="min-h-11 w-full text-sm sm:w-auto"
           disabled={submitting || !inputValue.trim()}
           onClick={() => {
-            void handleRespond({ text: inputValue.trim() })
+            void handleRespond({
+              action: 'submit',
+              values: {
+                response: inputValue.trim(),
+              },
+            })
           }}
         >
           Send reply
@@ -209,5 +206,43 @@ export function DocAgentInteractionWidget({
     )
   }
 
-  return null
+  return (
+    <InlineInteractionShell
+      eyebrow="Quick reply"
+      message={interaction.message}
+      submitting={submitting}
+      error={error}
+      footer="Press Enter to send. Use Shift+Enter for a new line."
+    >
+      <Textarea
+        value={inputValue}
+        onChange={(event) => setInputValue(event.target.value)}
+        placeholder={interaction.placeholder ?? 'Type your response...'}
+        disabled={submitting}
+        className="min-h-[88px] resize-none text-sm"
+        rows={3}
+        onKeyDown={(event) => {
+          if (
+            event.key === 'Enter'
+            && !event.shiftKey
+            && !submitting
+            && inputValue.trim()
+          ) {
+            event.preventDefault()
+            void handleRespond({ text: inputValue.trim() })
+          }
+        }}
+      />
+      <Button
+        type="button"
+        className="min-h-11 w-full text-sm sm:w-auto"
+        disabled={submitting || !inputValue.trim()}
+        onClick={() => {
+          void handleRespond({ text: inputValue.trim() })
+        }}
+      >
+        Send reply
+      </Button>
+    </InlineInteractionShell>
+  )
 }

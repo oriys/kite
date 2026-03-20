@@ -1,5 +1,12 @@
 import type { DocAgentInteractivePageSpec } from '@/lib/agent/interactive-page'
 
+export type AgentInteractiveToolName =
+  | 'ask_confirm'
+  | 'ask_select'
+  | 'ask_input'
+  | 'ask_page'
+  | 'ask_page_template'
+
 export type AgentTaskStatus =
   | 'pending'
   | 'running'
@@ -31,10 +38,33 @@ export interface AgentStepRecord {
 }
 
 export type AgentInteraction =
-  | { id: string; type: 'confirm'; message: string }
-  | { id: string; type: 'select'; message: string; options: string[] }
-  | { id: string; type: 'input'; message: string; placeholder?: string }
-  | { id: string; type: 'page'; message: string; spec: DocAgentInteractivePageSpec }
+  | {
+      id: string
+      toolName: 'ask_confirm'
+      type: 'confirm'
+      message: string
+    }
+  | {
+      id: string
+      toolName: 'ask_select'
+      type: 'select'
+      message: string
+      options: string[]
+    }
+  | {
+      id: string
+      toolName: 'ask_input'
+      type: 'input'
+      message: string
+      placeholder?: string
+    }
+  | {
+      id: string
+      toolName: 'ask_page' | 'ask_page_template'
+      type: 'page'
+      message: string
+      spec: DocAgentInteractivePageSpec
+    }
 
 export type AgentInteractionResponse =
   | { type: 'confirm'; accepted: boolean; feedback?: string }

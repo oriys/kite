@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
-import { createAgentTask, listAgentTasks, updateAgentTaskStatus, appendAgentTaskStep } from '@/lib/queries/agent'
-import { runAgent } from '@/lib/agent/engine'
-import { cancelInteraction } from '@/lib/agent/interactions'
+import { createAgentTask, listAgentTasks } from '@/lib/queries/agent'
+import { createInitialAgentConversation } from '@/lib/agent/conversation'
 import {
   parseDocAgentMaxSteps,
   parseDocAgentModelId,
   parseDocAgentTemperature,
 } from '@/lib/agent/config'
-import { logServerError } from '@/lib/server-errors'
+import { startAgentTaskRun } from '@/lib/agent/task-runner'
 
 const MAX_PROMPT_LENGTH = 4000
 
@@ -54,13 +53,15 @@ export async function POST(request: NextRequest) {
     maxSteps: parsedMaxSteps.value,
     temperature: parsedTemperature.value,
   }
+  const conversation = createInitialAgentConversation(prompt)
 
   const task = await createAgentTask({
     workspaceId: result.ctx.workspaceId,
     userId: result.ctx.userId,
     prompt,
-    modelId: runSettings.modelId ?? undefined,
+    runSettings,
     documentId,
+    conversation,
     progress: {
       currentStep: 0,
       maxSteps: runSettings.maxSteps,
@@ -68,54 +69,16 @@ export async function POST(request: NextRequest) {
     },
   })
 
-  // Fire-and-forget: run the agent in the background
-  void (async () => {
-    try {
-      await updateAgentTaskStatus(result.ctx.workspaceId, task.id, 'running', {
-        progress: {
-          currentStep: 0,
-          maxSteps: runSettings.maxSteps,
-          description: 'Preparing agent...',
-        },
-      })
-
-      const agentResult = await runAgent({
-        workspaceId: result.ctx.workspaceId,
-        userId: result.ctx.userId,
-        prompt,
-        taskId: task.id,
-        documentId,
-        modelId: runSettings.modelId ?? undefined,
-        maxSteps: runSettings.maxSteps,
-        temperature: runSettings.temperature,
-        onStep: (step) => {
-          void appendAgentTaskStep(result.ctx.workspaceId, task.id, step, {
-            maxSteps: runSettings.maxSteps,
-          }).catch((err) => {
-            logServerError('Failed to persist agent step', err, { taskId: task.id })
-          })
-        },
-      })
-
-      await updateAgentTaskStatus(result.ctx.workspaceId, task.id, 'completed', {
-        result: agentResult.result,
-        steps: agentResult.steps,
-        modelId: agentResult.modelRef,
-        progress: {
-          currentStep: agentResult.steps.length,
-          maxSteps: runSettings.maxSteps,
-          description: 'Completed',
-        },
-      })
-    } catch (error) {
-      cancelInteraction(task.id)
-      const message = error instanceof Error ? error.message : 'Agent execution failed'
-      logServerError('Agent task failed', error instanceof Error ? error : new Error(message), {
-        taskId: task.id,
-      })
-      await updateAgentTaskStatus(result.ctx.workspaceId, task.id, 'failed', { error: message }).catch(() => {})
-    }
-  })()
+  startAgentTaskRun({
+    workspaceId: result.ctx.workspaceId,
+    userId: result.ctx.userId,
+    taskId: task.id,
+    prompt,
+    documentId,
+    runSettings,
+    conversation,
+    initialStepIndex: 0,
+  })
 
   return NextResponse.json({ task }, { status: 201 })
 }

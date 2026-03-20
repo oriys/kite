@@ -3,19 +3,14 @@ import { tool } from 'ai'
 import { db } from '@/lib/db'
 import { retrieveWorkspaceRagContext } from '@/lib/ai-chat'
 import { escapeLikePattern } from '@/lib/ai/visibility-filter'
+import {
+  askConfirmInputSchema,
+  askInputInputSchema,
+  askSelectInputSchema,
+} from '@/lib/agent/interactive-tools'
 import { createQueryMatchPlan } from '@/lib/search/query-terms'
 import { documents, openapiSources, apiEndpoints } from '@/lib/schema'
 import { eq, and, sql, isNull, desc } from 'drizzle-orm'
-import { updateAgentTaskStatus } from '@/lib/queries/agent'
-import { waitForInteraction } from '@/lib/agent/interactions'
-import {
-  docAgentInteractivePageCatalog,
-  validateDocAgentInteractivePageSpec,
-} from '@/lib/agent/interactive-page'
-import {
-  buildDocAgentInteractivePageTemplate,
-  docAgentInteractivePageTemplateInputSchema,
-} from '@/lib/agent/interactive-page-templates'
 
 // ─── Workspace-scoped tool context ──────────────────────────
 
@@ -120,45 +115,6 @@ function buildDocumentWeightedScore(
 // ─── Tool factory ───────────────────────────────────────────
 
 export function createAgentTools(ctx: AgentToolContext) {
-  const promptInteractivePage = async (message: string, spec: unknown) => {
-    const validation = validateDocAgentInteractivePageSpec(spec)
-    if (!validation.success) {
-      return { error: validation.error }
-    }
-
-    const interactionId = crypto.randomUUID()
-    await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'waiting_for_input', {
-      interaction: { id: interactionId, type: 'page', message, spec: validation.data },
-      progress: { currentStep: 0, maxSteps: 0, description: 'Waiting for interactive input…' },
-    })
-
-    try {
-      const response = await waitForInteraction(ctx.taskId!, interactionId)
-      await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'running', {
-        interaction: null,
-        progress: { currentStep: 0, maxSteps: 0, description: 'Resuming…' },
-      })
-
-      if (response.type === 'page') {
-        return {
-          action: response.action,
-          values: response.values,
-        }
-      }
-
-      return {
-        error: 'Received an unexpected interaction response type.',
-      }
-    } catch (error) {
-      return {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Interactive page was cancelled or timed out.',
-      }
-    }
-  }
-
   return {
     search_documents: tool({
       description:
@@ -620,119 +576,27 @@ export function createAgentTools(ctx: AgentToolContext) {
       },
     }),
 
-    // ─── Interaction tools (block until user responds) ────────
+    // ─── Interaction tools (pause the task for user input) ─────
 
     ...(ctx.taskId ? {
       ask_confirm: tool({
         description:
-          'Ask the user for confirmation before proceeding with a plan or destructive action. Blocks until the user responds.',
-        inputSchema: z.object({
-          message: z.string().describe('What you want to confirm with the user. Describe the plan or action clearly.'),
-        }),
-        execute: async ({ message }) => {
-          const interactionId = crypto.randomUUID()
-          await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'waiting_for_input', {
-            interaction: { id: interactionId, type: 'confirm', message },
-            progress: { currentStep: 0, maxSteps: 0, description: 'Waiting for confirmation…' },
-          })
-
-          try {
-            const response = await waitForInteraction(ctx.taskId!, interactionId)
-            await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'running', {
-              interaction: null,
-              progress: { currentStep: 0, maxSteps: 0, description: 'Resuming…' },
-            })
-            if (response.type === 'confirm') {
-              return { accepted: response.accepted, feedback: response.feedback ?? null }
-            }
-            return { accepted: false, feedback: null }
-          } catch {
-            return { accepted: false, feedback: 'Interaction was cancelled or timed out.' }
-          }
-        },
+          'Ask the user for confirmation before proceeding with a plan or destructive action. Pauses the task until the user responds.',
+        inputSchema: askConfirmInputSchema,
       }),
 
       ask_select: tool({
         description:
-          'Present the user with 2-6 options to choose from. Blocks until the user selects one.',
-        inputSchema: z.object({
-          message: z.string().describe('Question or context for the selection'),
-          options: z.array(z.string()).min(2).max(6).describe('The options to choose from'),
-        }),
-        execute: async ({ message, options }) => {
-          const interactionId = crypto.randomUUID()
-          await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'waiting_for_input', {
-            interaction: { id: interactionId, type: 'select', message, options },
-            progress: { currentStep: 0, maxSteps: 0, description: 'Waiting for selection…' },
-          })
-
-          try {
-            const response = await waitForInteraction(ctx.taskId!, interactionId)
-            await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'running', {
-              interaction: null,
-              progress: { currentStep: 0, maxSteps: 0, description: 'Resuming…' },
-            })
-            if (response.type === 'select') {
-              return { selected: response.selected }
-            }
-            return { selected: options[0] }
-          } catch {
-            return { selected: options[0] }
-          }
-        },
+          'Present the user with 2-6 options to choose from. Pauses the task until the user selects one.',
+        inputSchema: askSelectInputSchema,
       }),
 
       ask_input: tool({
         description:
-          'Ask the user for free-form text input. Use when you need additional information, context, or instructions.',
-        inputSchema: z.object({
-          message: z.string().describe('What you need from the user'),
-          placeholder: z.string().optional().describe('Placeholder text for the input field'),
-        }),
-        execute: async ({ message, placeholder }) => {
-          const interactionId = crypto.randomUUID()
-          await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'waiting_for_input', {
-            interaction: { id: interactionId, type: 'input', message, placeholder },
-            progress: { currentStep: 0, maxSteps: 0, description: 'Waiting for input…' },
-          })
-
-          try {
-            const response = await waitForInteraction(ctx.taskId!, interactionId)
-            await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'running', {
-              interaction: null,
-              progress: { currentStep: 0, maxSteps: 0, description: 'Resuming…' },
-            })
-            if (response.type === 'input') {
-              return { text: response.text }
-            }
-            return { text: '' }
-          } catch {
-            return { text: '' }
-          }
-        },
+          'Ask the user for free-form text input. Use when you need additional information, context, or instructions. Pauses the task until the user replies.',
+        inputSchema: askInputInputSchema,
       }),
 
-      ask_page: tool({
-        description:
-          'Ask the user to interact with a compact custom page rendered from the Doc Agent interactive catalog. Use when no built-in template fits and you need a custom multi-field flow.',
-        inputSchema: z.object({
-          message: z.string().trim().min(1).max(1000).describe('Short context shown above the page'),
-          spec: docAgentInteractivePageCatalog.zodSchema().describe('A json-render spec using only the approved Doc Agent interactive components and actions'),
-        }),
-        execute: async ({ message, spec }) => {
-          return promptInteractivePage(message, spec)
-        },
-      }),
-
-      ask_page_template: tool({
-        description:
-          'Ask the user to interact with one of the built-in Doc Agent page templates. Prefer this over raw ask_page for approvals, project briefs, revision strategy choices, and bulk confirmations.',
-        inputSchema: docAgentInteractivePageTemplateInputSchema,
-        execute: async (input) => {
-          const page = buildDocAgentInteractivePageTemplate(input)
-          return promptInteractivePage(page.message, page.spec)
-        },
-      }),
     } : {}),
   }
 }

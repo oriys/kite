@@ -9,13 +9,11 @@ import type {
   AgentTaskStatus,
 } from '@/lib/agent/shared'
 import { DocAgentInteractionWidget } from '@/components/docs/doc-agent-interaction-widget'
-import { DocAgentInteractivePage } from '@/components/docs/doc-agent-interactive-page'
 import { MarkdownPreview } from '@/components/docs/markdown-preview'
 import {
   createQueryMatchPlan,
   type QueryMatchPlan,
 } from '@/lib/search/query-terms'
-import { getDocAgentInteractivePagePreviewFromToolCall } from '@/lib/agent/interactive-page-templates'
 import { cn } from '@/lib/utils'
 import {
   ArrowLeft,
@@ -146,10 +144,6 @@ function DetailStep({ step }: { step: AgentStepRecord }) {
   return (
       <div className="py-2">
         {(step.toolCalls ?? []).map((tc, i) => {
-          const interactivePageArgs = getDocAgentInteractivePagePreviewFromToolCall(
-            tc.name,
-            tc.args,
-          )
           const searchTermPlan = getSearchTermPlan(tc)
 
         return (
@@ -170,13 +164,6 @@ function DetailStep({ step }: { step: AgentStepRecord }) {
               </button>
               {expanded && (
                 <div className="mt-1.5 space-y-1.5 pl-4">
-                  {interactivePageArgs ? (
-                    <DocAgentInteractivePage
-                      message={interactivePageArgs.message}
-                      spec={interactivePageArgs.spec}
-                      className="mb-2"
-                    />
-                  ) : null}
                   {searchTermPlan ? (
                     <div className="rounded-md border border-border/60 bg-muted/15 p-2.5">
                       <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">

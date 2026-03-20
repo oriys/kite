@@ -1,6 +1,9 @@
 import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import {
+  createGoogleGenerativeAI,
+  type GoogleEmbeddingModelOptions,
+} from '@ai-sdk/google'
 import { generateText, streamText, embedMany, type ToolSet } from 'ai'
 import type { LanguageModel, EmbeddingModel } from 'ai'
 
@@ -9,7 +12,12 @@ import {
   collectMcpToolNamesFromSteps,
   createChatMessageAttribution,
 } from '@/lib/ai-chat-shared'
-import { TEMPERATURE_CHAT, TEMPERATURE_COMPLETION, DEFAULT_EMBEDDING_MODEL } from '@/lib/ai-config'
+import {
+  TEMPERATURE_CHAT,
+  TEMPERATURE_COMPLETION,
+  DEFAULT_EMBEDDING_MODEL,
+  EMBEDDING_VECTOR_DIMENSION,
+} from '@/lib/ai-config'
 import {
   AiCompletionError,
   type OpenAiCompatibleRerankResponse,
@@ -21,6 +29,27 @@ import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 
 function normalizeGeminiModelId(modelId: string) {
   return modelId.startsWith('models/') ? modelId.slice('models/'.length) : modelId
+}
+
+const DEFAULT_GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001'
+
+function getDefaultEmbeddingModelId(provider: ResolvedAiProviderConfig) {
+  switch (provider.providerType) {
+    case 'gemini':
+      return DEFAULT_GEMINI_EMBEDDING_MODEL
+    default:
+      return DEFAULT_EMBEDDING_MODEL
+  }
+}
+
+function getEmbeddingProviderOptions(provider: ResolvedAiProviderConfig) {
+  if (provider.providerType !== 'gemini') return undefined
+
+  return {
+    google: {
+      outputDimensionality: EMBEDDING_VECTOR_DIMENSION,
+    } satisfies GoogleEmbeddingModelOptions,
+  }
 }
 
 export function createLanguageModel(
@@ -180,10 +209,12 @@ export async function requestAiEmbedding(input: {
 
   try {
     const model = createEmbeddingModel(input.provider, input.model)
+    const providerOptions = getEmbeddingProviderOptions(input.provider)
     const { embeddings } = await embedMany({
       model,
       values: input.texts,
       abortSignal: input.abortSignal,
+      ...(providerOptions ? { providerOptions } : {}),
     })
 
     return { embeddings }
@@ -388,8 +419,11 @@ export async function resolveEmbeddingProvider(workspaceId: string) {
 
   if (embeddingProviders.length === 0) return null
 
+  const provider = embeddingProviders[0]
+  const configuredModelId = settings?.embeddingModelId?.trim()
+
   return {
-    provider: embeddingProviders[0],
-    modelId: settings?.embeddingModelId?.trim() || DEFAULT_EMBEDDING_MODEL,
+    provider,
+    modelId: configuredModelId || getDefaultEmbeddingModelId(provider),
   }
 }

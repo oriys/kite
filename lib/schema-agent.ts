@@ -37,6 +37,12 @@ export const agentTasks = pgTable(
     steps: jsonb('steps').$type<AgentStepRecord[]>().default([]),
     modelId: text('model_id'),
     documentId: text('document_id'),
+    runSettings: jsonb('run_settings').$type<{
+      modelId: string | null
+      maxSteps: number
+      temperature: number
+    }>(),
+    conversation: jsonb('conversation').$type<unknown[]>().default([]),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
