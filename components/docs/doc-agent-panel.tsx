@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  HelpCircle,
 } from 'lucide-react'
 import { useAiModels } from '@/hooks/use-ai-models'
 import {
@@ -58,7 +59,12 @@ interface AgentProgress {
   description?: string
 }
 
-type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+type AgentInteraction =
+  | { id: string; type: 'confirm'; message: string }
+  | { id: string; type: 'select'; message: string; options: string[] }
+  | { id: string; type: 'input'; message: string; placeholder?: string }
+
+type TaskStatus = 'pending' | 'running' | 'waiting_for_input' | 'completed' | 'failed' | 'cancelled'
 
 const WORKSPACE_DEFAULT_MODEL_VALUE = '__workspace_default__'
 
@@ -80,7 +86,9 @@ function useAgentTask() {
   const [result, setResult] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [taskId, setTaskId] = React.useState<string | null>(null)
+  const [interaction, setInteraction] = React.useState<AgentInteraction | null>(null)
   const abortRef = React.useRef<AbortController | null>(null)
+  const lastInteractionIdRef = React.useRef<string | null>(null)
 
   const reset = React.useCallback(() => {
     setSteps([])
@@ -89,7 +97,31 @@ function useAgentTask() {
     setResult(null)
     setError(null)
     setTaskId(null)
+    setInteraction(null)
+    lastInteractionIdRef.current = null
   }, [])
+
+  const respond = React.useCallback(
+    async (body: Record<string, unknown>) => {
+      if (!taskId || !interaction) return
+      setInteraction(null)
+      lastInteractionIdRef.current = null
+      try {
+        const res = await fetch(`/api/ai/agent/${taskId}/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          toast.error(data?.message ?? 'Failed to send response')
+        }
+      } catch {
+        toast.error('Failed to send response')
+      }
+    },
+    [taskId, interaction],
+  )
 
   const run = React.useCallback(
     async (input: {
@@ -157,16 +189,28 @@ function useAgentTask() {
                   case 'progress':
                     setProgress(data as AgentProgress)
                     break
+                  case 'interaction': {
+                    const ix = data as AgentInteraction
+                    if (ix.id !== lastInteractionIdRef.current) {
+                      lastInteractionIdRef.current = ix.id
+                      setInteraction(ix)
+                      setStatus('waiting_for_input')
+                    }
+                    break
+                  }
                   case 'done':
                     setResult(data.result)
                     setStatus('completed')
+                    setInteraction(null)
                     break
                   case 'error':
                     setError(data.message)
                     setStatus('failed')
+                    setInteraction(null)
                     break
                   case 'cancelled':
                     setStatus('cancelled')
+                    setInteraction(null)
                     break
                 }
               } catch {
@@ -197,9 +241,10 @@ function useAgentTask() {
       )
     }
     setStatus('cancelled')
+    setInteraction(null)
   }, [taskId])
 
-  return { steps, status, progress, result, error, taskId, run, cancel, reset }
+  return { steps, status, progress, result, error, taskId, interaction, run, cancel, reset, respond }
 }
 
 function StatusBadge({ status }: { status: TaskStatus }) {
@@ -220,6 +265,11 @@ function StatusBadge({ status }: { status: TaskStatus }) {
       label: 'Running',
       variant: 'default',
       icon: <Loader2 className="size-3 animate-spin" />,
+    },
+    waiting_for_input: {
+      label: 'Waiting',
+      variant: 'secondary',
+      icon: <HelpCircle className="size-3 text-amber-500" />,
     },
     completed: {
       label: 'Done',
@@ -297,6 +347,90 @@ function StepItem({ step }: { step: AgentStepRecord }) {
   )
 }
 
+interface InteractionWidgetProps {
+  interaction: AgentInteraction
+  onRespond: (body: Record<string, unknown>) => void
+}
+
+function InteractionWidget({ interaction, onRespond }: InteractionWidgetProps) {
+  const [inputValue, setInputValue] = React.useState('')
+
+  if (interaction.type === 'confirm') {
+    return (
+      <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
+        <p className="text-sm text-foreground whitespace-pre-wrap">{interaction.message}</p>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => onRespond({ accepted: true })}
+          >
+            Approve
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={() => onRespond({ accepted: false })}
+          >
+            Reject
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (interaction.type === 'select') {
+    return (
+      <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
+        <p className="text-sm text-foreground whitespace-pre-wrap">{interaction.message}</p>
+        <div className="flex flex-col gap-1.5">
+          {interaction.options.map((option) => (
+            <button
+              key={option}
+              onClick={() => onRespond({ selected: option })}
+              className="rounded-md border border-border/60 bg-background px-3 py-1.5 text-left text-sm hover:bg-muted/50 transition-colors"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (interaction.type === 'input') {
+    return (
+      <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
+        <p className="text-sm text-foreground whitespace-pre-wrap">{interaction.message}</p>
+        <Textarea
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          placeholder={interaction.placeholder ?? 'Type your response...'}
+          className="min-h-[60px] resize-none text-sm"
+          rows={2}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && inputValue.trim()) {
+              e.preventDefault()
+              onRespond({ text: inputValue.trim() })
+            }
+          }}
+        />
+        <Button
+          size="sm"
+          className="h-7 text-xs"
+          disabled={!inputValue.trim()}
+          onClick={() => onRespond({ text: inputValue.trim() })}
+        >
+          Submit
+        </Button>
+      </div>
+    )
+  }
+
+  return null
+}
+
 interface DocAgentPanelProps {
   documentId?: string
   onClose?: () => void
@@ -308,7 +442,7 @@ export function DocAgentPanel({
   onClose,
   className,
 }: DocAgentPanelProps) {
-  const { steps, status, progress, result, error, run, cancel, reset } =
+  const { steps, status, progress, result, error, interaction, run, cancel, reset, respond } =
     useAgentTask()
   const {
     items: aiModels,
@@ -322,7 +456,7 @@ export function DocAgentPanel({
     createDefaultDocAgentRunSettings(),
   )
   const scrollRef = React.useRef<HTMLDivElement>(null)
-  const isActive = status === 'pending' || status === 'running'
+  const isActive = status === 'pending' || status === 'running' || status === 'waiting_for_input'
 
   const availableModels = React.useMemo(() => {
     const enabledModelIdSet = new Set(enabledModelIds)
@@ -462,6 +596,10 @@ export function DocAgentPanel({
           {steps.map((step) => (
             <StepItem key={step.index} step={step} />
           ))}
+
+          {interaction && (
+            <InteractionWidget interaction={interaction} onRespond={respond} />
+          )}
 
           {isActive && progress?.description && (
             <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">

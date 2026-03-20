@@ -10,6 +10,7 @@ import {
 export const agentTaskStatusEnum = pgEnum('agent_task_status', [
   'pending',
   'running',
+  'waiting_for_input',
   'completed',
   'failed',
   'cancelled',
@@ -40,6 +41,7 @@ export const agentTasks = pgTable(
       .defaultNow(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    interaction: jsonb('interaction').$type<AgentInteraction | null>(),
   },
   (table) => [
     index('agent_tasks_workspace_idx').on(table.workspaceId),
@@ -61,3 +63,15 @@ export interface AgentStepRecord {
   text?: string
   durationMs?: number
 }
+
+// ─── Interaction types ───────────────────────────────────────
+
+export type AgentInteraction =
+  | { id: string; type: 'confirm'; message: string }
+  | { id: string; type: 'select'; message: string; options: string[] }
+  | { id: string; type: 'input'; message: string; placeholder?: string }
+
+export type AgentInteractionResponse =
+  | { type: 'confirm'; accepted: boolean; feedback?: string }
+  | { type: 'select'; selected: string }
+  | { type: 'input'; text: string }

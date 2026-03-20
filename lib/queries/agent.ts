@@ -1,6 +1,6 @@
 import { eq, and, desc, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { agentTasks, type AgentStepRecord } from '@/lib/schema'
+import { agentTasks, type AgentStepRecord, type AgentInteraction } from '@/lib/schema'
 import { DOC_AGENT_DEFAULT_MAX_STEPS } from '@/lib/agent/config'
 
 type AgentTaskProgress = {
@@ -57,13 +57,14 @@ export async function listAgentTasks(workspaceId: string, limit = 20) {
 export async function updateAgentTaskStatus(
   workspaceId: string,
   taskId: string,
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled',
+  status: 'pending' | 'running' | 'waiting_for_input' | 'completed' | 'failed' | 'cancelled',
   extra?: {
     result?: string
     error?: string
     steps?: AgentStepRecord[]
     modelId?: string
     progress?: AgentTaskProgress
+    interaction?: AgentInteraction | null
   },
 ) {
   const updates: Record<string, unknown> = { status }
@@ -78,6 +79,7 @@ export async function updateAgentTaskStatus(
   if (extra?.steps !== undefined) updates.steps = extra.steps
   if (extra?.modelId !== undefined) updates.modelId = extra.modelId
   if (extra?.progress !== undefined) updates.progress = extra.progress
+  if (extra?.interaction !== undefined) updates.interaction = extra.interaction
 
   await db.update(agentTasks).set(updates).where(and(eq(agentTasks.id, taskId), eq(agentTasks.workspaceId, workspaceId)))
 }
@@ -102,4 +104,17 @@ export async function appendAgentTaskStep(
       },
     })
     .where(and(eq(agentTasks.id, taskId), eq(agentTasks.workspaceId, workspaceId)))
+}
+
+export async function getAgentTaskInteraction(workspaceId: string, taskId: string) {
+  const [task] = await db
+    .select({
+      status: agentTasks.status,
+      interaction: agentTasks.interaction,
+    })
+    .from(agentTasks)
+    .where(and(eq(agentTasks.workspaceId, workspaceId), eq(agentTasks.id, taskId)))
+    .limit(1)
+
+  return task ?? null
 }

@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
 import { createAgentTask, listAgentTasks, updateAgentTaskStatus, appendAgentTaskStep } from '@/lib/queries/agent'
 import { runAgent } from '@/lib/agent/engine'
+import { cancelInteraction } from '@/lib/agent/interactions'
 import {
   parseDocAgentMaxSteps,
   parseDocAgentModelId,
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
         workspaceId: result.ctx.workspaceId,
         userId: result.ctx.userId,
         prompt,
+        taskId: task.id,
         documentId,
         modelId: runSettings.modelId ?? undefined,
         maxSteps: runSettings.maxSteps,
@@ -106,6 +108,7 @@ export async function POST(request: NextRequest) {
         },
       })
     } catch (error) {
+      cancelInteraction(task.id)
       const message = error instanceof Error ? error.message : 'Agent execution failed'
       logServerError('Agent task failed', error instanceof Error ? error : new Error(message), {
         taskId: task.id,

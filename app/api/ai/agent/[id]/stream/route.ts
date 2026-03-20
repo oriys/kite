@@ -48,6 +48,11 @@ export async function GET(
             send('progress', current.progress)
           }
 
+          // Send interaction if waiting for input
+          if (current.status === 'waiting_for_input' && current.interaction) {
+            send('interaction', current.interaction)
+          }
+
           // Terminal states
           if (current.status === 'completed') {
             send('done', { result: current.result, modelId: current.modelId })

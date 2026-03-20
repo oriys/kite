@@ -5,12 +5,15 @@ import { retrieveWorkspaceRagContext } from '@/lib/ai-chat'
 import { extractQueryTerms } from '@/lib/search/query-terms'
 import { documents, openapiSources, apiEndpoints } from '@/lib/schema'
 import { eq, and, sql, isNull, desc } from 'drizzle-orm'
+import { updateAgentTaskStatus } from '@/lib/queries/agent'
+import { waitForInteraction } from '@/lib/agent/interactions'
 
 // ─── Workspace-scoped tool context ──────────────────────────
 
 export interface AgentToolContext {
   workspaceId: string
   userId: string
+  taskId?: string
   documentId?: string
 }
 
@@ -498,5 +501,98 @@ export function createAgentTools(ctx: AgentToolContext) {
         }
       },
     }),
+
+    // ─── Interaction tools (block until user responds) ────────
+
+    ...(ctx.taskId ? {
+      ask_confirm: tool({
+        description:
+          'Ask the user for confirmation before proceeding with a plan or destructive action. Blocks until the user responds.',
+        inputSchema: z.object({
+          message: z.string().describe('What you want to confirm with the user. Describe the plan or action clearly.'),
+        }),
+        execute: async ({ message }) => {
+          const interactionId = crypto.randomUUID()
+          await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'waiting_for_input', {
+            interaction: { id: interactionId, type: 'confirm', message },
+            progress: { currentStep: 0, maxSteps: 0, description: 'Waiting for confirmation…' },
+          })
+
+          try {
+            const response = await waitForInteraction(ctx.taskId!, interactionId)
+            await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'running', {
+              interaction: null,
+              progress: { currentStep: 0, maxSteps: 0, description: 'Resuming…' },
+            })
+            if (response.type === 'confirm') {
+              return { accepted: response.accepted, feedback: response.feedback ?? null }
+            }
+            return { accepted: false, feedback: null }
+          } catch {
+            return { accepted: false, feedback: 'Interaction was cancelled or timed out.' }
+          }
+        },
+      }),
+
+      ask_select: tool({
+        description:
+          'Present the user with 2-6 options to choose from. Blocks until the user selects one.',
+        inputSchema: z.object({
+          message: z.string().describe('Question or context for the selection'),
+          options: z.array(z.string()).min(2).max(6).describe('The options to choose from'),
+        }),
+        execute: async ({ message, options }) => {
+          const interactionId = crypto.randomUUID()
+          await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'waiting_for_input', {
+            interaction: { id: interactionId, type: 'select', message, options },
+            progress: { currentStep: 0, maxSteps: 0, description: 'Waiting for selection…' },
+          })
+
+          try {
+            const response = await waitForInteraction(ctx.taskId!, interactionId)
+            await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'running', {
+              interaction: null,
+              progress: { currentStep: 0, maxSteps: 0, description: 'Resuming…' },
+            })
+            if (response.type === 'select') {
+              return { selected: response.selected }
+            }
+            return { selected: options[0] }
+          } catch {
+            return { selected: options[0] }
+          }
+        },
+      }),
+
+      ask_input: tool({
+        description:
+          'Ask the user for free-form text input. Use when you need additional information, context, or instructions.',
+        inputSchema: z.object({
+          message: z.string().describe('What you need from the user'),
+          placeholder: z.string().optional().describe('Placeholder text for the input field'),
+        }),
+        execute: async ({ message, placeholder }) => {
+          const interactionId = crypto.randomUUID()
+          await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'waiting_for_input', {
+            interaction: { id: interactionId, type: 'input', message, placeholder },
+            progress: { currentStep: 0, maxSteps: 0, description: 'Waiting for input…' },
+          })
+
+          try {
+            const response = await waitForInteraction(ctx.taskId!, interactionId)
+            await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'running', {
+              interaction: null,
+              progress: { currentStep: 0, maxSteps: 0, description: 'Resuming…' },
+            })
+            if (response.type === 'input') {
+              return { text: response.text }
+            }
+            return { text: '' }
+          } catch {
+            return { text: '' }
+          }
+        },
+      }),
+    } : {}),
   }
 }

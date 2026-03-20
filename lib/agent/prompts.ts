@@ -10,7 +10,10 @@ const TOOL_DESCRIPTIONS = `You have access to these tools to work with the docum
 - **list_api_endpoints**: List all API endpoints from an OpenAPI source
 - **search_knowledge_base**: Query the workspace knowledge base with RAG
 - **translate_text**: Translate text to a target language
-- **lint_document**: Check a document for quality issues`
+- **lint_document**: Check a document for quality issues
+- **ask_confirm**: Ask the user for confirmation before proceeding with a plan or destructive action
+- **ask_select**: Present 2-6 options for the user to choose from
+- **ask_input**: Ask the user for free-form text input when you need more information`
 
 export function buildAgentSystemPrompt(opts?: {
   documentContext?: string
@@ -32,6 +35,7 @@ export function buildAgentSystemPrompt(opts?: {
     `7. **Use Markdown.** All document content should be proper Markdown with headings, lists, code blocks, and links as appropriate.`,
     `8. **Respect status.** Draft documents are work-in-progress. Don't publish unless explicitly asked.`,
     `9. **Use the knowledge base.** For factual workspace context, consult the knowledge base with RAG before guessing. Re-run knowledge-base search if the task evolves.`,
+    `10. **Ask before destructive actions.** Use ask_confirm before publishing, bulk-updating, or deleting. Use ask_select when the user's intent is ambiguous and there are distinct options. Use ask_input when you need details the prompt didn't provide. Don't overuse — only ask when the answer genuinely affects your next action.`,
   ]
 
   if (opts?.documentContext) {
