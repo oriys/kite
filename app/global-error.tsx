@@ -1,9 +1,22 @@
 'use client'
 
 import { useEffect } from 'react'
+import { attemptClientRuntimeRecovery } from '@/lib/client-runtime-recovery'
 
-function reportErrorToServer(error: Error & { digest?: string }, extra?: Record<string, unknown>) {
+type ReportErrorExtra = {
+  context?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+function reportErrorToServer(error: Error & { digest?: string }, extra?: ReportErrorExtra) {
   try {
+    const extraContext =
+      typeof extra?.context === 'object' && extra.context !== null
+        ? extra.context as Record<string, unknown>
+        : undefined
+    const extraFields: Record<string, unknown> = extra ? { ...extra } : {}
+    delete extraFields.context
+
     const payload = {
       errorName: error.name,
       errorMessage: error.message,
@@ -12,8 +25,9 @@ function reportErrorToServer(error: Error & { digest?: string }, extra?: Record<
       url: typeof window !== 'undefined' ? window.location.href : undefined,
       context: {
         boundary: 'global-error',
+        ...extraContext,
       },
-      ...extra,
+      ...extraFields,
     }
 
     // Use sendBeacon for reliability (works even during page unload)
@@ -46,7 +60,18 @@ export default function GlobalError({
   reset: () => void
 }) {
   useEffect(() => {
-    reportErrorToServer(error)
+    const recovery = attemptClientRuntimeRecovery(error)
+    if (recovery.triggered) {
+      return
+    }
+
+    reportErrorToServer(error, {
+      context: {
+        boundary: 'global-error',
+        recoveryKind: recovery.kind,
+        recoveryAlreadyAttempted: recovery.alreadyAttempted || undefined,
+      },
+    })
   }, [error])
 
   return (

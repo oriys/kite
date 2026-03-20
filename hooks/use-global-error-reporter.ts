@@ -1,6 +1,10 @@
 'use client'
 
 import { useEffect, useCallback, useRef } from 'react'
+import {
+  attemptClientRuntimeRecovery,
+  clearClientRuntimeRecoveryState,
+} from '@/lib/client-runtime-recovery'
 
 interface ClientErrorPayload {
   errorName: string
@@ -66,7 +70,17 @@ export function useGlobalErrorReporter() {
   }, [])
 
   useEffect(() => {
+    clearClientRuntimeRecoveryState()
+
     const onError = (event: ErrorEvent) => {
+      const recovery = attemptClientRuntimeRecovery(event.error ?? {
+        name: event.error?.name ?? 'Error',
+        message: event.message,
+      })
+      if (recovery.triggered) {
+        return
+      }
+
       report({
         errorName: event.error?.name ?? 'Error',
         errorMessage: event.message,
@@ -76,12 +90,19 @@ export function useGlobalErrorReporter() {
           filename: event.filename,
           lineno: event.lineno,
           colno: event.colno,
+          recoveryKind: recovery.kind,
+          recoveryAlreadyAttempted: recovery.alreadyAttempted || undefined,
         }),
       })
     }
 
     const onUnhandledRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason
+      const recovery = attemptClientRuntimeRecovery(reason instanceof Error ? reason : undefined)
+      if (recovery.triggered) {
+        return
+      }
+
       report({
         errorName: reason instanceof Error ? reason.name : 'UnhandledRejection',
         errorMessage:
@@ -94,6 +115,8 @@ export function useGlobalErrorReporter() {
         url: window.location.href,
         context: buildClientRuntimeContext({
           rejectionType: 'unhandledrejection',
+          recoveryKind: recovery.kind,
+          recoveryAlreadyAttempted: recovery.alreadyAttempted || undefined,
         }),
       })
     }
