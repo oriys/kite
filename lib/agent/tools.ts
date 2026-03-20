@@ -2,11 +2,20 @@ import { z } from 'zod'
 import { tool } from 'ai'
 import { db } from '@/lib/db'
 import { retrieveWorkspaceRagContext } from '@/lib/ai-chat'
-import { extractQueryTerms } from '@/lib/search/query-terms'
+import { escapeLikePattern } from '@/lib/ai/visibility-filter'
+import { createQueryMatchPlan } from '@/lib/search/query-terms'
 import { documents, openapiSources, apiEndpoints } from '@/lib/schema'
 import { eq, and, sql, isNull, desc } from 'drizzle-orm'
 import { updateAgentTaskStatus } from '@/lib/queries/agent'
 import { waitForInteraction } from '@/lib/agent/interactions'
+import {
+  docAgentInteractivePageCatalog,
+  validateDocAgentInteractivePageSpec,
+} from '@/lib/agent/interactive-page'
+import {
+  buildDocAgentInteractivePageTemplate,
+  docAgentInteractivePageTemplateInputSchema,
+} from '@/lib/agent/interactive-page-templates'
 
 // ─── Workspace-scoped tool context ──────────────────────────
 
@@ -47,9 +56,109 @@ function buildSearchPreview(
   return (normalizedSummary || normalizedContent).slice(0, 240)
 }
 
+function buildDocumentFieldMatches(terms: string[]) {
+  if (terms.length === 0) return sql`false`
+
+  return sql`(${sql.join(
+    terms.map((term) => {
+      const pattern = `%${escapeLikePattern(term)}%`
+      return sql`(
+        ${documents.title} ILIKE ${pattern}
+        OR ${documents.slug} ILIKE ${pattern}
+        OR ${documents.content} ILIKE ${pattern}
+      )`
+    }),
+    sql` OR `,
+  )})`
+}
+
+function buildDocumentMatchCount(terms: string[]) {
+  if (terms.length === 0) return sql<number>`0`
+
+  return sql<number>`${sql.join(
+    terms.map((term) => {
+      const pattern = `%${escapeLikePattern(term)}%`
+      return sql`CASE
+        WHEN (
+          ${documents.title} ILIKE ${pattern}
+          OR ${documents.slug} ILIKE ${pattern}
+          OR ${documents.content} ILIKE ${pattern}
+        ) THEN 1
+        ELSE 0
+      END`
+    }),
+    sql` + `,
+  )}`
+}
+
+function buildDocumentWeightedScore(
+  terms: string[],
+  weights: {
+    title: number
+    slug: number
+    content: number
+  },
+  scaleByLength = false,
+) {
+  if (terms.length === 0) return sql<number>`0`
+
+  return sql<number>`${sql.join(
+    terms.flatMap((term) => {
+      const pattern = `%${escapeLikePattern(term)}%`
+      const compactLength = term.replace(/[\s_-]+/g, '').length
+      const lengthBoost = scaleByLength ? Math.min(4, Math.max(0, compactLength - 2)) : 0
+      return [
+        sql`CASE WHEN ${documents.title} ILIKE ${pattern} THEN ${weights.title + lengthBoost} ELSE 0 END`,
+        sql`CASE WHEN ${documents.slug} ILIKE ${pattern} THEN ${weights.slug + lengthBoost} ELSE 0 END`,
+        sql`CASE WHEN ${documents.content} ILIKE ${pattern} THEN ${weights.content + lengthBoost} ELSE 0 END`,
+      ]
+    }),
+    sql` + `,
+  )}`
+}
+
 // ─── Tool factory ───────────────────────────────────────────
 
 export function createAgentTools(ctx: AgentToolContext) {
+  const promptInteractivePage = async (message: string, spec: unknown) => {
+    const validation = validateDocAgentInteractivePageSpec(spec)
+    if (!validation.success) {
+      return { error: validation.error }
+    }
+
+    const interactionId = crypto.randomUUID()
+    await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'waiting_for_input', {
+      interaction: { id: interactionId, type: 'page', message, spec: validation.data },
+      progress: { currentStep: 0, maxSteps: 0, description: 'Waiting for interactive input…' },
+    })
+
+    try {
+      const response = await waitForInteraction(ctx.taskId!, interactionId)
+      await updateAgentTaskStatus(ctx.workspaceId, ctx.taskId!, 'running', {
+        interaction: null,
+        progress: { currentStep: 0, maxSteps: 0, description: 'Resuming…' },
+      })
+
+      if (response.type === 'page') {
+        return {
+          action: response.action,
+          values: response.values,
+        }
+      }
+
+      return {
+        error: 'Received an unexpected interaction response type.',
+      }
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Interactive page was cancelled or timed out.',
+      }
+    }
+  }
+
   return {
     search_documents: tool({
       description:
@@ -59,36 +168,36 @@ export function createAgentTools(ctx: AgentToolContext) {
         limit: z.number().optional().default(10).describe('Max results'),
       }),
       execute: async ({ query, limit }) => {
-        const terms = extractQueryTerms(query)
+        const matchPlan = createQueryMatchPlan(query)
+        const terms = matchPlan.previewTerms
         if (terms.length === 0) {
           return { results: [], message: 'No documents found.' }
         }
 
         const normalizedLimit = Math.min(Math.max(limit, 1), 20)
-        const likePatterns = terms.map((term) => `%${term}%`)
-        const whereMatches = sql.join(
-          likePatterns.map(
-            (pattern) => sql`(
-              ${documents.title} ILIKE ${pattern}
-              OR ${documents.slug} ILIKE ${pattern}
-              OR ${documents.content} ILIKE ${pattern}
-            )`,
-          ),
-          sql` OR `,
-        )
-        const exactPattern = `%${query.trim()}%`
+        const whereMatches = buildDocumentFieldMatches([
+          ...matchPlan.primaryTerms,
+          ...matchPlan.secondaryTerms,
+        ])
+        const exactCoverage = buildDocumentMatchCount(matchPlan.exactTerms)
+        const primaryCoverage = buildDocumentMatchCount(matchPlan.primaryTerms)
+        const secondaryCoverage = buildDocumentMatchCount(matchPlan.secondaryTerms)
         const keywordRank = sql<number>`
-          CASE WHEN ${documents.title} ILIKE ${exactPattern} THEN 18 ELSE 0 END +
-          CASE WHEN ${documents.slug} ILIKE ${exactPattern} THEN 14 ELSE 0 END +
-          CASE WHEN ${documents.content} ILIKE ${exactPattern} THEN 8 ELSE 0 END +
-          ${sql.join(
-            likePatterns.flatMap((pattern) => [
-              sql`CASE WHEN ${documents.title} ILIKE ${pattern} THEN 6 ELSE 0 END`,
-              sql`CASE WHEN ${documents.slug} ILIKE ${pattern} THEN 4 ELSE 0 END`,
-              sql`CASE WHEN ${documents.content} ILIKE ${pattern} THEN 2 ELSE 0 END`,
-            ]),
-            sql` + `,
-          )}
+          ${buildDocumentWeightedScore(
+            matchPlan.exactTerms,
+            { title: 18, slug: 14, content: 10 },
+          )} +
+          ${buildDocumentWeightedScore(
+            matchPlan.primaryTerms,
+            { title: 8, slug: 6, content: 4 },
+            true,
+          )} +
+          ${buildDocumentWeightedScore(
+            matchPlan.secondaryTerms,
+            { title: 3, slug: 2, content: 1 },
+          )} +
+          (${primaryCoverage} * 12) +
+          (${secondaryCoverage} * 2)
         `
 
         const results = await db
@@ -99,6 +208,9 @@ export function createAgentTools(ctx: AgentToolContext) {
             status: documents.status,
             summary: documents.summary,
             content: documents.content,
+            exactCoverage,
+            primaryCoverage,
+            secondaryCoverage,
             rank: keywordRank,
           })
           .from(documents)
@@ -106,10 +218,16 @@ export function createAgentTools(ctx: AgentToolContext) {
             and(
               eq(documents.workspaceId, ctx.workspaceId),
               isNull(documents.deletedAt),
-              sql`(${whereMatches})`,
+              whereMatches,
             ),
           )
-          .orderBy(desc(keywordRank), desc(documents.updatedAt))
+          .orderBy(
+            desc(exactCoverage),
+            desc(primaryCoverage),
+            desc(keywordRank),
+            desc(secondaryCoverage),
+            desc(documents.updatedAt),
+          )
           .limit(normalizedLimit)
 
         if (results.length === 0) return { results: [], message: 'No documents found.' }
@@ -591,6 +709,28 @@ export function createAgentTools(ctx: AgentToolContext) {
           } catch {
             return { text: '' }
           }
+        },
+      }),
+
+      ask_page: tool({
+        description:
+          'Ask the user to interact with a compact custom page rendered from the Doc Agent interactive catalog. Use when no built-in template fits and you need a custom multi-field flow.',
+        inputSchema: z.object({
+          message: z.string().trim().min(1).max(1000).describe('Short context shown above the page'),
+          spec: docAgentInteractivePageCatalog.zodSchema().describe('A json-render spec using only the approved Doc Agent interactive components and actions'),
+        }),
+        execute: async ({ message, spec }) => {
+          return promptInteractivePage(message, spec)
+        },
+      }),
+
+      ask_page_template: tool({
+        description:
+          'Ask the user to interact with one of the built-in Doc Agent page templates. Prefer this over raw ask_page for approvals, project briefs, revision strategy choices, and bulk confirmations.',
+        inputSchema: docAgentInteractivePageTemplateInputSchema,
+        execute: async (input) => {
+          const page = buildDocAgentInteractivePageTemplate(input)
+          return promptInteractivePage(page.message, page.spec)
         },
       }),
     } : {}),

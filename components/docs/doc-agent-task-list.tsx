@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import type { AgentTaskProgress, AgentTaskStatus } from '@/lib/agent/shared'
 import {
   Bot,
   Clock,
@@ -10,6 +11,7 @@ import {
   XCircle,
   Ban,
   ChevronRight,
+  HelpCircle,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -19,13 +21,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 interface AgentTask {
   id: string
   prompt: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  status: AgentTaskStatus
   modelId: string | null
-  progress: {
-    currentStep: number
-    maxSteps: number
-    description?: string
-  } | null
+  progress: AgentTaskProgress | null
   documentId: string | null
   createdAt: string
   completedAt: string | null
@@ -35,9 +33,10 @@ interface AgentTask {
 
 // ─── Sub-components ─────────────────────────────────────────
 
-const statusConfig: Record<string, { icon: typeof Clock; label: string; variant: 'secondary' | 'default' | 'outline' | 'destructive'; color: string; animate?: boolean }> = {
+const statusConfig: Record<AgentTaskStatus, { icon: typeof Clock; label: string; variant: 'secondary' | 'default' | 'outline' | 'destructive'; color: string; animate?: boolean }> = {
   pending: { icon: Clock, label: 'Pending', variant: 'secondary', color: 'text-muted-foreground' },
   running: { icon: Loader2, label: 'Running', variant: 'default', color: 'text-blue-500', animate: true },
+  waiting_for_input: { icon: HelpCircle, label: 'Needs input', variant: 'secondary', color: 'text-amber-500' },
   completed: { icon: CheckCircle2, label: 'Done', variant: 'outline', color: 'text-emerald-500' },
   failed: { icon: XCircle, label: 'Failed', variant: 'destructive', color: 'text-destructive' },
   cancelled: { icon: Ban, label: 'Cancelled', variant: 'secondary', color: 'text-muted-foreground' },

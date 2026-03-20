@@ -6,6 +6,10 @@ import {
   type AiModelCatalogResponse,
 } from '@/lib/ai'
 
+const EMPTY_MODELS = [] as AiModelCatalogResponse['models']
+const EMPTY_PROVIDERS = [] as AiModelCatalogResponse['providers']
+const EMPTY_ENABLED_MODEL_IDS = [] as string[]
+
 async function parseResponseError(response: Response) {
   const body = await response.json().catch(() => null)
   return typeof body?.error === 'string' ? body.error : 'Unable to load AI models'
@@ -56,11 +60,11 @@ export function useAiModels() {
 
   return {
     catalog,
-    items: catalog?.models ?? [],
+    items: catalog?.models ?? EMPTY_MODELS,
     configured: catalog?.configured ?? false,
-    providers: catalog?.providers ?? [],
+    providers: catalog?.providers ?? EMPTY_PROVIDERS,
     defaultModelId: catalog?.defaultModelId ?? '',
-    enabledModelIds: catalog?.enabledModelIds ?? [],
+    enabledModelIds: catalog?.enabledModelIds ?? EMPTY_ENABLED_MODEL_IDS,
     fetchedAt: catalog?.fetchedAt ?? '',
     loading,
     error,

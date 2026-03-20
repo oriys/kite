@@ -13,6 +13,8 @@ import {
 } from '@/lib/ai-chat'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import { db } from '@/lib/db'
+import { recordDomainEvent } from '@/lib/observability/metrics'
+import { withRouteObservability } from '@/lib/observability/route-handler'
 import { aiChatSessions } from '@/lib/schema'
 import { eq, and } from 'drizzle-orm'
 import { isRagQueryMode } from '@/lib/rag/types'
@@ -24,7 +26,7 @@ const CHAT_STREAM_KEEPALIVE_MS = 10_000
 const RESUME_REPLY_PROMPT =
   'Continue your previous answer from where you stopped. Do not repeat completed sections unless necessary.'
 
-export async function POST(request: NextRequest) {
+async function postAiChat(request: NextRequest) {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
@@ -87,6 +89,8 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let closed = false
+
+  recordDomainEvent('ai_chat_request')
 
   const cleanup = () => {
     if (heartbeat) {
@@ -245,6 +249,10 @@ export async function POST(request: NextRequest) {
     },
   })
 }
+
+export const POST = withRouteObservability(postAiChat, {
+  route: '/api/ai/chat',
+})
 
 async function collectStreamText(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader()

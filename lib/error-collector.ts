@@ -238,9 +238,13 @@ export async function captureClientError(payload: {
   errorMessage?: string
   errorStack?: string
   componentStack?: string
+  errorDigest?: string
   url?: string
   userAgent?: string
   userId?: string
+  workspaceId?: string
+  requestId?: string
+  ipAddress?: string
   context?: Record<string, unknown>
 }): Promise<void> {
   const fingerprint = generateFingerprint(
@@ -256,10 +260,14 @@ export async function captureClientError(payload: {
       errorName: payload.errorName,
       errorMessage: truncate(payload.errorMessage, MAX_BODY_LENGTH),
       errorStack: truncate(payload.errorStack, MAX_STACK_LENGTH),
+      errorDigest: truncate(payload.errorDigest, 255),
       fingerprint,
       httpUrl: truncate(payload.url, MAX_URL_LENGTH),
       userId: payload.userId,
+      workspaceId: payload.workspaceId,
+      requestId: payload.requestId,
       userAgent: payload.userAgent,
+      ipAddress: payload.ipAddress,
       context: {
         ...payload.context,
         ...(payload.componentStack

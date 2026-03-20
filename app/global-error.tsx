@@ -8,7 +8,11 @@ function reportErrorToServer(error: Error & { digest?: string }, extra?: Record<
       errorName: error.name,
       errorMessage: error.message,
       errorStack: error.stack,
+      errorDigest: error.digest,
       url: typeof window !== 'undefined' ? window.location.href : undefined,
+      context: {
+        boundary: 'global-error',
+      },
       ...extra,
     }
 

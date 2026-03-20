@@ -7,8 +7,27 @@ interface ClientErrorPayload {
   errorMessage: string
   errorStack?: string
   componentStack?: string
+  errorDigest?: string
   url: string
   context?: Record<string, unknown>
+}
+
+function buildClientRuntimeContext(extra: Record<string, unknown> = {}) {
+  return {
+    ...extra,
+    pathname: window.location.pathname,
+    search: window.location.search,
+    hash: window.location.hash,
+    referrer: document.referrer || undefined,
+    viewport: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio,
+    },
+    online: navigator.onLine,
+    language: navigator.language,
+    languages: navigator.languages,
+  }
 }
 
 function sendErrorReport(payload: ClientErrorPayload) {
@@ -53,11 +72,11 @@ export function useGlobalErrorReporter() {
         errorMessage: event.message,
         errorStack: event.error?.stack,
         url: window.location.href,
-        context: {
+        context: buildClientRuntimeContext({
           filename: event.filename,
           lineno: event.lineno,
           colno: event.colno,
-        },
+        }),
       })
     }
 
@@ -73,6 +92,9 @@ export function useGlobalErrorReporter() {
               : 'Unhandled promise rejection',
         errorStack: reason instanceof Error ? reason.stack : undefined,
         url: window.location.href,
+        context: buildClientRuntimeContext({
+          rejectionType: 'unhandledrejection',
+        }),
       })
     }
 

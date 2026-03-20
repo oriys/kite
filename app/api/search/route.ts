@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
+import { recordDomainEvent } from '@/lib/observability/metrics'
+import { withRouteObservability } from '@/lib/observability/route-handler'
 import { searchDocuments } from '@/lib/search/searcher'
 import { hybridSearch } from '@/lib/search/semantic-searcher'
 import { logSearch } from '@/lib/queries/search-logs'
@@ -9,7 +11,7 @@ import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 type SearchMode = 'keyword' | 'semantic' | 'hybrid'
 const SEARCH_MODES: SearchMode[] = ['keyword', 'semantic', 'hybrid']
 
-export async function GET(req: NextRequest) {
+async function getSearchResults(req: NextRequest) {
   const authResult = await withWorkspaceAuth('guest')
   if ('error' in authResult) return authResult.error
   const { ctx } = authResult
@@ -56,5 +58,10 @@ export async function GET(req: NextRequest) {
     })
   })
 
+  recordDomainEvent('search_query')
   return NextResponse.json({ results, query: trimmed, mode })
 }
+
+export const GET = withRouteObservability(getSearchResults, {
+  route: '/api/search',
+})

@@ -38,6 +38,16 @@ export interface GrpcInvokeResponse {
   metadata?: Record<string, string>
 }
 
+type GrpcClientMethod = (
+  request: Record<string, unknown>,
+  metadata: grpc.Metadata,
+  options: { deadline: Date },
+  callback: (
+    err: grpc.ServiceError | null,
+    response: Record<string, unknown>,
+  ) => void,
+) => void
+
 export async function invokeGrpcMethod(
   req: GrpcInvokeRequest,
 ): Promise<GrpcInvokeResponse> {
@@ -89,7 +99,9 @@ export async function invokeGrpcMethod(
       const deadline = new Date(Date.now() + timeout)
 
       // Access the method on the client prototype
-      const methodFn = (client as unknown as Record<string, Function>)[req.methodName]
+      const methodFn = (
+        client as unknown as Record<string, GrpcClientMethod | undefined>
+      )[req.methodName]
       if (typeof methodFn !== 'function') {
         client.close()
         reject(new Error(`Method "${req.methodName}" not found on service`))

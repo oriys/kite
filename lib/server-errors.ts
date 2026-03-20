@@ -1,29 +1,9 @@
 import 'server-only'
 
 import { captureError, type ErrorContext as CollectorContext } from './error-collector'
+import { logger, toErrorFields } from '@/lib/observability/logger'
 
 type ErrorContext = Record<string, unknown>
-
-function serializeError(error: Error) {
-  const cause = error.cause
-
-  return {
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    ...(cause === undefined
-      ? {}
-      : {
-          cause:
-            cause instanceof Error
-              ? {
-                  name: cause.name,
-                  message: cause.message,
-                }
-              : cause,
-        }),
-  }
-}
 
 /**
  * Log a server error to console AND persist to error_logs table.
@@ -35,10 +15,15 @@ export function logServerError(
   context: ErrorContext = {},
   capture?: Partial<CollectorContext>,
 ) {
-  console.error(message, {
-    ...context,
-    error: error instanceof Error ? serializeError(error) : error,
-  })
+  logger.error(
+    {
+      type: 'error',
+      event: 'server_error',
+      ...context,
+      ...toErrorFields(error),
+    },
+    message,
+  )
 
   // Fire-and-forget: persist to DB for review
   captureError(error, {

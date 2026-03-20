@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
+import { recordDomainEvent } from '@/lib/observability/metrics'
+import { withRouteObservability } from '@/lib/observability/route-handler'
 import { parseOpenAPISpec, computeChecksum } from '@/lib/openapi/parser'
 import { diffEndpoints } from '@/lib/openapi/differ'
 import {
@@ -44,7 +46,7 @@ function payloadTooLarge(message = getOpenapiSpecTooLargeMessage()) {
  * POST /api/openapi/[id]/sync — Re-sync an OpenAPI source from its URL.
  * Compares checksums, saves a snapshot if changed, and returns the diff.
  */
-export async function POST(
+async function syncOpenapiRoute(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -86,6 +88,7 @@ export async function POST(
 
   // If unchanged, skip sync
   if (newChecksum === source.checksum) {
+    recordDomainEvent('openapi_sync', 'unchanged')
     return NextResponse.json({
       changed: false,
       message: 'Content unchanged since last sync',
@@ -131,6 +134,7 @@ export async function POST(
   // Compute diff
   const diff = diffEndpoints(oldSpec.endpoints, newSpec.endpoints)
 
+  recordDomainEvent('openapi_sync')
   return NextResponse.json({
     changed: true,
     source: serializeOpenapiSourceSummary(updated),
@@ -143,3 +147,7 @@ export async function POST(
     },
   })
 }
+
+export const POST = withRouteObservability(syncOpenapiRoute, {
+  route: '/api/openapi/:id/sync',
+})

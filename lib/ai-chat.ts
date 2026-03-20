@@ -1,8 +1,6 @@
-import { eq, and, sql, desc, inArray, isNull } from 'drizzle-orm'
+import { eq, and, sql, inArray, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
-  aiChatSessions,
-  aiChatMessages,
   documents,
 } from '@/lib/schema'
 import {
@@ -25,7 +23,6 @@ import {
   hasChatGrounding,
 } from '@/lib/ai-chat-prompt'
 import {
-  type ChatMessageAttribution,
   type ChatSource,
   normalizeChatMessageAttribution,
 } from '@/lib/ai-chat-shared'
@@ -78,7 +75,11 @@ import {
   type RagVisibilityContext,
   type RagVisibilityRole,
 } from '@/lib/rag/types'
-import { containsCjk, extractQueryTerms } from '@/lib/search/query-terms'
+import {
+  containsCjk,
+  createQueryMatchPlan,
+  extractQueryTerms,
+} from '@/lib/search/query-terms'
 import {
   escapeLikePattern,
   buildVisibilityFilter,
@@ -1434,37 +1435,99 @@ async function searchKeywordDocuments(input: {
   topK?: number
   visibility?: VisibilityContext
 }): Promise<RetrievedContextSection[]> {
-  const terms = extractQueryTerms(input.query)
+  const matchPlan = createQueryMatchPlan(input.query)
+  const terms = matchPlan.previewTerms
   if (terms.length === 0) return []
 
   const topK = input.topK ?? TOP_K_KEYWORD_DOCUMENTS
-  const likePatterns = terms.map((term) => `%${escapeLikePattern(term)}%`)
-  const whereMatches = sql.join(
-    likePatterns.map(
-      (pattern) => sql`(ks.title ILIKE ${pattern} OR ks.raw_content ILIKE ${pattern})`,
-    ),
-    sql` OR `,
-  )
-  const keywordRank = sql.join(
-    likePatterns.flatMap((pattern) => [
-      sql`CASE WHEN ks.title ILIKE ${pattern} THEN 3 ELSE 0 END`,
-      sql`CASE WHEN ks.raw_content ILIKE ${pattern} THEN 1 ELSE 0 END`,
-    ]),
-    sql` + `,
-  )
+  const buildKnowledgeSourceMatches = (termList: string[]) => {
+    if (termList.length === 0) return sql`false`
+
+    return sql`(${sql.join(
+      termList.map((term) => {
+        const pattern = `%${escapeLikePattern(term)}%`
+        return sql`(ks.title ILIKE ${pattern} OR ks.raw_content ILIKE ${pattern})`
+      }),
+      sql` OR `,
+    )})`
+  }
+  const buildKnowledgeSourceMatchCount = (termList: string[]) => {
+    if (termList.length === 0) return sql<number>`0`
+
+    return sql<number>`${sql.join(
+      termList.map((term) => {
+        const pattern = `%${escapeLikePattern(term)}%`
+        return sql`CASE
+          WHEN (ks.title ILIKE ${pattern} OR ks.raw_content ILIKE ${pattern}) THEN 1
+          ELSE 0
+        END`
+      }),
+      sql` + `,
+    )}`
+  }
+  const buildKnowledgeSourceWeightedScore = (
+    termList: string[],
+    weights: {
+      title: number
+      content: number
+    },
+    scaleByLength = false,
+  ) => {
+    if (termList.length === 0) return sql<number>`0`
+
+    return sql<number>`${sql.join(
+      termList.flatMap((term) => {
+        const pattern = `%${escapeLikePattern(term)}%`
+        const compactLength = term.replace(/[\s_-]+/g, '').length
+        const lengthBoost = scaleByLength ? Math.min(4, Math.max(0, compactLength - 2)) : 0
+        return [
+          sql`CASE WHEN ks.title ILIKE ${pattern} THEN ${weights.title + lengthBoost} ELSE 0 END`,
+          sql`CASE WHEN ks.raw_content ILIKE ${pattern} THEN ${weights.content + lengthBoost} ELSE 0 END`,
+        ]
+      }),
+      sql` + `,
+    )}`
+  }
+  const whereMatches = buildKnowledgeSourceMatches([
+    ...matchPlan.primaryTerms,
+    ...matchPlan.secondaryTerms,
+  ])
+  const exactCoverage = buildKnowledgeSourceMatchCount(matchPlan.exactTerms)
+  const primaryCoverage = buildKnowledgeSourceMatchCount(matchPlan.primaryTerms)
+  const secondaryCoverage = buildKnowledgeSourceMatchCount(matchPlan.secondaryTerms)
+  const keywordRank = sql<number>`
+    ${buildKnowledgeSourceWeightedScore(
+      matchPlan.exactTerms,
+      { title: 16, content: 9 },
+    )} +
+    ${buildKnowledgeSourceWeightedScore(
+      matchPlan.primaryTerms,
+      { title: 7, content: 4 },
+      true,
+    )} +
+    ${buildKnowledgeSourceWeightedScore(
+      matchPlan.secondaryTerms,
+      { title: 2, content: 1 },
+    )} +
+    (${primaryCoverage} * 12) +
+    (${secondaryCoverage} * 2)
+  `
   const results = await db.execute(sql`
     SELECT
       ks.id,
       ks.title,
       ks.raw_content AS content,
       ks.updated_at,
+      ${exactCoverage} AS exact_coverage,
+      ${primaryCoverage} AS primary_coverage,
+      ${secondaryCoverage} AS secondary_coverage,
       ${keywordRank} AS keyword_rank
     FROM knowledge_sources ks
     WHERE ks.workspace_id = ${input.workspaceId}
       AND ks.deleted_at IS NULL
       AND ks.status = 'ready'
       AND (${whereMatches})
-    ORDER BY keyword_rank DESC, ks.updated_at DESC
+    ORDER BY exact_coverage DESC, primary_coverage DESC, keyword_rank DESC, secondary_coverage DESC, ks.updated_at DESC
     LIMIT ${topK}
   `) as unknown as Array<Record<string, unknown>>
 

@@ -346,11 +346,26 @@ export function DocAiManagerPage() {
 
   React.useEffect(() => {
     setExpandedProviderModelGroups((current) =>
-      current.filter((providerId) =>
-        providerGroups.some((group) => group.providerId === providerId),
-      ),
+      {
+        const next = current.filter((providerId) =>
+          providerGroups.some((group) => group.providerId === providerId),
+        )
+
+        return next.length === current.length &&
+          next.every((providerId, index) => providerId === current[index])
+          ? current
+          : next
+      },
     )
   }, [providerGroups])
+
+  const defaultModelSelectValue = React.useMemo(() => {
+    if (!activeModelId) return null
+
+    return enabledModels.some((model) => model.id === activeModelId)
+      ? activeModelId
+      : null
+  }, [activeModelId, enabledModels])
 
   const activeLabel = activeModel?.label || activeModel?.id || 'Not selected'
   const enabledCount = numberFormatter.format(enabledModels.length)
@@ -812,24 +827,32 @@ export function DocAiManagerPage() {
 
             <div className="flex flex-col gap-2">
               <p className="editorial-section-kicker">Default AI</p>
-              <Select
-                value={activeModelId ?? undefined}
-                onValueChange={(value) => setActiveModelId(value)}
-                disabled={aiModels.length === 0}
-              >
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Select the default AI" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[22rem]">
-                  <SelectGroup>
-                    {enabledModels.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        {model.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              {defaultModelSelectValue ? (
+                <Select
+                  value={defaultModelSelectValue}
+                  onValueChange={(value) => setActiveModelId(value)}
+                  disabled={savingModelSettings}
+                >
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Select the default AI" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[22rem]">
+                    <SelectGroup>
+                      {enabledModels.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="flex h-10 items-center rounded-md border border-input/80 bg-background/80 px-3 text-sm text-muted-foreground">
+                  {enabledModels.length === 0
+                    ? 'Enable a model below to choose a default route.'
+                    : 'Choose a default model from the enabled set below.'}
+                </div>
+              )}
               <div className="rounded-lg border border-border/60 bg-background/70 px-3 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{enabledCount} enabled</Badge>
@@ -862,7 +885,7 @@ export function DocAiManagerPage() {
             <Accordion
               type="single"
               collapsible
-              value={openProviderGroup ?? undefined}
+              value={openProviderGroup ?? ''}
               onValueChange={(value) => setOpenProviderGroup(value || null)}
               className="px-4 sm:px-5"
             >

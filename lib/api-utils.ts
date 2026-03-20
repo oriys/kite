@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
+import {
+  getRequestContext,
+  seedRequestContextFromHeaders,
+  updateRequestContext,
+} from '@/lib/observability/request-context'
 
 import { auth } from './auth'
 import { db } from './db'
@@ -78,6 +83,8 @@ export async function resolveAuthenticatedUser(
 export async function withWorkspaceAuth(
   requiredRole: MemberRole = 'guest',
 ): Promise<{ ctx: WorkspaceContext } | { error: NextResponse }> {
+  await seedRequestContextFromHeaders()
+
   const sessionUser = await getAuthenticatedUser()
   if (!sessionUser?.id) return { error: unauthorized() }
 
@@ -96,6 +103,13 @@ export async function withWorkspaceAuth(
 
   const role = membership.role as MemberRole
   if (!hasMinimumRole(role, requiredRole)) return { error: forbidden() }
+
+  updateRequestContext({
+    userId: user.id,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
+    role,
+  })
 
   return {
     ctx: {
@@ -118,18 +132,35 @@ function hasMinimumRole(actual: MemberRole, required: MemberRole): boolean {
   return ROLE_LEVELS[actual] >= ROLE_LEVELS[required]
 }
 
+function attachRequestHeaders(response: NextResponse) {
+  const ctx = getRequestContext()
+  if (!ctx) return response
+
+  response.headers.set('x-request-id', ctx.requestId)
+  response.headers.set('x-trace-id', ctx.traceId)
+  return response
+}
+
 export function unauthorized() {
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  return attachRequestHeaders(
+    NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+  )
 }
 
 export function forbidden() {
-  return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  return attachRequestHeaders(
+    NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+  )
 }
 
 export function notFound() {
-  return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  return attachRequestHeaders(
+    NextResponse.json({ error: 'Not found' }, { status: 404 }),
+  )
 }
 
 export function badRequest(message = 'Bad request') {
-  return NextResponse.json({ error: message }, { status: 400 })
+  return attachRequestHeaders(
+    NextResponse.json({ error: message }, { status: 400 }),
+  )
 }

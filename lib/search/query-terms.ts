@@ -1,4 +1,6 @@
 const DEFAULT_MAX_QUERY_TERMS = 24
+const DEFAULT_MAX_PRIMARY_QUERY_TERMS = 10
+const DEFAULT_MAX_SECONDARY_QUERY_TERMS = 12
 const MAX_CJK_GRAM_LENGTH = 4
 const CJK_INTENT_PREFIXES = [
   '如何',
@@ -25,6 +27,10 @@ const CJK_INTENT_PREFIXES = [
 
 export function containsCjk(text: string) {
   return /[\u3400-\u4dbf\u4e00-\u9fff]/.test(text)
+}
+
+function compactTerm(value: string) {
+  return value.replace(/[\s_-]+/g, '')
 }
 
 function trimCjkIntentPrefix(token: string) {
@@ -116,4 +122,130 @@ export function extractQueryTerms(
   }
 
   return terms.slice(0, maxTerms)
+}
+
+function isPrimaryQueryTerm(term: string, queryHasCjk: boolean) {
+  const compact = compactTerm(term)
+  if (!compact) return false
+
+  if (queryHasCjk || containsCjk(term)) {
+    return compact.length >= 3
+  }
+
+  if (/[A-Za-z]/.test(term)) {
+    return compact.length >= 4 || /[/:]/.test(term)
+  }
+
+  return compact.length >= 3
+}
+
+export interface QueryMatchPlan {
+  normalizedQuery: string
+  exactTerms: string[]
+  primaryTerms: string[]
+  secondaryTerms: string[]
+  previewTerms: string[]
+}
+
+export function createQueryMatchPlan(
+  query: string,
+  options: {
+    maxPrimaryTerms?: number
+    maxSecondaryTerms?: number
+    maxTerms?: number
+  } = {},
+): QueryMatchPlan {
+  const normalizedQuery = query.trim()
+  if (!normalizedQuery) {
+    return {
+      normalizedQuery: '',
+      exactTerms: [],
+      primaryTerms: [],
+      secondaryTerms: [],
+      previewTerms: [],
+    }
+  }
+
+  const maxPrimaryTerms = options.maxPrimaryTerms ?? DEFAULT_MAX_PRIMARY_QUERY_TERMS
+  const maxSecondaryTerms = options.maxSecondaryTerms ?? DEFAULT_MAX_SECONDARY_QUERY_TERMS
+  const extractedTerms = extractQueryTerms(normalizedQuery, {
+    maxTerms: options.maxTerms,
+  })
+  const queryHasCjk = containsCjk(normalizedQuery)
+
+  const exactTerms: string[] = []
+  const primaryTerms: string[] = []
+  const secondaryTerms: string[] = []
+  const exactSeen = new Set<string>()
+  const primarySeen = new Set<string>()
+  const secondarySeen = new Set<string>()
+
+  const addExactTerm = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+
+    const key = trimmed.toLowerCase()
+    if (exactSeen.has(key)) return
+    exactSeen.add(key)
+    exactTerms.push(trimmed)
+  }
+
+  const addPrimaryTerm = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+
+    const key = trimmed.toLowerCase()
+    if (primarySeen.has(key)) return
+    primarySeen.add(key)
+    primaryTerms.push(trimmed)
+  }
+
+  const addSecondaryTerm = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+
+    const key = trimmed.toLowerCase()
+    if (primarySeen.has(key) || secondarySeen.has(key)) return
+    secondarySeen.add(key)
+    secondaryTerms.push(trimmed)
+  }
+
+  addExactTerm(normalizedQuery)
+  const compactQuery = compactTerm(normalizedQuery)
+  if (compactQuery && compactQuery.toLowerCase() !== normalizedQuery.toLowerCase()) {
+    addExactTerm(compactQuery)
+  }
+
+  for (const term of exactTerms) {
+    addPrimaryTerm(term)
+  }
+
+  for (const term of extractedTerms) {
+    if (isPrimaryQueryTerm(term, queryHasCjk)) {
+      addPrimaryTerm(term)
+    } else {
+      addSecondaryTerm(term)
+    }
+  }
+
+  if (primaryTerms.length === 0) {
+    for (const term of extractedTerms.slice(0, maxPrimaryTerms)) {
+      addPrimaryTerm(term)
+    }
+  }
+
+  for (const term of extractedTerms) {
+    addSecondaryTerm(term)
+  }
+
+  const boundedPrimaryTerms = primaryTerms.slice(0, maxPrimaryTerms)
+  const boundedSecondaryTerms = secondaryTerms.slice(0, maxSecondaryTerms)
+
+  return {
+    normalizedQuery,
+    exactTerms,
+    primaryTerms: boundedPrimaryTerms,
+    secondaryTerms: boundedSecondaryTerms,
+    previewTerms: [...boundedPrimaryTerms, ...boundedSecondaryTerms],
+  }
 }

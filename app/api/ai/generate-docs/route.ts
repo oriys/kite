@@ -6,6 +6,8 @@ import { generateOpenApiDocument } from '@/lib/ai-doc-generator'
 import { AiCompletionError } from '@/lib/ai-server'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import { db } from '@/lib/db'
+import { recordDomainEvent } from '@/lib/observability/metrics'
+import { withRouteObservability } from '@/lib/observability/route-handler'
 import {
   DocGenerationMaterialError,
   isDocGenerationMaterialSourceType,
@@ -65,7 +67,7 @@ function buildParsedEndpointLookup(endpoints: ParsedEndpoint[]) {
   return lookup
 }
 
-export async function POST(request: NextRequest) {
+async function generateDocsRoute(request: NextRequest) {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
@@ -216,6 +218,7 @@ export async function POST(request: NextRequest) {
         ],
       )
 
+      recordDomainEvent('ai_doc_generate', 'empty')
       return NextResponse.json({
         document: {
           documentId: doc.id,
@@ -249,6 +252,7 @@ export async function POST(request: NextRequest) {
       )
       await incrementTemplateUsage(template.id, result.ctx.workspaceId)
 
+      recordDomainEvent('ai_doc_generate', 'template')
       return NextResponse.json({
         document: {
           documentId: doc.id,
@@ -379,16 +383,17 @@ export async function POST(request: NextRequest) {
         ...(resolvedDocumentType ? [resolvedDocumentType] : []),
         ...(template?.category ? [template.category] : []),
         ...endpointTags,
-      ],
-    )
+        ],
+      )
 
-    if (template) {
-      await incrementTemplateUsage(template.id, result.ctx.workspaceId)
-    }
+      if (template) {
+        await incrementTemplateUsage(template.id, result.ctx.workspaceId)
+      }
 
-    return NextResponse.json({
-      document: {
-        documentId: doc.id,
+      recordDomainEvent('ai_doc_generate')
+      return NextResponse.json({
+        document: {
+          documentId: doc.id,
         title: generated.title,
         mode: 'ai',
         retrieval: retrievalDiagnostics,
@@ -409,6 +414,10 @@ export async function POST(request: NextRequest) {
           ? error.status
           : 502
 
-    return NextResponse.json({ error: message }, { status })
+      return NextResponse.json({ error: message }, { status })
   }
 }
+
+export const POST = withRouteObservability(generateDocsRoute, {
+  route: '/api/ai/generate-docs',
+})

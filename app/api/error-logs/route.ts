@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { desc, eq, and, gte, lte, sql, count } from 'drizzle-orm'
+import { desc, eq, and, gte, lte, sql, count, type SQL } from 'drizzle-orm'
 import { withWorkspaceAuth } from '@/lib/api-utils'
 import { db } from '@/lib/db'
+import { withRouteObservability } from '@/lib/observability/route-handler'
 import { errorLogs } from '@/lib/schema-errors'
+
+function buildWhereClause(conditions: SQL[]) {
+  return conditions.length > 0 ? and(...conditions) : undefined
+}
 
 /**
  * GET /api/error-logs
@@ -12,9 +17,10 @@ import { errorLogs } from '@/lib/schema-errors'
  * Query params:
  *   page, limit, source, level, resolved, from, to, fingerprint, search
  */
-export async function GET(request: NextRequest) {
+async function getErrorLogs(request: NextRequest) {
   const result = await withWorkspaceAuth('admin')
   if ('error' in result) return result.error
+  const { ctx } = result
 
   const params = request.nextUrl.searchParams
   const page = Math.max(1, parseInt(params.get('page') ?? '1', 10))
@@ -27,9 +33,10 @@ export async function GET(request: NextRequest) {
   const from = params.get('from')
   const to = params.get('to')
   const fingerprint = params.get('fingerprint')
-  const search = params.get('search')
+  const search = params.get('search')?.trim()
 
-  const conditions = []
+  const scopeConditions = [eq(errorLogs.workspaceId, ctx.workspaceId)]
+  const conditions = [...scopeConditions]
 
   if (source) {
     conditions.push(eq(errorLogs.source, source as typeof errorLogs.source.enumValues[number]))
@@ -59,13 +66,25 @@ export async function GET(request: NextRequest) {
   }
   if (search) {
     conditions.push(
-      sql`(${errorLogs.errorMessage} ILIKE ${'%' + search + '%'} OR ${errorLogs.errorName} ILIKE ${'%' + search + '%'} OR ${errorLogs.httpUrl} ILIKE ${'%' + search + '%'})`,
+      sql`(
+        ${errorLogs.errorMessage} ILIKE ${'%' + search + '%'}
+        OR ${errorLogs.errorName} ILIKE ${'%' + search + '%'}
+        OR ${errorLogs.httpUrl} ILIKE ${'%' + search + '%'}
+        OR ${errorLogs.fingerprint} ILIKE ${'%' + search + '%'}
+        OR ${errorLogs.requestId} ILIKE ${'%' + search + '%'}
+      )`,
     )
   }
 
-  const where = conditions.length > 0 ? and(...conditions) : undefined
+  const where = buildWhereClause(conditions)
+  const scopeWhere = buildWhereClause(scopeConditions)
+  const unresolvedWhere = buildWhereClause([...scopeConditions, eq(errorLogs.resolved, false)])
+  const resolvedWhere = buildWhereClause([...scopeConditions, eq(errorLogs.resolved, true)])
+  const clientWhere = buildWhereClause([...scopeConditions, eq(errorLogs.source, 'client')])
+  const occurrencesExpr = sql<number>`count(*)`
+  const lastOccurredAtExpr = sql<Date>`max(${errorLogs.occurredAt})`
 
-  const [items, [total]] = await Promise.all([
+  const [items, [filteredTotal], [scopeTotal], [unresolved], [resolvedCount], [clientCount], groups] = await Promise.all([
     db
       .select()
       .from(errorLogs)
@@ -77,15 +96,64 @@ export async function GET(request: NextRequest) {
       .select({ count: count() })
       .from(errorLogs)
       .where(where),
+    db
+      .select({ count: count() })
+      .from(errorLogs)
+      .where(scopeWhere),
+    db
+      .select({ count: count() })
+      .from(errorLogs)
+      .where(unresolvedWhere),
+    db
+      .select({ count: count() })
+      .from(errorLogs)
+      .where(resolvedWhere),
+    db
+      .select({ count: count() })
+      .from(errorLogs)
+      .where(clientWhere),
+    db
+      .select({
+        fingerprint: errorLogs.fingerprint,
+        errorName: errorLogs.errorName,
+        errorMessage: errorLogs.errorMessage,
+        source: errorLogs.source,
+        level: errorLogs.level,
+        occurrences: occurrencesExpr,
+        lastOccurredAt: lastOccurredAtExpr,
+      })
+      .from(errorLogs)
+      .where(unresolvedWhere ?? scopeWhere)
+      .groupBy(
+        errorLogs.fingerprint,
+        errorLogs.errorName,
+        errorLogs.errorMessage,
+        errorLogs.source,
+        errorLogs.level,
+      )
+      .orderBy(desc(occurrencesExpr), desc(lastOccurredAtExpr))
+      .limit(6),
   ])
+
+  const filteredTotalCount = filteredTotal?.count ?? 0
+  const scopeTotalCount = scopeTotal?.count ?? 0
+  const clientCountValue = clientCount?.count ?? 0
 
   return NextResponse.json({
     items,
     pagination: {
       page,
       limit,
-      total: total?.count ?? 0,
-      totalPages: Math.ceil((total?.count ?? 0) / limit),
+      total: filteredTotalCount,
+      totalPages: Math.ceil(filteredTotalCount / limit),
+    },
+    summary: {
+      total: scopeTotalCount,
+      unresolved: unresolved?.count ?? 0,
+      resolved: resolvedCount?.count ?? 0,
+      client: clientCountValue,
+      server: Math.max(0, scopeTotalCount - clientCountValue),
+      groups,
     },
   })
 }
@@ -95,7 +163,7 @@ export async function GET(request: NextRequest) {
  * Admin-only: mark errors as resolved / unresolve.
  * Body: { ids: string[], resolved: boolean, note?: string }
  */
-export async function PATCH(request: NextRequest) {
+async function patchErrorLogs(request: NextRequest) {
   const result = await withWorkspaceAuth('admin')
   if ('error' in result) return result.error
   const { ctx } = result
@@ -125,8 +193,16 @@ export async function PATCH(request: NextRequest) {
       resolvedBy: resolvedFlag ? ctx.userId : null,
       resolvedNote: note ?? null,
     })
-    .where(sql`${errorLogs.id} = ANY(${capped})`)
+    .where(and(eq(errorLogs.workspaceId, ctx.workspaceId), sql`${errorLogs.id} = ANY(${capped})`))
     .returning({ id: errorLogs.id })
 
   return NextResponse.json({ updated: updated.length })
 }
+
+export const GET = withRouteObservability(getErrorLogs, {
+  route: '/api/error-logs',
+})
+
+export const PATCH = withRouteObservability(patchErrorLogs, {
+  route: '/api/error-logs',
+})

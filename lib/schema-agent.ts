@@ -6,6 +6,7 @@ import {
   jsonb,
   index,
 } from 'drizzle-orm/pg-core'
+import type { AgentInteraction, AgentStepRecord } from './agent/shared'
 
 export const agentTaskStatusEnum = pgEnum('agent_task_status', [
   'pending',
@@ -49,29 +50,8 @@ export const agentTasks = pgTable(
     index('agent_tasks_status_idx').on(table.status),
   ],
 )
-
-export interface AgentStepRecord {
-  index: number
-  type: 'tool_call' | 'response'
-  toolCalls?: Array<{
-    name: string
-    args: Record<string, unknown>
-    result?: string
-    error?: string
-    durationMs?: number
-  }>
-  text?: string
-  durationMs?: number
-}
-
-// ─── Interaction types ───────────────────────────────────────
-
-export type AgentInteraction =
-  | { id: string; type: 'confirm'; message: string }
-  | { id: string; type: 'select'; message: string; options: string[] }
-  | { id: string; type: 'input'; message: string; placeholder?: string }
-
-export type AgentInteractionResponse =
-  | { type: 'confirm'; accepted: boolean; feedback?: string }
-  | { type: 'select'; selected: string }
-  | { type: 'input'; text: string }
+export type {
+  AgentInteraction,
+  AgentInteractionResponse,
+  AgentStepRecord,
+} from './agent/shared'

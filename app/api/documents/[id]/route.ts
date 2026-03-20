@@ -6,6 +6,8 @@ import {
   badRequest,
   forbidden,
 } from '@/lib/api-utils'
+import { recordDomainEvent } from '@/lib/observability/metrics'
+import { withRouteObservability } from '@/lib/observability/route-handler'
 import {
   getDocumentByIdentifier,
   updateDocument,
@@ -25,7 +27,7 @@ import {
 import { coerceDocumentTagsInput } from '@/lib/documents'
 import { visibilityEnum } from '@/lib/schema'
 
-export async function GET(
+async function getDocumentRoute(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
@@ -44,7 +46,7 @@ export async function GET(
   return NextResponse.json(attachDocumentAccess(doc, access))
 }
 
-export async function PATCH(
+async function patchDocumentRoute(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
@@ -124,10 +126,11 @@ export async function PATCH(
     await buildDocumentAccessMap([doc], result.ctx.userId, result.ctx.role)
   ).get(doc.id)
 
+  recordDomainEvent('document_update')
   return NextResponse.json(attachDocumentAccess(doc, updatedAccess!))
 }
 
-export async function DELETE(
+async function deleteDocumentRoute(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
@@ -146,5 +149,18 @@ export async function DELETE(
   const deleted = await deleteDocument(doc.id, result.ctx.workspaceId)
   if (!deleted) return notFound()
 
+  recordDomainEvent('document_delete')
   return NextResponse.json({ ok: true })
 }
+
+export const GET = withRouteObservability(getDocumentRoute, {
+  route: '/api/documents/:id',
+})
+
+export const PATCH = withRouteObservability(patchDocumentRoute, {
+  route: '/api/documents/:id',
+})
+
+export const DELETE = withRouteObservability(deleteDocumentRoute, {
+  route: '/api/documents/:id',
+})

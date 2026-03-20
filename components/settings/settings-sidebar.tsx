@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Activity, Bell, Blocks, BookOpen, BrainCircuit, Cable, Key, KeyRound, Palette, PencilLine, Plug, Shield, SlidersHorizontal, Users, UsersRound, Webhook } from 'lucide-react'
+import { Activity, Bell, Blocks, BookOpen, BrainCircuit, Bug, Cable, Key, KeyRound, Palette, PencilLine, Plug, Shield, SlidersHorizontal, Users, UsersRound, Webhook } from 'lucide-react'
 
 import { useSettingsAccess, type SettingsRole } from '@/components/settings/settings-access-provider'
 import { cn } from '@/lib/utils'
@@ -95,6 +95,12 @@ const SETTINGS_NAV = [
         href: '/docs/settings/audit-logs',
         label: 'Audit Logs',
         icon: Shield,
+        minRole: 'admin',
+      },
+      {
+        href: '/docs/settings/error-reports',
+        label: 'Error Reports',
+        icon: Bug,
         minRole: 'admin',
       },
       { href: '/docs/settings/tokens', label: 'API Tokens', icon: Key, minRole: 'member' },

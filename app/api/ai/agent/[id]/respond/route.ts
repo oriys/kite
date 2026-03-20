@@ -4,6 +4,7 @@ import { withWorkspaceAuth, badRequest, notFound } from '@/lib/api-utils'
 import { getAgentTaskInteraction } from '@/lib/queries/agent'
 import { resolveInteraction } from '@/lib/agent/interactions'
 import type { AgentInteractionResponse, AgentInteraction } from '@/lib/schema-agent'
+import { parseDocAgentInteractivePageResponse } from '@/lib/agent/interactive-page'
 
 function validateResponse(
   interaction: AgentInteraction,
@@ -23,6 +24,15 @@ function validateResponse(
     case 'input': {
       if (typeof body.text !== 'string') return null
       return { type: 'input', text: body.text.trim() }
+    }
+    case 'page': {
+      const parsed = parseDocAgentInteractivePageResponse(body)
+      if (!parsed.success) return null
+      return {
+        type: 'page',
+        action: parsed.data.action,
+        values: parsed.data.values,
+      }
     }
     default:
       return null

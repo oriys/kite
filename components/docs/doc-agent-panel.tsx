@@ -18,6 +18,12 @@ import {
   HelpCircle,
 } from 'lucide-react'
 import { useAiModels } from '@/hooks/use-ai-models'
+import type {
+  AgentInteraction,
+  AgentStepRecord,
+  AgentTaskProgress,
+  AgentTaskStatus,
+} from '@/lib/agent/shared'
 import {
   type DocAgentRunSettings,
   DOC_AGENT_MAX_MAX_STEPS,
@@ -28,6 +34,9 @@ import {
   createDefaultDocAgentRunSettings,
   sanitizeDocAgentRunSettings,
 } from '@/lib/agent/config'
+import { getDocAgentInteractivePagePreviewFromToolCall } from '@/lib/agent/interactive-page-templates'
+import { DocAgentInteractionWidget } from '@/components/docs/doc-agent-interaction-widget'
+import { DocAgentInteractivePage } from '@/components/docs/doc-agent-interactive-page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -40,31 +49,6 @@ import {
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
-
-interface AgentStepRecord {
-  index: number
-  type: 'tool_call' | 'response'
-  toolCalls?: Array<{
-    name: string
-    args: Record<string, unknown>
-    result?: string
-    error?: string
-  }>
-  text?: string
-}
-
-interface AgentProgress {
-  currentStep: number
-  maxSteps: number
-  description?: string
-}
-
-type AgentInteraction =
-  | { id: string; type: 'confirm'; message: string }
-  | { id: string; type: 'select'; message: string; options: string[] }
-  | { id: string; type: 'input'; message: string; placeholder?: string }
-
-type TaskStatus = 'pending' | 'running' | 'waiting_for_input' | 'completed' | 'failed' | 'cancelled'
 
 const WORKSPACE_DEFAULT_MODEL_VALUE = '__workspace_default__'
 
@@ -81,8 +65,8 @@ function areRunSettingsEqual(
 
 function useAgentTask() {
   const [steps, setSteps] = React.useState<AgentStepRecord[]>([])
-  const [status, setStatus] = React.useState<TaskStatus | null>(null)
-  const [progress, setProgress] = React.useState<AgentProgress | null>(null)
+  const [status, setStatus] = React.useState<AgentTaskStatus | null>(null)
+  const [progress, setProgress] = React.useState<AgentTaskProgress | null>(null)
   const [result, setResult] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [taskId, setTaskId] = React.useState<string | null>(null)
@@ -104,8 +88,7 @@ function useAgentTask() {
   const respond = React.useCallback(
     async (body: Record<string, unknown>) => {
       if (!taskId || !interaction) return
-      setInteraction(null)
-      lastInteractionIdRef.current = null
+
       try {
         const res = await fetch(`/api/ai/agent/${taskId}/respond`, {
           method: 'POST',
@@ -114,10 +97,14 @@ function useAgentTask() {
         })
         if (!res.ok) {
           const data = await res.json().catch(() => null)
-          toast.error(data?.message ?? 'Failed to send response')
+          throw new Error(data?.message ?? 'Failed to send response')
         }
-      } catch {
-        toast.error('Failed to send response')
+        setInteraction(null)
+        setStatus('running')
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to send response'
+        toast.error(message)
+        throw err instanceof Error ? err : new Error(message)
       }
     },
     [taskId, interaction],
@@ -183,11 +170,16 @@ function useAgentTask() {
               try {
                 const data = JSON.parse(line.slice(6))
                 switch (currentEvent) {
+                  case 'status':
+                    if (typeof data.status === 'string') {
+                      setStatus(data.status as AgentTaskStatus)
+                    }
+                    break
                   case 'step':
                     setSteps((prev) => [...prev, data as AgentStepRecord])
                     break
                   case 'progress':
-                    setProgress(data as AgentProgress)
+                    setProgress(data as AgentTaskProgress)
                     break
                   case 'interaction': {
                     const ix = data as AgentInteraction
@@ -247,9 +239,9 @@ function useAgentTask() {
   return { steps, status, progress, result, error, taskId, interaction, run, cancel, reset, respond }
 }
 
-function StatusBadge({ status }: { status: TaskStatus }) {
+function StatusBadge({ status }: { status: AgentTaskStatus }) {
   const config: Record<
-    TaskStatus,
+    AgentTaskStatus,
     {
       label: string
       variant: 'default' | 'secondary' | 'outline' | 'destructive'
@@ -267,7 +259,7 @@ function StatusBadge({ status }: { status: TaskStatus }) {
       icon: <Loader2 className="size-3 animate-spin" />,
     },
     waiting_for_input: {
-      label: 'Waiting',
+      label: 'Needs input',
       variant: 'secondary',
       icon: <HelpCircle className="size-3 text-amber-500" />,
     },
@@ -311,124 +303,54 @@ function StepItem({ step }: { step: AgentStepRecord }) {
   const calls = step.toolCalls ?? []
   return (
     <div className="py-1.5">
-      {calls.map((tc, i) => (
-        <div key={i} className="group">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-sm hover:bg-muted/50"
-          >
-            {expanded ? (
-              <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
-            )}
-            <Wrench className="size-3 shrink-0 text-muted-foreground" />
-            <span className="font-mono text-xs text-muted-foreground">
-              {tc.name}
-            </span>
-            {tc.error && <XCircle className="size-3 shrink-0 text-destructive" />}
-          </button>
-          {expanded && (
-            <div className="ml-6 mt-1 space-y-1">
-              <pre className="overflow-x-auto rounded bg-muted/50 p-2 text-[11px] text-muted-foreground">
-                {JSON.stringify(tc.args, null, 2)}
-              </pre>
-              {tc.result && (
-                <pre className="overflow-x-auto rounded bg-muted/30 p-2 text-[11px] text-muted-foreground">
-                  {tc.result.length > 500 ? tc.result.slice(0, 500) + '…' : tc.result}
-                </pre>
+      {calls.map((tc, i) => {
+        const interactivePreview = getDocAgentInteractivePagePreviewFromToolCall(
+          tc.name,
+          tc.args,
+        )
+
+        return (
+          <div key={i} className="group">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-sm hover:bg-muted/50"
+            >
+              {expanded ? (
+                <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
               )}
-              {tc.error && <p className="text-xs text-destructive">{tc.error}</p>}
-            </div>
-          )}
-        </div>
-      ))}
+              <Wrench className="size-3 shrink-0 text-muted-foreground" />
+              <span className="font-mono text-xs text-muted-foreground">
+                {tc.name}
+              </span>
+              {tc.error && <XCircle className="size-3 shrink-0 text-destructive" />}
+            </button>
+            {expanded && (
+              <div className="ml-6 mt-1 space-y-1">
+                {interactivePreview ? (
+                  <DocAgentInteractivePage
+                    message={interactivePreview.message}
+                    spec={interactivePreview.spec}
+                    className="mb-2"
+                  />
+                ) : null}
+                <pre className="overflow-x-auto rounded bg-muted/50 p-2 text-[11px] text-muted-foreground">
+                  {JSON.stringify(tc.args, null, 2)}
+                </pre>
+                {tc.result && (
+                  <pre className="overflow-x-auto rounded bg-muted/30 p-2 text-[11px] text-muted-foreground">
+                    {tc.result.length > 500 ? tc.result.slice(0, 500) + '…' : tc.result}
+                  </pre>
+                )}
+                {tc.error && <p className="text-xs text-destructive">{tc.error}</p>}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
-}
-
-interface InteractionWidgetProps {
-  interaction: AgentInteraction
-  onRespond: (body: Record<string, unknown>) => void
-}
-
-function InteractionWidget({ interaction, onRespond }: InteractionWidgetProps) {
-  const [inputValue, setInputValue] = React.useState('')
-
-  if (interaction.type === 'confirm') {
-    return (
-      <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-        <p className="text-sm text-foreground whitespace-pre-wrap">{interaction.message}</p>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => onRespond({ accepted: true })}
-          >
-            Approve
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs"
-            onClick={() => onRespond({ accepted: false })}
-          >
-            Reject
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  if (interaction.type === 'select') {
-    return (
-      <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-        <p className="text-sm text-foreground whitespace-pre-wrap">{interaction.message}</p>
-        <div className="flex flex-col gap-1.5">
-          {interaction.options.map((option) => (
-            <button
-              key={option}
-              onClick={() => onRespond({ selected: option })}
-              className="rounded-md border border-border/60 bg-background px-3 py-1.5 text-left text-sm hover:bg-muted/50 transition-colors"
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  if (interaction.type === 'input') {
-    return (
-      <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-        <p className="text-sm text-foreground whitespace-pre-wrap">{interaction.message}</p>
-        <Textarea
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder={interaction.placeholder ?? 'Type your response...'}
-          className="min-h-[60px] resize-none text-sm"
-          rows={2}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && inputValue.trim()) {
-              e.preventDefault()
-              onRespond({ text: inputValue.trim() })
-            }
-          }}
-        />
-        <Button
-          size="sm"
-          className="h-7 text-xs"
-          disabled={!inputValue.trim()}
-          onClick={() => onRespond({ text: inputValue.trim() })}
-        >
-          Submit
-        </Button>
-      </div>
-    )
-  }
-
-  return null
 }
 
 interface DocAgentPanelProps {
@@ -588,7 +510,7 @@ export function DocAgentPanel({
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Bot className="mb-3 size-8 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">
-                Ask the agent to create, update, or review documents.
+                Ask the agent to draft, revise, review, or structure this document.
               </p>
             </div>
           )}
@@ -598,12 +520,16 @@ export function DocAgentPanel({
           ))}
 
           {interaction && (
-            <InteractionWidget interaction={interaction} onRespond={respond} />
+            <DocAgentInteractionWidget interaction={interaction} onRespond={respond} />
           )}
 
           {isActive && progress?.description && (
             <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" />
+              {status === 'waiting_for_input' ? (
+                <HelpCircle className="size-3 text-amber-500" />
+              ) : (
+                <Loader2 className="size-3 animate-spin" />
+              )}
               {progress.description}
               <span className="tabular-nums">
                 ({progress.currentStep}/{progress.maxSteps})
@@ -734,17 +660,18 @@ export function DocAgentPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask the agent to do something..."
+            placeholder="Ask the agent to draft, revise, or review…"
             disabled={isActive}
-            className="min-h-[60px] resize-none pr-10 text-sm"
-            rows={2}
+            className="min-h-[72px] resize-none pr-12 text-sm"
+            rows={3}
           />
           <Button
             size="icon"
             variant="ghost"
-            className="absolute bottom-1.5 right-1.5 size-7"
+            className="absolute bottom-1.5 right-1.5 size-10 rounded-xl"
             onClick={handleSubmit}
             disabled={isActive || !input.trim()}
+            aria-label="Send prompt to Doc Agent"
           >
             <Send className="size-3.5" />
           </Button>

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { withWorkspaceAuth, badRequest } from '@/lib/api-utils'
+import { recordDomainEvent } from '@/lib/observability/metrics'
+import { withRouteObservability } from '@/lib/observability/route-handler'
 import { listDocuments, createDocument } from '@/lib/queries/documents'
 import {
   attachDocumentAccess,
@@ -26,7 +28,7 @@ import {
   type DocumentSort,
 } from '@/lib/documents'
 
-export async function GET(request: NextRequest) {
+async function getDocuments(request: NextRequest) {
   const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
@@ -114,7 +116,7 @@ export async function GET(request: NextRequest) {
   )
 }
 
-export async function POST(request: NextRequest) {
+async function createDocumentRoute(request: NextRequest) {
   const result = await withWorkspaceAuth('member')
   if ('error' in result) return result.error
 
@@ -163,8 +165,17 @@ export async function POST(request: NextRequest) {
     resourceTitle: doc.title,
   })
 
+  recordDomainEvent('document_create')
   return NextResponse.json(
     attachDocumentAccess(doc, accessMap.get(doc.id)!),
     { status: 201 },
   )
 }
+
+export const GET = withRouteObservability(getDocuments, {
+  route: '/api/documents',
+})
+
+export const POST = withRouteObservability(createDocumentRoute, {
+  route: '/api/documents',
+})
