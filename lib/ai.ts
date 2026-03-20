@@ -212,6 +212,11 @@ export interface AiModelCatalogResponse {
   configured: boolean
   defaultModelId: string
   enabledModelIds: string[]
+  embeddingProviderId: string
+  embeddingModelId: string
+  resolvedEmbeddingProviderId: string
+  resolvedEmbeddingModelId: string
+  rerankerModelId: string
   fetchedAt: string
   error?: string
   providers: AiProviderSummary[]
@@ -393,6 +398,10 @@ export function getAiProviderDefaultBaseUrl(providerType: AiProviderType) {
 
 export function isAiProviderType(value: string): value is AiProviderType {
   return AI_PROVIDER_TYPES.includes(value as AiProviderType)
+}
+
+export function isEmbeddingCapableAiProviderType(providerType: AiProviderType) {
+  return providerType === 'openai_compatible' || providerType === 'gemini'
 }
 
 // ---------------------------------------------------------------------------

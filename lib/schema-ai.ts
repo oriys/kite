@@ -60,6 +60,7 @@ export const aiWorkspaceSettings = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
+    embeddingProviderId: text('embedding_provider_id'),
     embeddingModelId: text('embedding_model_id'),
     rerankerModelId: text('reranker_model_id'),
     ragEnabled: boolean('rag_enabled').notNull().default(true),

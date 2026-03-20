@@ -48,6 +48,11 @@ describe('DocAiManagerPage', () => {
       providers: [],
       defaultModelId: '',
       enabledModelIds: [],
+      embeddingProviderId: '',
+      embeddingModelId: '',
+      resolvedEmbeddingProviderId: '',
+      resolvedEmbeddingModelId: '',
+      rerankerModelId: '',
       fetchedAt: '',
       loading: true,
       error: null,
@@ -105,6 +110,11 @@ describe('DocAiManagerPage', () => {
       providers: [],
       defaultModelId: '',
       enabledModelIds: [],
+      embeddingProviderId: '',
+      embeddingModelId: '',
+      resolvedEmbeddingProviderId: '',
+      resolvedEmbeddingModelId: '',
+      rerankerModelId: '',
       fetchedAt: '',
       loading: false,
       error: null,
@@ -144,7 +154,87 @@ describe('DocAiManagerPage', () => {
     expect(
       container.textContent,
     ).toContain('Enable a model below to choose a default route.')
-    expect(container.querySelector('[role="combobox"]')).toBeNull()
+    expect(container.textContent).toContain('Embedding Routing')
+    expect(container.textContent).not.toContain('Select the default AI')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('renders the saved and effective embedding route summaries', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root: Root = createRoot(container)
+
+    vi.mocked(useAiModels).mockReturnValue({
+      catalog: null,
+      items: [],
+      configured: true,
+      providers: [
+        {
+          id: 'provider-gemini',
+          name: 'Google Gemini',
+          providerType: 'gemini',
+          providerLabel: 'Google Gemini',
+          baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+          defaultModelId: 'gemini-2.5-flash',
+          enabled: true,
+          source: 'database',
+          modelCount: 1,
+        },
+      ],
+      defaultModelId: '',
+      enabledModelIds: [],
+      embeddingProviderId: 'provider-gemini',
+      embeddingModelId: 'gemini-embedding-001',
+      resolvedEmbeddingProviderId: 'provider-gemini',
+      resolvedEmbeddingModelId: 'gemini-embedding-001',
+      rerankerModelId: '',
+      fetchedAt: '',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    })
+
+    vi.mocked(useAiPreferences).mockReturnValue({
+      preferences: {
+        activeModelId: null,
+        enabledModelIds: [],
+      },
+      enabledModels: [],
+      activeModel: null,
+      activeModelId: null,
+      enabledModelIds: [],
+      saving: false,
+      toggleModel: vi.fn(),
+      setActiveModelId: vi.fn(),
+      resetToDefault: vi.fn(),
+    })
+
+    vi.mocked(useAiProviders).mockReturnValue({
+      items: [],
+      loading: false,
+      mutating: false,
+      error: null,
+      refresh: vi.fn(),
+      createProvider: vi.fn(),
+      updateProvider: vi.fn(),
+      deleteProvider: vi.fn(),
+    })
+
+    act(() => {
+      root.render(<DocAiManagerPage />)
+    })
+
+    expect(container.textContent).toContain('Embedding Routing')
+    expect(container.textContent).toContain(
+      'Google Gemini · gemini-embedding-001',
+    )
+    expect(container.textContent).toContain(
+      'Effective route: Google Gemini · gemini-embedding-001',
+    )
 
     act(() => {
       root.unmount()

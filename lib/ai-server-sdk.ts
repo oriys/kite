@@ -7,7 +7,10 @@ import {
 import { generateText, streamText, embedMany, type ToolSet } from 'ai'
 import type { LanguageModel, EmbeddingModel } from 'ai'
 
-import { createAiModelRef } from '@/lib/ai'
+import {
+  createAiModelRef,
+  isEmbeddingCapableAiProviderType,
+} from '@/lib/ai'
 import {
   collectMcpToolNamesFromSteps,
   createChatMessageAttribution,
@@ -414,13 +417,18 @@ export async function resolveEmbeddingProvider(workspaceId: string) {
   ])
 
   const embeddingProviders = providers.filter(
-    (p) => p.enabled && (p.providerType === 'openai_compatible' || p.providerType === 'gemini'),
+    (provider) =>
+      provider.enabled && isEmbeddingCapableAiProviderType(provider.providerType),
   )
 
   if (embeddingProviders.length === 0) return null
 
-  const provider = embeddingProviders[0]
+  const configuredProviderId = settings?.embeddingProviderId?.trim()
   const configuredModelId = settings?.embeddingModelId?.trim()
+  const provider =
+    (configuredProviderId
+      ? embeddingProviders.find((candidate) => candidate.id === configuredProviderId)
+      : null) ?? embeddingProviders[0]
 
   return {
     provider,

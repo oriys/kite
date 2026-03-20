@@ -166,6 +166,8 @@ export async function upsertAiWorkspaceModelSettings(
   input: {
     defaultModelId: string | null
     enabledModelIds: string[]
+    embeddingProviderId?: string | null
+    embeddingModelId?: string | null
     rerankerModelId?: string | null
   },
 ) {
@@ -178,6 +180,8 @@ export async function upsertAiWorkspaceModelSettings(
       defaultModelId: input.defaultModelId,
       enabledModelIds: input.enabledModelIds,
       promptSettings: {},
+      embeddingProviderId: input.embeddingProviderId ?? null,
+      embeddingModelId: input.embeddingModelId ?? null,
       rerankerModelId: input.rerankerModelId ?? null,
       createdAt: now,
       updatedAt: now,
@@ -187,6 +191,8 @@ export async function upsertAiWorkspaceModelSettings(
       set: {
         defaultModelId: input.defaultModelId,
         enabledModelIds: input.enabledModelIds,
+        embeddingProviderId: input.embeddingProviderId ?? null,
+        embeddingModelId: input.embeddingModelId ?? null,
         rerankerModelId: input.rerankerModelId ?? null,
         updatedAt: now,
       },

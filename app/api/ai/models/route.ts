@@ -7,15 +7,18 @@ import {
   sortAiCatalogModels,
 } from '@/lib/ai'
 import { withWorkspaceAuth } from '@/lib/api-utils'
-import { loadWorkspaceAiCatalog } from '@/lib/ai-server'
+import { loadWorkspaceAiCatalog, resolveEmbeddingProvider } from '@/lib/ai-server'
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 
 export async function GET() {
   const result = await withWorkspaceAuth('guest')
   if ('error' in result) return result.error
 
-  const workspaceSettings = await getAiWorkspaceSettings(result.ctx.workspaceId)
-  const catalog = await loadWorkspaceAiCatalog(result.ctx.workspaceId)
+  const [workspaceSettings, catalog, resolvedEmbedding] = await Promise.all([
+    getAiWorkspaceSettings(result.ctx.workspaceId),
+    loadWorkspaceAiCatalog(result.ctx.workspaceId),
+    resolveEmbeddingProvider(result.ctx.workspaceId),
+  ])
   const fetchedAt = new Date().toISOString()
 
   const providerDefault = catalog.providers.find((provider) => provider.defaultModelId)
@@ -47,6 +50,10 @@ export async function GET() {
     configured: catalog.configured,
     defaultModelId: preferences.activeModelId ?? '',
     enabledModelIds: preferences.enabledModelIds,
+    embeddingProviderId: workspaceSettings?.embeddingProviderId?.trim() ?? '',
+    embeddingModelId: workspaceSettings?.embeddingModelId?.trim() ?? '',
+    resolvedEmbeddingProviderId: resolvedEmbedding?.provider.id ?? '',
+    resolvedEmbeddingModelId: resolvedEmbedding?.modelId ?? '',
     rerankerModelId: workspaceSettings?.rerankerModelId?.trim() ?? '',
     fetchedAt,
     error: catalog.error,

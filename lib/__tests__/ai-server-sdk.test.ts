@@ -45,6 +45,17 @@ const geminiProvider: ResolvedAiProviderConfig = {
   source: 'database',
 }
 
+const openAiProvider: ResolvedAiProviderConfig = {
+  id: 'provider-2',
+  name: 'OpenAI',
+  providerType: 'openai_compatible',
+  baseUrl: 'https://api.openai.com/v1',
+  apiKey: 'test-key',
+  defaultModelId: 'gpt-4o-mini',
+  enabled: true,
+  source: 'database',
+}
+
 describe('ai-server-sdk embedding behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -82,6 +93,43 @@ describe('ai-server-sdk embedding behavior', () => {
     expect(result).toEqual({
       provider: geminiProvider,
       modelId: 'custom-embedding-model',
+    })
+  })
+
+  it('prefers an explicitly configured embedding provider when available', async () => {
+    resolveWorkspaceAiProvidersMock.mockResolvedValue([
+      openAiProvider,
+      geminiProvider,
+    ])
+    getAiWorkspaceSettingsMock.mockResolvedValue({
+      embeddingProviderId: 'provider-1',
+      embeddingModelId: 'custom-embedding-model',
+    })
+
+    const { resolveEmbeddingProvider } = await import('@/lib/ai-server')
+    const result = await resolveEmbeddingProvider('ws-1')
+
+    expect(result).toEqual({
+      provider: geminiProvider,
+      modelId: 'custom-embedding-model',
+    })
+  })
+
+  it('falls back to the first available embedding provider when the saved provider is unavailable', async () => {
+    resolveWorkspaceAiProvidersMock.mockResolvedValue([
+      openAiProvider,
+      geminiProvider,
+    ])
+    getAiWorkspaceSettingsMock.mockResolvedValue({
+      embeddingProviderId: 'missing-provider',
+    })
+
+    const { resolveEmbeddingProvider } = await import('@/lib/ai-server')
+    const result = await resolveEmbeddingProvider('ws-1')
+
+    expect(result).toEqual({
+      provider: openAiProvider,
+      modelId: 'text-embedding-3-small',
     })
   })
 
