@@ -11,11 +11,12 @@ import {
 } from 'drizzle-orm/pg-core'
 import { relations } from 'drizzle-orm'
 import { workspaces } from './schema-workspace'
+import { EMBEDDING_VECTOR_DIMENSION } from './ai-config'
 
 // Reuse the same vector type from schema-ai.ts
-const vector1536 = customType<{ data: number[]; driverParam: string }>({
+const embeddingVector = customType<{ data: number[]; driverParam: string }>({
   dataType() {
-    return 'vector(1536)'
+    return `vector(${EMBEDDING_VECTOR_DIMENSION})`
   },
   toDriver(value: number[]) {
     return `[${value.join(',')}]`
@@ -59,7 +60,7 @@ export const kgEntities = pgTable(
     nameNormalized: text('name_normalized').notNull(),
     entityType: kgEntityTypeEnum('entity_type').notNull().default('other'),
     description: text('description').notNull().default(''),
-    embedding: vector1536('embedding'),
+    embedding: embeddingVector('embedding'),
     /** Tracks which embedding model generated the vector */
     embeddingModelId: text('embedding_model_id'),
     /** Chunk IDs that reference this entity (semicolon-separated) */
@@ -111,7 +112,7 @@ export const kgRelations = pgTable(
       .references(() => kgEntities.id, { onDelete: 'cascade' }),
     description: text('description').notNull().default(''),
     keywords: text('keywords').notNull().default(''),
-    embedding: vector1536('embedding'),
+    embedding: embeddingVector('embedding'),
     /** Tracks which embedding model generated the vector */
     embeddingModelId: text('embedding_model_id'),
     weight: real('weight').notNull().default(1.0),

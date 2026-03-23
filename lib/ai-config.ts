@@ -3,6 +3,7 @@ import {
   normalizeRagQueryMode,
   type RagQueryMode,
 } from '@/lib/rag/types'
+import { HARDCODED_EMBEDDING_MODEL } from '@/lib/ai'
 
 /**
  * Centralized AI / RAG configuration.
@@ -32,11 +33,8 @@ function envStr(key: string, fallback: string): string {
 // ---------------------------------------------------------------------------
 // Embedding & models
 // ---------------------------------------------------------------------------
-export const DEFAULT_EMBEDDING_MODEL = envStr(
-  'AI_DEFAULT_EMBEDDING_MODEL',
-  'text-embedding-3-small',
-)
-export const EMBEDDING_VECTOR_DIMENSION = 1536
+export const DEFAULT_EMBEDDING_MODEL = HARDCODED_EMBEDDING_MODEL
+export const EMBEDDING_VECTOR_DIMENSION = 2560
 
 export const DEFAULT_RERANKER_MODEL = envStr(
   'AI_DEFAULT_RERANKER_MODEL',
@@ -117,6 +115,7 @@ export const VECTOR_SIMILARITY_WINDOW = envFloat(
 
 export const SIMILARITY_PROFILES: Record<string, { min: number; window: number }> = (() => {
   const defaults: Record<string, { min: number; window: number }> = {
+    [HARDCODED_EMBEDDING_MODEL]: { min: 0.28, window: 0.12 },
     'text-embedding-3-small': { min: 0.28, window: 0.12 },
     'text-embedding-3-large': { min: 0.32, window: 0.10 },
     'text-embedding-ada-002': { min: 0.22, window: 0.15 },

@@ -18,7 +18,7 @@ import {
 describe('ai-config', () => {
   describe('defaults', () => {
     it('provides sensible default values', () => {
-      expect(DEFAULT_EMBEDDING_MODEL).toBe('text-embedding-3-small')
+      expect(DEFAULT_EMBEDDING_MODEL).toBe('qwen3-embedding:4b')
       expect(TOP_K_CHUNKS).toBe(15)
       expect(TEMPERATURE_CHAT).toBe(0.3)
       expect(TARGET_CHUNK_TOKENS).toBe(500)
@@ -74,10 +74,10 @@ describe('ai-config', () => {
       expect(envFloat('AI_TEMPERATURE_CHAT', 0.3)).toBe(0.3)
     })
 
-    it('overrides string env values', async () => {
-      process.env.AI_DEFAULT_EMBEDDING_MODEL = 'custom-model'
+    it('returns string env values', async () => {
+      process.env.KITE_TEST_STRING = 'custom-model'
       const { envStr } = await getHelpers()
-      expect(envStr('AI_DEFAULT_EMBEDDING_MODEL', 'text-embedding-3-small')).toBe('custom-model')
+      expect(envStr('KITE_TEST_STRING', 'fallback-model')).toBe('custom-model')
     })
   })
 

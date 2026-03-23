@@ -53,11 +53,11 @@ describe('embedding-health', () => {
   it('reports currentModelId from resolved provider', async () => {
     vi.mocked(resolveEmbeddingProvider).mockResolvedValue({
       provider: {} as never,
-      modelId: 'text-embedding-3-small',
+      modelId: 'qwen3-embedding:4b',
     })
     const { checkEmbeddingHealth } = await import('@/lib/kg/embedding-health')
     const result = await checkEmbeddingHealth('ws-1')
     expect(result).not.toBeNull()
-    expect(result!.currentModelId).toBe('text-embedding-3-small')
+    expect(result!.currentModelId).toBe('qwen3-embedding:4b')
   })
 })

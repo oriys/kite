@@ -1,19 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ResolvedAiProviderConfig } from '@/lib/ai-server-types'
-
-const {
-  embedManyMock,
-  createGoogleGenerativeAIMock,
-  googleTextEmbeddingModelMock,
-  resolveWorkspaceAiProvidersMock,
-  getAiWorkspaceSettingsMock,
-} = vi.hoisted(() => ({
+const { createOpenAIMock, embeddingModelMock, embedManyMock } = vi.hoisted(() => ({
+  createOpenAIMock: vi.fn(),
+  embeddingModelMock: vi.fn(),
   embedManyMock: vi.fn(),
-  createGoogleGenerativeAIMock: vi.fn(),
-  googleTextEmbeddingModelMock: vi.fn(),
-  resolveWorkspaceAiProvidersMock: vi.fn(),
-  getAiWorkspaceSettingsMock: vi.fn(),
+}))
+
+vi.mock('@ai-sdk/openai', () => ({
+  createOpenAI: createOpenAIMock,
 }))
 
 vi.mock('ai', () => ({
@@ -22,137 +16,58 @@ vi.mock('ai', () => ({
   streamText: vi.fn(),
 }))
 
-vi.mock('@ai-sdk/google', () => ({
-  createGoogleGenerativeAI: createGoogleGenerativeAIMock,
-}))
-
-vi.mock('@/lib/ai-server-providers', () => ({
-  resolveWorkspaceAiProviders: resolveWorkspaceAiProvidersMock,
-}))
-
-vi.mock('@/lib/queries/ai', () => ({
-  getAiWorkspaceSettings: getAiWorkspaceSettingsMock,
-}))
-
-const geminiProvider: ResolvedAiProviderConfig = {
-  id: 'provider-1',
-  name: 'Gemini',
-  providerType: 'gemini',
-  baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-  apiKey: 'test-key',
-  defaultModelId: 'gemini-2.5-flash',
-  enabled: true,
-  source: 'database',
-}
-
-const openAiProvider: ResolvedAiProviderConfig = {
-  id: 'provider-2',
-  name: 'OpenAI',
-  providerType: 'openai_compatible',
-  baseUrl: 'https://api.openai.com/v1',
-  apiKey: 'test-key',
-  defaultModelId: 'gpt-4o-mini',
-  enabled: true,
-  source: 'database',
-}
-
 describe('ai-server-sdk embedding behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    googleTextEmbeddingModelMock.mockReturnValue({ id: 'embedding-model' })
-    createGoogleGenerativeAIMock.mockReturnValue({
-      textEmbeddingModel: googleTextEmbeddingModelMock,
+    embeddingModelMock.mockReturnValue({ id: 'ollama-embedding-model' })
+    createOpenAIMock.mockReturnValue({
+      embedding: embeddingModelMock,
+      chat: vi.fn(),
     })
     embedManyMock.mockResolvedValue({
       embeddings: [[0.1, 0.2, 0.3]],
     })
   })
 
-  it('uses a Gemini-specific embedding fallback when no embedding model is configured', async () => {
-    resolveWorkspaceAiProvidersMock.mockResolvedValue([geminiProvider])
-    getAiWorkspaceSettingsMock.mockResolvedValue(null)
-
-    const { resolveEmbeddingProvider } = await import('@/lib/ai-server')
+  it('resolves the hardcoded local Ollama embedding route', async () => {
+    const { resolveEmbeddingProvider } = await import('@/lib/ai-server-sdk')
     const result = await resolveEmbeddingProvider('ws-1')
 
     expect(result).toEqual({
-      provider: geminiProvider,
-      modelId: 'gemini-embedding-001',
+      provider: {
+        id: 'ollama-local',
+        name: 'Ollama',
+        providerType: 'openai_compatible',
+        baseUrl: 'http://127.0.0.1:11434/v1',
+        apiKey: 'ollama',
+        defaultModelId: 'qwen3-embedding:4b',
+        enabled: true,
+        source: 'env',
+      },
+      modelId: 'qwen3-embedding:4b',
     })
   })
 
-  it('respects an explicitly configured embedding model id', async () => {
-    resolveWorkspaceAiProvidersMock.mockResolvedValue([geminiProvider])
-    getAiWorkspaceSettingsMock.mockResolvedValue({
-      embeddingModelId: 'custom-embedding-model',
-    })
-
-    const { resolveEmbeddingProvider } = await import('@/lib/ai-server')
-    const result = await resolveEmbeddingProvider('ws-1')
-
-    expect(result).toEqual({
-      provider: geminiProvider,
-      modelId: 'custom-embedding-model',
-    })
-  })
-
-  it('prefers an explicitly configured embedding provider when available', async () => {
-    resolveWorkspaceAiProvidersMock.mockResolvedValue([
-      openAiProvider,
-      geminiProvider,
-    ])
-    getAiWorkspaceSettingsMock.mockResolvedValue({
-      embeddingProviderId: 'provider-1',
-      embeddingModelId: 'custom-embedding-model',
-    })
-
-    const { resolveEmbeddingProvider } = await import('@/lib/ai-server')
-    const result = await resolveEmbeddingProvider('ws-1')
-
-    expect(result).toEqual({
-      provider: geminiProvider,
-      modelId: 'custom-embedding-model',
-    })
-  })
-
-  it('falls back to the first available embedding provider when the saved provider is unavailable', async () => {
-    resolveWorkspaceAiProvidersMock.mockResolvedValue([
-      openAiProvider,
-      geminiProvider,
-    ])
-    getAiWorkspaceSettingsMock.mockResolvedValue({
-      embeddingProviderId: 'missing-provider',
-    })
-
-    const { resolveEmbeddingProvider } = await import('@/lib/ai-server')
-    const result = await resolveEmbeddingProvider('ws-1')
-
-    expect(result).toEqual({
-      provider: openAiProvider,
-      modelId: 'text-embedding-3-small',
-    })
-  })
-
-  it('requests Gemini embeddings with the repository vector dimension', async () => {
-    const { requestAiEmbedding } = await import('@/lib/ai-server')
+  it('requests embeddings through the hardcoded Ollama route', async () => {
+    const { requestAiEmbedding, resolveEmbeddingProvider } = await import(
+      '@/lib/ai-server-sdk'
+    )
+    const config = await resolveEmbeddingProvider('ws-1')
 
     await requestAiEmbedding({
-      provider: geminiProvider,
+      provider: config.provider,
       texts: ['hello world'],
-      model: 'models/gemini-embedding-001',
+      model: config.modelId,
     })
 
-    expect(googleTextEmbeddingModelMock).toHaveBeenCalledWith(
-      'gemini-embedding-001',
-    )
+    expect(createOpenAIMock).toHaveBeenCalledWith({
+      baseURL: 'http://127.0.0.1:11434/v1',
+      apiKey: 'ollama',
+    })
+    expect(embeddingModelMock).toHaveBeenCalledWith('qwen3-embedding:4b')
     expect(embedManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         values: ['hello world'],
-        providerOptions: {
-          google: {
-            outputDimensionality: 1536,
-          },
-        },
       }),
     )
   })

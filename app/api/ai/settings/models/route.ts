@@ -2,15 +2,15 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 import {
+  HARDCODED_EMBEDDING_MODEL,
+  HARDCODED_EMBEDDING_PROVIDER_ID,
   MAX_AI_MODEL_ID_LENGTH,
-  isEmbeddingCapableAiProviderType,
 } from '@/lib/ai'
 import { badRequest, withWorkspaceAuth } from '@/lib/api-utils'
 import {
   getAiWorkspaceSettings,
   upsertAiWorkspaceModelSettings,
 } from '@/lib/queries/ai'
-import { resolveWorkspaceAiProviders } from '@/lib/ai-server'
 
 function normalizeModelId(value: unknown) {
   return typeof value === 'string'
@@ -61,10 +61,7 @@ export async function PUT(request: NextRequest) {
   }
   const input = body as Record<string, unknown>
 
-  const [currentSettings, providers] = await Promise.all([
-    getAiWorkspaceSettings(result.ctx.workspaceId),
-    resolveWorkspaceAiProviders(result.ctx.workspaceId),
-  ])
+  const currentSettings = await getAiWorkspaceSettings(result.ctx.workspaceId)
 
   const storedEnabledModelIds = readStoredEnabledModelIds(
     currentSettings?.enabledModelIds,
@@ -83,27 +80,6 @@ export async function PUT(request: NextRequest) {
     return badRequest('enabledModelIds must be an array')
   }
 
-  const nextEmbeddingProviderId = hasOwn(input, 'embeddingProviderId')
-    ? normalizeModelId(input.embeddingProviderId)
-    : currentSettings?.embeddingProviderId?.trim() ?? ''
-  const nextEmbeddingModelId = hasOwn(input, 'embeddingModelId')
-    ? normalizeModelId(input.embeddingModelId)
-    : currentSettings?.embeddingModelId?.trim() ?? ''
-
-  if (nextEmbeddingProviderId) {
-    const provider = providers.find(
-      (candidate) => candidate.id === nextEmbeddingProviderId && candidate.enabled,
-    )
-
-    if (!provider) {
-      return badRequest('Selected embedding provider is not available.')
-    }
-
-    if (!isEmbeddingCapableAiProviderType(provider.providerType)) {
-      return badRequest('Selected provider does not support embeddings.')
-    }
-  }
-
   if (nextDefaultModelId && !enabledModelIds.includes(nextDefaultModelId)) {
     enabledModelIds.unshift(nextDefaultModelId)
   }
@@ -111,16 +87,16 @@ export async function PUT(request: NextRequest) {
   await upsertAiWorkspaceModelSettings(result.ctx.workspaceId, {
     defaultModelId: nextDefaultModelId || null,
     enabledModelIds,
-    embeddingProviderId: nextEmbeddingProviderId || null,
-    embeddingModelId: nextEmbeddingModelId || null,
+    embeddingProviderId: null,
+    embeddingModelId: null,
     rerankerModelId: nextRerankerModelId || null,
   })
 
   return NextResponse.json({
     defaultModelId: nextDefaultModelId,
     enabledModelIds,
-    embeddingProviderId: nextEmbeddingProviderId,
-    embeddingModelId: nextEmbeddingModelId,
+    embeddingProviderId: HARDCODED_EMBEDDING_PROVIDER_ID,
+    embeddingModelId: HARDCODED_EMBEDDING_MODEL,
     rerankerModelId: nextRerankerModelId,
   })
 }

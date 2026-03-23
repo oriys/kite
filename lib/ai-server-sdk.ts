@@ -9,7 +9,10 @@ import type { LanguageModel, EmbeddingModel } from 'ai'
 
 import {
   createAiModelRef,
-  isEmbeddingCapableAiProviderType,
+  HARDCODED_EMBEDDING_BASE_URL,
+  HARDCODED_EMBEDDING_MODEL,
+  HARDCODED_EMBEDDING_PROVIDER_ID,
+  HARDCODED_EMBEDDING_PROVIDER_NAME,
 } from '@/lib/ai'
 import {
   collectMcpToolNamesFromSteps,
@@ -27,22 +30,9 @@ import {
   type ResolvedAiProviderConfig,
 } from './ai-server-types'
 import { getNumber } from './ai-server-helpers'
-import { resolveWorkspaceAiProviders } from './ai-server-providers'
-import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 
 function normalizeGeminiModelId(modelId: string) {
   return modelId.startsWith('models/') ? modelId.slice('models/'.length) : modelId
-}
-
-const DEFAULT_GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001'
-
-function getDefaultEmbeddingModelId(provider: ResolvedAiProviderConfig) {
-  switch (provider.providerType) {
-    case 'gemini':
-      return DEFAULT_GEMINI_EMBEDDING_MODEL
-    default:
-      return DEFAULT_EMBEDDING_MODEL
-  }
 }
 
 function getEmbeddingProviderOptions(provider: ResolvedAiProviderConfig) {
@@ -411,27 +401,19 @@ export async function requestAiChatCompletionStream(input: {
 }
 
 export async function resolveEmbeddingProvider(workspaceId: string) {
-  const [providers, settings] = await Promise.all([
-    resolveWorkspaceAiProviders(workspaceId),
-    getAiWorkspaceSettings(workspaceId),
-  ])
-
-  const embeddingProviders = providers.filter(
-    (provider) =>
-      provider.enabled && isEmbeddingCapableAiProviderType(provider.providerType),
-  )
-
-  if (embeddingProviders.length === 0) return null
-
-  const configuredProviderId = settings?.embeddingProviderId?.trim()
-  const configuredModelId = settings?.embeddingModelId?.trim()
-  const provider =
-    (configuredProviderId
-      ? embeddingProviders.find((candidate) => candidate.id === configuredProviderId)
-      : null) ?? embeddingProviders[0]
-
+  void workspaceId
+  const provider: ResolvedAiProviderConfig = {
+    id: HARDCODED_EMBEDDING_PROVIDER_ID,
+    name: HARDCODED_EMBEDDING_PROVIDER_NAME,
+    providerType: 'openai_compatible',
+    baseUrl: HARDCODED_EMBEDDING_BASE_URL,
+    apiKey: 'ollama',
+    defaultModelId: HARDCODED_EMBEDDING_MODEL,
+    enabled: true,
+    source: 'env',
+  }
   return {
     provider,
-    modelId: configuredModelId || getDefaultEmbeddingModelId(provider),
+    modelId: DEFAULT_EMBEDDING_MODEL,
   }
 }

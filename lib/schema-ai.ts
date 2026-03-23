@@ -16,6 +16,7 @@ import { workspaces } from './schema-workspace'
 import { documents } from './schema-documents'
 import { knowledgeSources } from './schema-knowledge'
 import type { ChatMessageAttribution } from './ai-chat-shared'
+import { EMBEDDING_VECTOR_DIMENSION } from './ai-config'
 
 export const aiProviderTypeEnum = pgEnum('ai_provider_type', [
   'openai_compatible',
@@ -70,9 +71,9 @@ export const aiWorkspaceSettings = pgTable(
 )
 
 // Dimension must match EMBEDDING_VECTOR_DIMENSION in lib/ai-config.ts
-const vector1536 = customType<{ data: number[]; driverParam: string }>({
+const embeddingVector = customType<{ data: number[]; driverParam: string }>({
   dataType() {
-    return 'vector(1536)'
+    return `vector(${EMBEDDING_VECTOR_DIMENSION})`
   },
   toDriver(value: number[]) {
     return `[${value.join(',')}]`
@@ -101,7 +102,7 @@ export const documentChunks = pgTable(
       () => knowledgeSources.id,
       { onDelete: 'cascade' },
     ),
-    embedding: vector1536('embedding'),
+    embedding: embeddingVector('embedding'),
     /** Tracks which embedding model generated the vector (for space isolation) */
     embeddingModelId: text('embedding_model_id'),
     tokenCount: integer('token_count').notNull().default(0),

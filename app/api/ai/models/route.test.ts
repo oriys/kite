@@ -89,20 +89,20 @@ describe('GET /api/ai/models', () => {
 
     resolveEmbeddingProviderMock.mockResolvedValue({
       provider: {
-        id: 'provider-chat',
-        name: 'OpenAI',
+        id: 'ollama-local',
+        name: 'Ollama',
         providerType: 'openai_compatible',
-        baseUrl: 'https://api.openai.com/v1',
-        apiKey: 'test-key',
-        defaultModelId: 'gpt-4o-mini',
+        baseUrl: 'http://127.0.0.1:11434/v1',
+        apiKey: 'ollama',
+        defaultModelId: 'qwen3-embedding:4b',
         enabled: true,
-        source: 'database',
+        source: 'env',
       },
-      modelId: 'text-embedding-3-small',
+      modelId: 'qwen3-embedding:4b',
     })
   })
 
-  it('returns explicit and resolved embedding routing fields', async () => {
+  it('returns the hardcoded Ollama embedding route', async () => {
     const { GET } = await import('./route')
 
     const response = await GET()
@@ -113,10 +113,10 @@ describe('GET /api/ai/models', () => {
         configured: true,
         defaultModelId: 'provider-chat::gpt-4o-mini',
         enabledModelIds: ['provider-chat::gpt-4o-mini'],
-        embeddingProviderId: 'provider-gemini',
-        embeddingModelId: 'gemini-embedding-001',
-        resolvedEmbeddingProviderId: 'provider-chat',
-        resolvedEmbeddingModelId: 'text-embedding-3-small',
+        embeddingProviderId: 'ollama-local',
+        embeddingModelId: 'qwen3-embedding:4b',
+        resolvedEmbeddingProviderId: 'ollama-local',
+        resolvedEmbeddingModelId: 'qwen3-embedding:4b',
         rerankerModelId: 'reranker-1',
       }),
     )

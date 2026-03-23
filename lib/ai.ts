@@ -141,6 +141,10 @@ export const DEFAULT_AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1'
 export const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1'
 export const DEFAULT_GEMINI_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta'
+export const HARDCODED_EMBEDDING_PROVIDER_ID = 'ollama-local'
+export const HARDCODED_EMBEDDING_PROVIDER_NAME = 'Ollama'
+export const HARDCODED_EMBEDDING_BASE_URL = 'http://127.0.0.1:11434/v1'
+export const HARDCODED_EMBEDDING_MODEL = 'qwen3-embedding:4b'
 export const AI_MODEL_PREFERENCES_EVENT = 'editorial-ai-model-preferences:change'
 
 export const AI_PROVIDER_TYPES = [

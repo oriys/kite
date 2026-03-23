@@ -163,7 +163,7 @@ describe('DocAiManagerPage', () => {
     container.remove()
   })
 
-  it('renders the saved and effective embedding route summaries', () => {
+  it('renders the hardcoded Ollama embedding route summary', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root: Root = createRoot(container)
@@ -172,25 +172,13 @@ describe('DocAiManagerPage', () => {
       catalog: null,
       items: [],
       configured: true,
-      providers: [
-        {
-          id: 'provider-gemini',
-          name: 'Google Gemini',
-          providerType: 'gemini',
-          providerLabel: 'Google Gemini',
-          baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-          defaultModelId: 'gemini-2.5-flash',
-          enabled: true,
-          source: 'database',
-          modelCount: 1,
-        },
-      ],
+      providers: [],
       defaultModelId: '',
       enabledModelIds: [],
-      embeddingProviderId: 'provider-gemini',
-      embeddingModelId: 'gemini-embedding-001',
-      resolvedEmbeddingProviderId: 'provider-gemini',
-      resolvedEmbeddingModelId: 'gemini-embedding-001',
+      embeddingProviderId: 'ollama-local',
+      embeddingModelId: 'qwen3-embedding:4b',
+      resolvedEmbeddingProviderId: 'ollama-local',
+      resolvedEmbeddingModelId: 'qwen3-embedding:4b',
       rerankerModelId: '',
       fetchedAt: '',
       loading: false,
@@ -229,12 +217,9 @@ describe('DocAiManagerPage', () => {
     })
 
     expect(container.textContent).toContain('Embedding Routing')
-    expect(container.textContent).toContain(
-      'Google Gemini · gemini-embedding-001',
-    )
-    expect(container.textContent).toContain(
-      'Effective route: Google Gemini · gemini-embedding-001',
-    )
+    expect(container.textContent).toContain('Hardcoded route')
+    expect(container.textContent).toContain('Ollama · qwen3-embedding:4b')
+    expect(container.textContent).toContain('Base URL: http://127.0.0.1:11434/v1')
 
     act(() => {
       root.unmount()

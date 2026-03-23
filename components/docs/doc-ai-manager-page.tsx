@@ -15,7 +15,9 @@ import {
   createDefaultAiProviderFormValues,
   formatAiContextWindow,
   getAiProviderDefaultBaseUrl,
-  isEmbeddingCapableAiProviderType,
+  HARDCODED_EMBEDDING_BASE_URL,
+  HARDCODED_EMBEDDING_MODEL,
+  HARDCODED_EMBEDDING_PROVIDER_NAME,
   type AiProviderFormValues,
 } from '@/lib/ai'
 import { useAiModels } from '@/hooks/use-ai-models'
@@ -54,13 +56,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import { Input } from '@/components/ui/input'
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from '@/components/ui/input-group'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -75,7 +75,6 @@ const numberFormatter = new Intl.NumberFormat('en-US')
 const INITIAL_ENABLED_MODEL_SUMMARY_LIMIT = 6
 const INITIAL_PROVIDER_CARD_LIMIT = 4
 const INITIAL_PROVIDER_GROUP_MODEL_LIMIT = 12
-const AUTOMATIC_EMBEDDING_PROVIDER_VALUE = '__automatic__'
 
 function formatFetchedAt(value: string) {
   if (!value) return 'Not synced yet'
@@ -135,9 +134,7 @@ export function DocAiManagerPage() {
     providers: catalogProviders,
     defaultModelId,
     enabledModelIds: initialEnabledModelIds,
-    embeddingProviderId: savedEmbeddingProviderId,
-    embeddingModelId: savedEmbeddingModelId,
-    resolvedEmbeddingProviderId,
+    embeddingModelId: currentEmbeddingModelId,
     resolvedEmbeddingModelId,
     fetchedAt,
     refresh: refreshCatalog,
@@ -181,14 +178,7 @@ export function DocAiManagerPage() {
   )
   const [formError, setFormError] = React.useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = React.useState<ProviderCard | null>(null)
-  const [embeddingProviderId, setEmbeddingProviderId] = React.useState('')
-  const [embeddingModelId, setEmbeddingModelId] = React.useState('')
-  const [savingEmbeddingSettings, setSavingEmbeddingSettings] = React.useState(false)
   const deferredSearch = React.useDeferredValue(search)
-  const savedEmbeddingRouteRef = React.useRef({
-    providerId: '',
-    modelId: '',
-  })
 
   const refreshAll = React.useCallback(async () => {
     await Promise.all([
@@ -239,15 +229,6 @@ export function DocAiManagerPage() {
   const providerCards = React.useMemo(
     () => Array.from(providerCardById.values()),
     [providerCardById],
-  )
-
-  const embeddingProviders = React.useMemo(
-    () =>
-      providerCards.filter(
-        (provider) =>
-          provider.enabled && isEmbeddingCapableAiProviderType(provider.providerType),
-      ),
-    [providerCards],
   )
 
   const filteredModels = React.useMemo(() => {
@@ -371,28 +352,6 @@ export function DocAiManagerPage() {
     : providerCards.slice(0, INITIAL_PROVIDER_CARD_LIMIT)
 
   React.useEffect(() => {
-    const previousSaved = savedEmbeddingRouteRef.current
-    const draftMatchesPreviousSaved =
-      embeddingProviderId === previousSaved.providerId &&
-      embeddingModelId === previousSaved.modelId
-
-    if (draftMatchesPreviousSaved) {
-      setEmbeddingProviderId(savedEmbeddingProviderId)
-      setEmbeddingModelId(savedEmbeddingModelId)
-    }
-
-    savedEmbeddingRouteRef.current = {
-      providerId: savedEmbeddingProviderId,
-      modelId: savedEmbeddingModelId,
-    }
-  }, [
-    embeddingModelId,
-    embeddingProviderId,
-    savedEmbeddingModelId,
-    savedEmbeddingProviderId,
-  ])
-
-  React.useEffect(() => {
     if (providerGroups.length === 0) {
       if (openProviderGroup !== null) {
         setOpenProviderGroup(null)
@@ -439,29 +398,10 @@ export function DocAiManagerPage() {
   const dbProviderCount = providerCards.filter(
     (provider) => provider.source === 'database',
   ).length
-  const selectedEmbeddingProvider =
-    providerCardById.get(embeddingProviderId) ?? null
-  const savedEmbeddingProvider =
-    providerCardById.get(savedEmbeddingProviderId) ?? null
-  const resolvedEmbeddingProvider =
-    providerCardById.get(resolvedEmbeddingProviderId) ?? null
-  const normalizedEmbeddingModelId = embeddingModelId.trim()
-  const isEmbeddingDirty =
-    embeddingProviderId !== savedEmbeddingProviderId ||
-    normalizedEmbeddingModelId !== savedEmbeddingModelId
-  const hasUnavailableSelectedEmbeddingProvider =
-    Boolean(embeddingProviderId) &&
-    !embeddingProviders.some((provider) => provider.id === embeddingProviderId)
-  const savedEmbeddingSummary = formatEmbeddingRouteSummary({
-    providerName: savedEmbeddingProvider?.name ?? null,
-    modelId: savedEmbeddingModelId,
+  const effectiveEmbeddingSummary = formatEmbeddingRouteSummary({
+    providerName: HARDCODED_EMBEDDING_PROVIDER_NAME,
+    modelId: resolvedEmbeddingModelId || currentEmbeddingModelId || HARDCODED_EMBEDDING_MODEL,
   })
-  const effectiveEmbeddingSummary = resolvedEmbeddingModelId
-    ? formatEmbeddingRouteSummary({
-        providerName: resolvedEmbeddingProvider?.name ?? null,
-        modelId: resolvedEmbeddingModelId,
-      })
-    : 'No embedding provider available'
 
   const toggleExpandedProviderModelGroup = React.useCallback((providerId: string) => {
     setExpandedProviderModelGroups((current) =>
@@ -593,113 +533,11 @@ export function DocAiManagerPage() {
     }
   }, [deleteProvider, deleteTarget, refreshCatalog])
 
-  const handleEmbeddingProviderChange = React.useCallback((value: string) => {
-    setEmbeddingProviderId(
-      value === AUTOMATIC_EMBEDDING_PROVIDER_VALUE ? '' : value,
-    )
-  }, [])
-
-  const handleEmbeddingSave = React.useCallback(async () => {
-    setSavingEmbeddingSettings(true)
-
-    try {
-      const response = await fetch('/api/ai/settings/models', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          embeddingProviderId,
-          embeddingModelId: normalizedEmbeddingModelId,
-        }),
-      })
-
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null
-        throw new Error(body?.error || 'Unable to save embedding routing')
-      }
-
-      const saved = (await response.json()) as {
-        embeddingProviderId?: string
-        embeddingModelId?: string
-      }
-
-      setEmbeddingProviderId(saved.embeddingProviderId ?? '')
-      setEmbeddingModelId(saved.embeddingModelId ?? '')
-      await refreshCatalog()
-      toast.success('Embedding routing updated', {
-        description:
-          saved.embeddingProviderId || saved.embeddingModelId
-            ? 'Knowledge indexing and retrieval will use the saved embedding route.'
-            : 'Embeddings now follow the automatic workspace routing.',
-      })
-    } catch (error) {
-      toast.error('Unable to save embedding routing', {
-        description:
-          error instanceof Error ? error.message : 'Please try again.',
-      })
-    } finally {
-      setSavingEmbeddingSettings(false)
-    }
-  }, [embeddingProviderId, normalizedEmbeddingModelId, refreshCatalog])
-
-  const handleEmbeddingRevert = React.useCallback(() => {
-    setEmbeddingProviderId(savedEmbeddingProviderId)
-    setEmbeddingModelId(savedEmbeddingModelId)
-  }, [savedEmbeddingModelId, savedEmbeddingProviderId])
-
-  const handleEmbeddingResetToAutomatic = React.useCallback(async () => {
-    if (!savedEmbeddingProviderId && !savedEmbeddingModelId) {
-      setEmbeddingProviderId('')
-      setEmbeddingModelId('')
-      return
-    }
-
-    setSavingEmbeddingSettings(true)
-
-    try {
-      const response = await fetch('/api/ai/settings/models', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          embeddingProviderId: '',
-          embeddingModelId: '',
-        }),
-      })
-
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null
-        throw new Error(body?.error || 'Unable to reset embedding routing')
-      }
-
-      setEmbeddingProviderId('')
-      setEmbeddingModelId('')
-      await refreshCatalog()
-      toast.success('Embedding routing reset', {
-        description: 'Embeddings now use the automatic workspace route again.',
-      })
-    } catch (error) {
-      toast.error('Unable to reset embedding routing', {
-        description:
-          error instanceof Error ? error.message : 'Please try again.',
-      })
-    } finally {
-      setSavingEmbeddingSettings(false)
-    }
-  }, [refreshCatalog, savedEmbeddingModelId, savedEmbeddingProviderId])
-
   const isRefreshing =
     aiModelsLoading ||
     providersLoading ||
     providerMutating ||
-    savingModelSettings ||
-    savingEmbeddingSettings
+    savingModelSettings
 
   return (
     <div className="flex flex-col gap-6">
@@ -1231,142 +1069,46 @@ export function DocAiManagerPage() {
               <div className="min-w-0">
                 <p className="editorial-section-kicker">Embedding Routing</p>
                 <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-                  Pin the provider and model used for knowledge retrieval
+                  Embeddings run through a fixed local Ollama route
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                  Leave this automatic to follow the first enabled embedding-capable
-                  provider. Set a provider or model here when a workspace needs a stable
-                  embedding route for indexing and search.
+                  Knowledge indexing, graph extraction, and semantic retrieval now always
+                  use the local Ollama embedding model <code>qwen3-embedding:4b</code>.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant={
-                    savedEmbeddingProviderId || savedEmbeddingModelId
-                      ? 'secondary'
-                      : 'outline'
-                  }
-                >
-                  {savedEmbeddingProviderId || savedEmbeddingModelId
-                    ? 'Explicit route'
-                    : 'Automatic route'}
-                </Badge>
-                {resolvedEmbeddingProvider ? (
-                  <Badge variant="outline">
-                    Effective {resolvedEmbeddingProvider.name}
-                  </Badge>
-                ) : null}
+                <Badge variant="secondary">Hardcoded route</Badge>
+                <Badge variant="outline">{HARDCODED_EMBEDDING_PROVIDER_NAME}</Badge>
               </div>
             </div>
           </div>
 
-          <div className="grid gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="embedding-provider-select">Embedding provider</Label>
-                <Select
-                  value={
-                    embeddingProviderId || AUTOMATIC_EMBEDDING_PROVIDER_VALUE
-                  }
-                  onValueChange={handleEmbeddingProviderChange}
-                  disabled={savingEmbeddingSettings}
-                >
-                  <SelectTrigger id="embedding-provider-select" className="h-10">
-                    <SelectValue placeholder="Automatic workspace routing" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={AUTOMATIC_EMBEDDING_PROVIDER_VALUE}>
-                        Automatic workspace routing
-                      </SelectItem>
-                      {hasUnavailableSelectedEmbeddingProvider ? (
-                        <SelectItem value={embeddingProviderId}>
-                          Saved provider unavailable
-                        </SelectItem>
-                      ) : null}
-                      {embeddingProviders.map((provider) => (
-                        <SelectItem key={provider.id} value={provider.id}>
-                          {provider.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Only enabled OpenAI-compatible and Gemini providers can supply
-                  embeddings.
-                </p>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="embedding-model-id">Embedding model ID</Label>
-                <Input
-                  id="embedding-model-id"
-                  value={embeddingModelId}
-                  onChange={(event) => setEmbeddingModelId(event.target.value)}
-                  placeholder="Leave blank to use the provider default"
-                  disabled={savingEmbeddingSettings}
-                />
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Keep this blank to use the selected provider&apos;s default embedding
-                  model. You can also leave the provider on automatic and pin only the
-                  model ID.
-                </p>
-              </div>
-            </div>
-
+          <div className="grid gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-background/70 p-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">Saved</Badge>
-                {savedEmbeddingProvider ? (
-                  <Badge variant="outline">{savedEmbeddingProvider.providerLabel}</Badge>
-                ) : null}
+                <Badge variant="outline">Effective route</Badge>
+                <Badge variant="outline">{HARDCODED_EMBEDDING_PROVIDER_NAME}</Badge>
               </div>
               <p className="text-sm font-medium text-foreground">
-                {savedEmbeddingSummary}
+                {effectiveEmbeddingSummary}
               </p>
               <p className="text-xs leading-5 text-muted-foreground">
-                Effective route: {effectiveEmbeddingSummary}
+                Base URL: {HARDCODED_EMBEDDING_BASE_URL}
               </p>
               <p className="text-xs leading-5 text-muted-foreground">
-                {selectedEmbeddingProvider
-                  ? `Draft provider: ${selectedEmbeddingProvider.name}`
-                  : 'Draft provider: Automatic workspace routing'}
+                Workspace embedding settings are ignored because this route is hardcoded
+                in the server runtime.
               </p>
-              <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
-                {isEmbeddingDirty ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleEmbeddingRevert}
-                    disabled={savingEmbeddingSettings}
-                  >
-                    Revert
-                  </Button>
-                ) : null}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handleEmbeddingResetToAutomatic()}
-                  disabled={
-                    savingEmbeddingSettings ||
-                    (!savedEmbeddingProviderId &&
-                      !savedEmbeddingModelId &&
-                      !embeddingProviderId &&
-                      !embeddingModelId)
-                  }
-                >
-                  Reset to automatic
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => void handleEmbeddingSave()}
-                  disabled={!isEmbeddingDirty || savingEmbeddingSettings}
-                >
-                  Save changes
-                </Button>
-              </div>
             </div>
+
+            <Alert>
+              <BrainCircuit className="h-4 w-4" />
+              <AlertTitle>What this affects</AlertTitle>
+              <AlertDescription>
+                Document chunking, knowledge graph embeddings, and semantic retrieval all
+                use this local Ollama model.
+              </AlertDescription>
+            </Alert>
           </div>
         </section>
       </div>
