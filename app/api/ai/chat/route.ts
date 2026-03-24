@@ -163,6 +163,7 @@ async function postAiChat(request: NextRequest) {
           role: result.ctx.role,
           ragMode,
           mcpPrompt,
+          abortSignal: request.signal,
         })
 
         sendEvent({ type: 'sources', sources })

@@ -1,3 +1,4 @@
+import { DOC_AGENT_RUN_TIMEOUT_MS } from '@/lib/ai-config'
 import type { DocAgentRunSettings } from '@/lib/agent/config'
 import type { AgentConversationMessage } from '@/lib/agent/conversation'
 import { runAgent } from '@/lib/agent/engine'
@@ -17,6 +18,12 @@ interface StartAgentTaskRunInput {
 
 export function startAgentTaskRun(input: StartAgentTaskRunInput) {
   void (async () => {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+      const seconds = Math.max(1, Math.ceil(DOC_AGENT_RUN_TIMEOUT_MS / 1000))
+      controller.abort(`Doc Agent timed out after ${seconds}s`)
+    }, DOC_AGENT_RUN_TIMEOUT_MS)
+
     try {
       await updateAgentTaskStatus(input.workspaceId, input.taskId, 'running', {
         error: null,
@@ -45,6 +52,7 @@ export function startAgentTaskRun(input: StartAgentTaskRunInput) {
         temperature: input.runSettings.temperature,
         conversation: input.conversation,
         initialStepIndex: input.initialStepIndex,
+        signal: controller.signal,
         onStep: (step) => {
           void appendAgentTaskStep(input.workspaceId, input.taskId, step, {
             maxSteps: input.runSettings.maxSteps,
@@ -79,9 +87,14 @@ export function startAgentTaskRun(input: StartAgentTaskRunInput) {
           maxSteps: input.runSettings.maxSteps,
           description: 'Completed',
         },
-      })
+        })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Agent execution failed'
+      const message =
+        controller.signal.aborted && typeof controller.signal.reason === 'string'
+          ? controller.signal.reason
+          : error instanceof Error
+            ? error.message
+            : 'Agent execution failed'
       logServerError(
         'Agent task failed',
         error instanceof Error ? error : new Error(message),
@@ -91,6 +104,8 @@ export function startAgentTaskRun(input: StartAgentTaskRunInput) {
         error: message,
         interaction: null,
       }).catch(() => {})
+    } finally {
+      clearTimeout(timeoutId)
     }
   })()
 }

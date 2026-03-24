@@ -146,6 +146,7 @@ export async function POST(request: NextRequest) {
       ].join('\n'),
       model: selection.modelId,
       temperature: action === 'diagram' ? 0.1 : 0.2,
+      abortSignal: request.signal,
     }
 
     if (action === 'diagram' || streamRequested) {

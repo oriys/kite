@@ -6,9 +6,12 @@
  */
 
 import {
+  AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+  AI_IDEMPOTENT_RETRY_DELAY_MS,
   RAG_SUMMARY_CACHE_TTL_SECONDS,
 } from '@/lib/ai-config'
 import { requestAiTextCompletion, type ResolvedAiProviderConfig } from '@/lib/ai-server'
+import { retryOnRetryableAiError } from '@/lib/ai-error-utils'
 import { estimateTokens } from '@/lib/chunker'
 import { createRagCacheKey, getRagCacheEntry, setRagCacheEntry } from '@/lib/rag/cache'
 import { logServerError } from '@/lib/server-errors'
@@ -119,13 +122,19 @@ async function summarizeDescriptionBatch(input: {
     input.fragments.join(SUMMARY_SEPARATOR),
   ].join('\n')
 
-  const { result } = await requestAiTextCompletion({
-    provider: input.provider.provider,
-    model: input.provider.modelId,
-    temperature: 0.1,
-    systemPrompt: buildSummarySystemPrompt(input.descriptionType),
-    userPrompt,
-  })
+  const { result } = await retryOnRetryableAiError(
+    () => requestAiTextCompletion({
+      provider: input.provider.provider,
+      model: input.provider.modelId,
+      temperature: 0.1,
+      systemPrompt: buildSummarySystemPrompt(input.descriptionType),
+      userPrompt,
+    }),
+    {
+      maxAttempts: AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+      delayMs: AI_IDEMPOTENT_RETRY_DELAY_MS,
+    },
+  )
 
   const summary = result.trim() || input.fragments.join(SUMMARY_SEPARATOR)
   void setRagCacheEntry({

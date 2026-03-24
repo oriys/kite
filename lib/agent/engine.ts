@@ -24,6 +24,7 @@ import { createAgentTools, type AgentToolContext } from './tools'
 import { buildAgentSystemPrompt } from './prompts'
 import type { AgentStepRecord } from '@/lib/schema-agent'
 import type { AgentInteraction, AgentInteractiveToolName } from './shared'
+import { formatAiProviderErrorMessage } from '@/lib/ai-error-utils'
 
 // ─── Public types ────────────────────────────────────────────
 
@@ -189,51 +190,71 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     `[agent] Starting generateText with ${Object.keys(tools).length} tools, maxSteps=${maxSteps}, temperature=${temperature}`,
   )
 
-  const result = await generateText({
-    model,
-    system: systemPrompt,
-    messages: conversation,
-    tools,
-    stopWhen: stepCountIs(maxSteps),
-    temperature,
-    abortSignal: signal,
-    onStepFinish(event) {
-      try {
-        console.log(`[agent] Step ${stepIndex} finished, text length: ${(event.text || '').length}`)
-        const tcList = event.toolCalls ?? []
-        const trList = event.toolResults ?? []
-        const step: AgentStepRecord = {
-          index: stepIndex++,
-          type: tcList.length > 0 ? 'tool_call' : 'response',
-          toolCalls: tcList.length > 0
-            ? tcList.filter(Boolean).map((tc) => {
-                const call = tc!
-                return {
-                  name: call.toolName,
-                  args: ('args' in call ? call.args : (call as Record<string, unknown>).input) as Record<string, unknown>,
-                }
-              })
-            : undefined,
-          text: event.text || undefined,
-        }
-
-        if (step.toolCalls && trList.length > 0) {
-          for (let i = 0; i < step.toolCalls.length; i++) {
-            const toolResult = trList[i]
-            if (toolResult) {
-              const value = 'result' in toolResult ? toolResult.result : (toolResult as Record<string, unknown>).output
-              step.toolCalls[i].result = JSON.stringify(value).slice(0, 2000)
+  const result = await (async () => {
+    try {
+      return await generateText({
+        model,
+        system: systemPrompt,
+        messages: conversation,
+        tools,
+        stopWhen: stepCountIs(maxSteps),
+        temperature,
+        abortSignal: signal,
+        onStepFinish(event) {
+          try {
+            console.log(`[agent] Step ${stepIndex} finished, text length: ${(event.text || '').length}`)
+            const tcList = event.toolCalls ?? []
+            const trList = event.toolResults ?? []
+            const step: AgentStepRecord = {
+              index: stepIndex++,
+              type: tcList.length > 0 ? 'tool_call' : 'response',
+              toolCalls: tcList.length > 0
+                ? tcList.filter(Boolean).map((tc) => {
+                    const call = tc!
+                    return {
+                      name: call.toolName,
+                      args: ('args' in call ? call.args : (call as Record<string, unknown>).input) as Record<string, unknown>,
+                    }
+                  })
+                : undefined,
+              text: event.text || undefined,
             }
-          }
-        }
 
-        steps.push(step)
-        onStep?.(step)
-      } catch (e) {
-        console.error('[agent] Error in onStepFinish:', e)
+            if (step.toolCalls && trList.length > 0) {
+              for (let i = 0; i < step.toolCalls.length; i++) {
+                const toolResult = trList[i]
+                if (toolResult) {
+                  const value = 'result' in toolResult ? toolResult.result : (toolResult as Record<string, unknown>).output
+                  step.toolCalls[i].result = JSON.stringify(value).slice(0, 2000)
+                }
+              }
+            }
+
+            steps.push(step)
+            onStep?.(step)
+          } catch (e) {
+            console.error('[agent] Error in onStepFinish:', e)
+          }
+        },
+      })
+    } catch (error) {
+      if (signal?.aborted && typeof signal.reason === 'string') {
+        throw new Error(signal.reason, {
+          cause: error instanceof Error ? error : undefined,
+        })
       }
-    },
-  })
+
+      throw new Error(
+        formatAiProviderErrorMessage(error, {
+          operation: 'Doc Agent request',
+          service: 'Doc Agent AI service',
+        }),
+        {
+          cause: error instanceof Error ? error : undefined,
+        },
+      )
+    }
+  })()
 
   const conversationResult = parseAgentConversation([
     ...conversation,

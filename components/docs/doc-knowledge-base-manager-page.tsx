@@ -145,8 +145,12 @@ export function DocKnowledgeBaseManagerPage() {
       } else {
         toast.info(`Processing status: ${result.status}`)
       }
-    } catch {
-      toast.error('Failed to process knowledge source')
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to process knowledge source',
+      )
     } finally {
       setProcessingIds((prev) => {
         const next = new Set(prev)

@@ -10,6 +10,8 @@ import {
 import { getAiWorkspaceSettings } from '@/lib/queries/ai'
 import { logServerError } from '@/lib/server-errors'
 import {
+  AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+  AI_IDEMPOTENT_RETRY_DELAY_MS,
   MAX_SUMMARY_SOURCE_LENGTH,
   MAX_SUMMARY_RESULT_LENGTH,
   MAX_SUMMARY_RESULT_CJK_LENGTH,
@@ -17,6 +19,7 @@ import {
   MAX_TITLE_RESULT_CJK_LENGTH,
   TEMPERATURE_SUMMARY,
 } from '@/lib/ai-config'
+import { retryOnRetryableAiError } from '@/lib/ai-error-utils'
 
 function stripMarkdown(content: string) {
   return content
@@ -167,37 +170,43 @@ export async function generateDocumentMetadata(input: {
       throw new Error('No AI model configured for document metadata generation.')
     }
 
-    const completion = await requestAiTextCompletion({
-      provider: selection.provider,
-      model: selection.modelId,
-      systemPrompt: [
-        'You generate document metadata for an editor.',
-        'Return strict JSON only with exactly two string fields: "summary" and "title".',
-        'The summary must be one short sentence for a document list card.',
-        'The title must be short, specific, and useful as a document title.',
-        'Use the same language as the source.',
-        'Avoid markdown, bullets, quotes, labels, and commentary.',
-        'If the existing title should be kept, return an empty string for "title".',
-      ].join(' '),
-      userPrompt: [
-        'Generate document metadata from the content below.',
-        containsCjk(sourceText)
-          ? 'Summary length: 12 to 40 Chinese characters. Title length: under 24 Chinese characters.'
-          : 'Summary length: under 100 characters. Title length: under 72 characters.',
-        shouldGenerateTitle
-          ? 'The current title is missing. Produce both a title and a summary.'
-          : 'The current title is already set. Produce only the summary and leave title as an empty string.',
-        '',
-        '<existingTitle>',
-        title || UNTITLED_DOCUMENT_TITLE,
-        '</existingTitle>',
-        '',
-        '<content>',
-        sourceText,
-        '</content>',
-      ].join('\n'),
-      temperature: TEMPERATURE_SUMMARY,
-    })
+    const completion = await retryOnRetryableAiError(
+      () => requestAiTextCompletion({
+        provider: selection.provider,
+        model: selection.modelId,
+        systemPrompt: [
+          'You generate document metadata for an editor.',
+          'Return strict JSON only with exactly two string fields: "summary" and "title".',
+          'The summary must be one short sentence for a document list card.',
+          'The title must be short, specific, and useful as a document title.',
+          'Use the same language as the source.',
+          'Avoid markdown, bullets, quotes, labels, and commentary.',
+          'If the existing title should be kept, return an empty string for "title".',
+        ].join(' '),
+        userPrompt: [
+          'Generate document metadata from the content below.',
+          containsCjk(sourceText)
+            ? 'Summary length: 12 to 40 Chinese characters. Title length: under 24 Chinese characters.'
+            : 'Summary length: under 100 characters. Title length: under 72 characters.',
+          shouldGenerateTitle
+            ? 'The current title is missing. Produce both a title and a summary.'
+            : 'The current title is already set. Produce only the summary and leave title as an empty string.',
+          '',
+          '<existingTitle>',
+          title || UNTITLED_DOCUMENT_TITLE,
+          '</existingTitle>',
+          '',
+          '<content>',
+          sourceText,
+          '</content>',
+        ].join('\n'),
+        temperature: TEMPERATURE_SUMMARY,
+      }),
+      {
+        maxAttempts: AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+        delayMs: AI_IDEMPOTENT_RETRY_DELAY_MS,
+      },
+    )
 
     const structured = extractStructuredMetadata(completion.result)
 

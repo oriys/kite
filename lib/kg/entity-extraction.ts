@@ -6,6 +6,11 @@
  */
 
 import { requestAiTextCompletion, type ResolvedAiProviderConfig } from '@/lib/ai-server'
+import {
+  AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+  AI_IDEMPOTENT_RETRY_DELAY_MS,
+} from '@/lib/ai-config'
+import { retryOnRetryableAiError } from '@/lib/ai-error-utils'
 import { logServerError } from '@/lib/server-errors'
 
 export interface ExtractedEntity {
@@ -138,16 +143,22 @@ export async function extractEntitiesFromChunk(input: {
   modelId: string
 }): Promise<ExtractionResult> {
   try {
-    const { result } = await requestAiTextCompletion({
-      provider: input.provider,
-      model: input.modelId,
-      temperature: 0.0,
-      systemPrompt: ENTITY_EXTRACTION_SYSTEM_PROMPT,
-      userPrompt: ENTITY_EXTRACTION_USER_PROMPT.replace(
-        '{content}',
-        input.chunkText.slice(0, 8000),
-      ),
-    })
+    const { result } = await retryOnRetryableAiError(
+      () => requestAiTextCompletion({
+        provider: input.provider,
+        model: input.modelId,
+        temperature: 0.0,
+        systemPrompt: ENTITY_EXTRACTION_SYSTEM_PROMPT,
+        userPrompt: ENTITY_EXTRACTION_USER_PROMPT.replace(
+          '{content}',
+          input.chunkText.slice(0, 8000),
+        ),
+      }),
+      {
+        maxAttempts: AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+        delayMs: AI_IDEMPOTENT_RETRY_DELAY_MS,
+      },
+    )
 
     return parseExtractionResponse(result)
   } catch (error) {

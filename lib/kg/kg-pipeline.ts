@@ -154,12 +154,10 @@ export async function buildKnowledgeGraph(input: {
             newDescription: description,
             entityName: data.name,
             existingMentionCount: entity.mentionCount,
-            provider: input.embeddingProvider
-            ? {
-                provider: input.embeddingProvider.provider,
-                modelId: input.embeddingProvider.modelId,
-              }
-            : undefined,
+            provider: {
+              provider: input.provider,
+              modelId: input.modelId,
+            },
           })
           const mergedAllSourceChunkIds = mergeSourceIds(
             entity.allSourceChunkIds || entity.sourceChunkIds,
@@ -286,12 +284,10 @@ export async function buildKnowledgeGraph(input: {
           newDescription: description,
           relationName: `${data.sourceEntityName} -> ${data.targetEntityName}`,
           existingMentionCount: rel.mentionCount,
-          provider: input.embeddingProvider
-            ? {
-                provider: input.embeddingProvider.provider,
-                modelId: input.embeddingProvider.modelId,
-              }
-            : undefined,
+          provider: {
+            provider: input.provider,
+            modelId: input.modelId,
+          },
         })
         const mergedAllSourceChunkIds = mergeSourceIds(
           rel.allSourceChunkIds || rel.sourceChunkIds,

@@ -2200,6 +2200,7 @@ export async function streamChatResponse(input: {
     name: string
     arguments?: Record<string, string>
   }
+  abortSignal?: AbortSignal
 }) {
   // 1. Get chat history — preserve sources on each message for P1/P2
   const history = await getChatHistory(input.sessionId, input.workspaceId)
@@ -2350,6 +2351,7 @@ export async function streamChatResponse(input: {
     temperature: TEMPERATURE_CHAT,
     tools: mcpTools,
     maxSteps: mcpTools ? MAX_MCP_TOOL_STEPS : undefined,
+    abortSignal: input.abortSignal,
   })
 
   return {

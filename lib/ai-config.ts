@@ -47,6 +47,30 @@ export const DEFAULT_RERANKER_MODEL = envStr(
 export const TARGET_CHUNK_TOKENS = envInt('AI_TARGET_CHUNK_TOKENS', 500)
 export const OVERLAP_TOKENS = envInt('AI_OVERLAP_TOKENS', 50)
 export const EMBEDDING_BATCH_SIZE = envInt('AI_EMBEDDING_BATCH_SIZE', 20)
+export const EMBEDDING_REQUEST_BATCH_SIZE = envInt(
+  'AI_EMBEDDING_REQUEST_BATCH_SIZE',
+  5,
+)
+export const AI_PROVIDER_REQUEST_TIMEOUT_MS = envInt(
+  'AI_PROVIDER_REQUEST_TIMEOUT_MS',
+  60_000,
+)
+export const AI_RERANK_REQUEST_TIMEOUT_MS = envInt(
+  'AI_RERANK_REQUEST_TIMEOUT_MS',
+  30_000,
+)
+export const AI_RERANK_REQUEST_BATCH_SIZE = envInt(
+  'AI_RERANK_REQUEST_BATCH_SIZE',
+  8,
+)
+export const AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS = envInt(
+  'AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS',
+  2,
+)
+export const AI_IDEMPOTENT_RETRY_DELAY_MS = envInt(
+  'AI_IDEMPOTENT_RETRY_DELAY_MS',
+  250,
+)
 
 // ---------------------------------------------------------------------------
 // RAG query modes & cache
@@ -153,6 +177,10 @@ export const MAX_RERANK_DOCUMENT_CHARS = envInt(
 // Chat
 // ---------------------------------------------------------------------------
 export const MAX_HISTORY_MESSAGES = envInt('AI_MAX_HISTORY_MESSAGES', 10)
+export const DOC_AGENT_RUN_TIMEOUT_MS = envInt(
+  'AI_DOC_AGENT_RUN_TIMEOUT_MS',
+  5 * 60_000,
+)
 
 // ---------------------------------------------------------------------------
 // Summarisation

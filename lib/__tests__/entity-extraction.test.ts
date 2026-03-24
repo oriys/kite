@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 vi.mock('@/lib/ai-server', () => ({
   requestAiTextCompletion: vi.fn(),
@@ -13,11 +13,21 @@ vi.mock('@/lib/chunker', () => ({
 }))
 
 import {
+  extractEntitiesFromChunk,
   parseExtractionResponse,
   normalizeEntityName,
   _ENTITY_EXTRACTION_SYSTEM_PROMPT,
 } from '../kg/entity-extraction'
 import { mergeSourceIds, mergeEntityDescriptions } from '../kg/entity-merging'
+import { requestAiTextCompletion } from '@/lib/ai-server'
+import { logServerError } from '@/lib/server-errors'
+
+const requestAiTextCompletionMock = vi.mocked(requestAiTextCompletion)
+const logServerErrorMock = vi.mocked(logServerError)
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 describe('parseExtractionResponse', () => {
   it('parses well-formatted entities and relations', () => {
@@ -287,5 +297,105 @@ describe('mergeEntityDescriptions', () => {
       existingMentionCount: 10,
     })
     expect(result.length).toBeLessThanOrEqual(4000)
+  })
+
+  it('retries summarization after transient AI failures', async () => {
+    requestAiTextCompletionMock
+      .mockRejectedValueOnce(
+        new Error('Failed after 3 attempts. Last error: Cannot connect to API: Headers Timeout Error')
+      )
+      .mockResolvedValueOnce({
+        result: 'Merged description summary',
+        model: 'test-model',
+      })
+
+    const result = await mergeEntityDescriptions({
+      workspaceId: 'ws_test',
+      existingDescription: 'A'.repeat(3000),
+      newDescription: 'B'.repeat(3000),
+      entityName: 'Foo',
+      existingMentionCount: 10,
+      provider: {
+        provider: {
+          id: 'provider-1',
+          name: 'Provider',
+          providerType: 'openai_compatible',
+          baseUrl: 'http://localhost:11434/v1',
+          apiKey: 'test-key',
+          defaultModelId: 'model-1',
+          enabled: true,
+          source: 'env',
+        },
+        modelId: 'model-1',
+      },
+    })
+
+    expect(result).toBe('Merged description summary')
+    expect(requestAiTextCompletionMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('extractEntitiesFromChunk', () => {
+  it('retries transient AI failures before parsing the response', async () => {
+    requestAiTextCompletionMock
+      .mockRejectedValueOnce(
+        new Error('Failed after 3 attempts. Last error: Cannot connect to API: Headers Timeout Error')
+      )
+      .mockResolvedValueOnce({
+        result: 'ENTITY|Order|resource|Represents an order',
+        model: 'test-model',
+      })
+
+    const result = await extractEntitiesFromChunk({
+      chunkText: 'Order data',
+      provider: {
+        id: 'provider-1',
+        name: 'Provider',
+        providerType: 'openai_compatible',
+        baseUrl: 'http://localhost:11434/v1',
+        apiKey: 'test-key',
+        defaultModelId: 'model-1',
+        enabled: true,
+        source: 'env',
+      },
+      modelId: 'model-1',
+    })
+
+    expect(result.entities).toEqual([
+      {
+        name: 'Order',
+        entityType: 'resource',
+        description: 'Represents an order',
+      },
+    ])
+    expect(requestAiTextCompletionMock).toHaveBeenCalledTimes(2)
+    expect(logServerErrorMock).not.toHaveBeenCalled()
+  })
+
+  it('logs and falls back to empty extraction after repeated failures', async () => {
+    requestAiTextCompletionMock.mockRejectedValue(
+      new Error('Failed after 3 attempts. Last error: Cannot connect to API: Headers Timeout Error')
+    )
+
+    const result = await extractEntitiesFromChunk({
+      chunkText: 'Order data',
+      provider: {
+        id: 'provider-1',
+        name: 'Provider',
+        providerType: 'openai_compatible',
+        baseUrl: 'http://localhost:11434/v1',
+        apiKey: 'test-key',
+        defaultModelId: 'model-1',
+        enabled: true,
+        source: 'env',
+      },
+      modelId: 'model-1',
+    })
+
+    expect(result).toEqual({
+      entities: [],
+      relations: [],
+    })
+    expect(logServerErrorMock).toHaveBeenCalledTimes(1)
   })
 })

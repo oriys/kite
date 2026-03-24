@@ -21,7 +21,13 @@ import {
 import {
   TEMPERATURE_CHAT,
   TEMPERATURE_COMPLETION,
+  AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+  AI_IDEMPOTENT_RETRY_DELAY_MS,
+  AI_PROVIDER_REQUEST_TIMEOUT_MS,
+  AI_RERANK_REQUEST_BATCH_SIZE,
+  AI_RERANK_REQUEST_TIMEOUT_MS,
   DEFAULT_EMBEDDING_MODEL,
+  EMBEDDING_REQUEST_BATCH_SIZE,
   EMBEDDING_VECTOR_DIMENSION,
 } from '@/lib/ai-config'
 import {
@@ -30,6 +36,12 @@ import {
   type ResolvedAiProviderConfig,
 } from './ai-server-types'
 import { getNumber } from './ai-server-helpers'
+import {
+  createTimeoutAbortSignal,
+  formatAiProviderErrorMessage,
+  isRetryableAiProviderError,
+  retryOnRetryableAiError,
+} from './ai-error-utils'
 
 function normalizeGeminiModelId(modelId: string) {
   return modelId.startsWith('models/') ? modelId.slice('models/'.length) : modelId
@@ -42,6 +54,151 @@ function getEmbeddingProviderOptions(provider: ResolvedAiProviderConfig) {
     google: {
       outputDimensionality: EMBEDDING_VECTOR_DIMENSION,
     } satisfies GoogleEmbeddingModelOptions,
+  }
+}
+
+async function requestEmbeddingBatch(input: {
+  model: EmbeddingModel
+  texts: string[]
+  abortSignal?: AbortSignal
+  providerOptions?: ReturnType<typeof getEmbeddingProviderOptions>
+}) {
+  const { embeddings } = await embedMany({
+    model: input.model,
+    values: input.texts,
+    abortSignal: input.abortSignal,
+    ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
+  })
+
+  return embeddings
+}
+
+async function requestEmbeddingBatchWithAdaptiveSplitting(input: {
+  model: EmbeddingModel
+  texts: string[]
+  abortSignal?: AbortSignal
+  providerOptions?: ReturnType<typeof getEmbeddingProviderOptions>
+}): Promise<number[][]> {
+  try {
+    return await requestEmbeddingBatch(input)
+  } catch (error) {
+    if (input.texts.length <= 1 || !isRetryableAiProviderError(error)) {
+      throw error
+    }
+
+    const midpoint = Math.ceil(input.texts.length / 2)
+    const leftEmbeddings = await requestEmbeddingBatchWithAdaptiveSplitting({
+      ...input,
+      texts: input.texts.slice(0, midpoint),
+    })
+    const rightEmbeddings = await requestEmbeddingBatchWithAdaptiveSplitting({
+      ...input,
+      texts: input.texts.slice(midpoint),
+    })
+
+    return [...leftEmbeddings, ...rightEmbeddings]
+  }
+}
+
+interface RerankCandidate {
+  index: number
+  document: string
+}
+
+async function requestRerankBatch(input: {
+  endpoint: string
+  provider: ResolvedAiProviderConfig
+  model: string
+  query: string
+  candidates: RerankCandidate[]
+  abortSignal?: AbortSignal
+}) {
+  const response = await fetch(input.endpoint, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${input.provider.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: input.model,
+      query: input.query,
+      documents: input.candidates.map((candidate) => candidate.document),
+      top_n: input.candidates.length,
+      return_documents: false,
+    }),
+    signal: input.abortSignal,
+  })
+
+  const payload = (await response.json().catch(() => null)) as OpenAiCompatibleRerankResponse | null
+  if (!response.ok) {
+    const message =
+      payload?.error?.message ||
+      `The reranker request failed with status ${response.status}.`
+    throw new AiCompletionError(message, response.status)
+  }
+
+  const rows = Array.isArray(payload?.results)
+    ? payload.results
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : []
+
+  return rows
+    .map((row) => {
+      if (!row || typeof row !== 'object') return null
+      const record = row as Record<string, unknown>
+      const localIndex = getNumber(record.index)
+      const relevanceScore =
+        getNumber(record.relevance_score) ??
+        getNumber(record.score) ??
+        getNumber(record.relevanceScore)
+
+      if (localIndex === null || relevanceScore === null) return null
+      const candidate = input.candidates[localIndex]
+      if (!candidate) return null
+
+      return {
+        index: candidate.index,
+        relevanceScore,
+      }
+    })
+    .filter(
+      (result): result is { index: number; relevanceScore: number } => result !== null,
+    )
+}
+
+async function requestRerankBatchWithAdaptiveSplitting(input: {
+  endpoint: string
+  provider: ResolvedAiProviderConfig
+  model: string
+  query: string
+  candidates: RerankCandidate[]
+  abortSignal?: AbortSignal
+}): Promise<Array<{ index: number; relevanceScore: number }>> {
+  try {
+    return await retryOnRetryableAiError(
+      () => requestRerankBatch(input),
+      {
+        maxAttempts: AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+        delayMs: AI_IDEMPOTENT_RETRY_DELAY_MS,
+      },
+    )
+  } catch (error) {
+    if (input.candidates.length <= 1 || !isRetryableAiProviderError(error)) {
+      throw error
+    }
+
+    const midpoint = Math.ceil(input.candidates.length / 2)
+    const leftResults = await requestRerankBatchWithAdaptiveSplitting({
+      ...input,
+      candidates: input.candidates.slice(0, midpoint),
+    })
+    const rightResults = await requestRerankBatchWithAdaptiveSplitting({
+      ...input,
+      candidates: input.candidates.slice(midpoint),
+    })
+
+    return [...leftResults, ...rightResults]
   }
 }
 
@@ -111,18 +268,24 @@ export async function requestAiTextCompletion(input: {
   userPrompt: string
   model: string
   temperature?: number
+  abortSignal?: AbortSignal
 }) {
   if (!input.provider.apiKey.trim()) {
     throw new AiCompletionError('This AI provider is missing an API key.', 503)
   }
 
   try {
+    const abortSignal = createTimeoutAbortSignal(
+      AI_PROVIDER_REQUEST_TIMEOUT_MS,
+      input.abortSignal,
+    )
     const model = createLanguageModel(input.provider, input.model)
     const { text } = await generateText({
       model,
       system: input.systemPrompt,
       prompt: input.userPrompt,
       temperature: input.temperature ?? TEMPERATURE_COMPLETION,
+      abortSignal,
     })
 
     if (!text.trim()) {
@@ -136,7 +299,13 @@ export async function requestAiTextCompletion(input: {
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
     console.error('AI provider error:', error)
-    throw new AiCompletionError('AI service temporarily unavailable', 502)
+    throw new AiCompletionError(
+      formatAiProviderErrorMessage(error, {
+        operation: 'AI text generation request',
+        service: 'AI text generation service',
+      }),
+      502,
+    )
   }
 }
 
@@ -146,18 +315,24 @@ export async function requestAiTextCompletionStream(input: {
   userPrompt: string
   model: string
   temperature?: number
+  abortSignal?: AbortSignal
 }) {
   if (!input.provider.apiKey.trim()) {
     throw new AiCompletionError('This AI provider is missing an API key.', 503)
   }
 
   try {
+    const abortSignal = createTimeoutAbortSignal(
+      AI_PROVIDER_REQUEST_TIMEOUT_MS,
+      input.abortSignal,
+    )
     const model = createLanguageModel(input.provider, input.model)
     const result = streamText({
       model,
       system: input.systemPrompt,
       prompt: input.userPrompt,
       temperature: input.temperature ?? TEMPERATURE_COMPLETION,
+      abortSignal,
     })
 
     const encoder = new TextEncoder()
@@ -170,7 +345,15 @@ export async function requestAiTextCompletionStream(input: {
           }
           controller.close()
         } catch (error) {
-          controller.error(error)
+          controller.error(
+            new AiCompletionError(
+              formatAiProviderErrorMessage(error, {
+                operation: 'AI text generation stream request',
+                service: 'AI text generation service',
+              }),
+              502,
+            ),
+          )
         }
       },
     })
@@ -182,7 +365,13 @@ export async function requestAiTextCompletionStream(input: {
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
     console.error('AI provider error:', error)
-    throw new AiCompletionError('AI service temporarily unavailable', 502)
+    throw new AiCompletionError(
+      formatAiProviderErrorMessage(error, {
+        operation: 'AI text generation stream request',
+        service: 'AI text generation service',
+      }),
+      502,
+    )
   }
 }
 
@@ -203,18 +392,42 @@ export async function requestAiEmbedding(input: {
   try {
     const model = createEmbeddingModel(input.provider, input.model)
     const providerOptions = getEmbeddingProviderOptions(input.provider)
-    const { embeddings } = await embedMany({
-      model,
-      values: input.texts,
-      abortSignal: input.abortSignal,
-      ...(providerOptions ? { providerOptions } : {}),
-    })
+    const requestBatchSize = Math.max(1, EMBEDDING_REQUEST_BATCH_SIZE)
+    const abortSignal = createTimeoutAbortSignal(
+      AI_PROVIDER_REQUEST_TIMEOUT_MS,
+      input.abortSignal,
+    )
+    const embeddings: number[][] = []
+
+    for (let i = 0; i < input.texts.length; i += requestBatchSize) {
+      const batchTexts = input.texts.slice(i, i + requestBatchSize)
+      const batchEmbeddings = await requestEmbeddingBatchWithAdaptiveSplitting({
+        model,
+        texts: batchTexts,
+        abortSignal,
+        providerOptions,
+      })
+
+      if (batchEmbeddings.length !== batchTexts.length) {
+        throw new Error(
+          `Embedding count mismatch: expected ${batchTexts.length}, got ${batchEmbeddings.length}`,
+        )
+      }
+
+      embeddings.push(...batchEmbeddings)
+    }
 
     return { embeddings }
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
     console.error('AI embedding error:', error)
-    throw new AiCompletionError('AI service temporarily unavailable', 502)
+    throw new AiCompletionError(
+      formatAiProviderErrorMessage(error, {
+        operation: 'AI embedding request',
+        service: 'AI embedding service',
+      }),
+      502,
+    )
   }
 }
 
@@ -224,6 +437,7 @@ export async function requestAiRerank(input: {
   query: string
   documents: string[]
   topN?: number
+  abortSignal?: AbortSignal
 }) {
   if (!input.provider.apiKey.trim()) {
     throw new AiCompletionError('This AI provider is missing an API key.', 503)
@@ -241,66 +455,55 @@ export async function requestAiRerank(input: {
   }
 
   const endpoint = `${input.provider.baseUrl.replace(/\/$/, '')}/rerank`
+  const abortSignal = createTimeoutAbortSignal(
+    AI_RERANK_REQUEST_TIMEOUT_MS,
+    input.abortSignal,
+  )
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        Authorization: `Bearer ${input.provider.apiKey}`,
-      },
-      body: JSON.stringify({
+    const requestBatchSize = Math.max(1, AI_RERANK_REQUEST_BATCH_SIZE)
+    const candidates = input.documents.map((document, index) => ({
+      index,
+      document,
+    }))
+    const results: Array<{ index: number; relevanceScore: number }> = []
+
+    for (let i = 0; i < candidates.length; i += requestBatchSize) {
+      const batchCandidates = candidates.slice(i, i + requestBatchSize)
+      const batchResults = await requestRerankBatchWithAdaptiveSplitting({
+        endpoint,
+        provider: input.provider,
         model: input.model,
         query: input.query,
-        documents: input.documents,
-        top_n: Math.max(1, Math.min(input.topN ?? input.documents.length, input.documents.length)),
-        return_documents: false,
-      }),
-    })
-
-    const payload = (await response.json().catch(() => null)) as OpenAiCompatibleRerankResponse | null
-    if (!response.ok) {
-      const message =
-        payload?.error?.message ||
-        `The reranker request failed with status ${response.status}.`
-      throw new AiCompletionError(message, response.status)
+        candidates: batchCandidates,
+        abortSignal,
+      })
+      results.push(...batchResults)
     }
 
-    const rows = Array.isArray(payload?.results)
-      ? payload.results
-      : Array.isArray(payload?.data)
-        ? payload.data
-        : []
+    const topN = Math.max(
+      1,
+      Math.min(input.topN ?? input.documents.length, input.documents.length),
+    )
 
-    const results = rows
-      .map((row) => {
-        if (!row || typeof row !== 'object') return null
-        const record = row as Record<string, unknown>
-        const index = getNumber(record.index)
-        const relevanceScore =
-          getNumber(record.relevance_score) ??
-          getNumber(record.score) ??
-          getNumber(record.relevanceScore)
-
-        if (index === null || relevanceScore === null) return null
-        if (index < 0 || index >= input.documents.length) return null
-
-        return {
-          index,
-          relevanceScore,
-        }
-      })
-      .filter((result): result is { index: number; relevanceScore: number } => result !== null)
-      .sort(
-        (left, right) =>
-          right.relevanceScore - left.relevanceScore || left.index - right.index,
-      )
-
-    return { results }
+    return {
+      results: results
+        .sort(
+          (left, right) =>
+            right.relevanceScore - left.relevanceScore || left.index - right.index,
+        )
+        .slice(0, topN),
+    }
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
     console.error('AI reranker error:', error)
-    throw new AiCompletionError('AI service temporarily unavailable', 502)
+    throw new AiCompletionError(
+      formatAiProviderErrorMessage(error, {
+        operation: 'AI rerank request',
+        service: 'AI rerank service',
+      }),
+      502,
+    )
   }
 }
 
@@ -312,12 +515,17 @@ export async function requestAiChatCompletionStream(input: {
   temperature?: number
   tools?: ToolSet
   maxSteps?: number
+  abortSignal?: AbortSignal
 }) {
   if (!input.provider.apiKey.trim()) {
     throw new AiCompletionError('This AI provider is missing an API key.', 503)
   }
 
   try {
+    const abortSignal = createTimeoutAbortSignal(
+      AI_PROVIDER_REQUEST_TIMEOUT_MS,
+      input.abortSignal,
+    )
     const model = createLanguageModel(input.provider, input.model)
     const toolNames = new Set<string>()
     let resolveAttribution: (
@@ -341,6 +549,7 @@ export async function requestAiChatCompletionStream(input: {
       system: input.systemPrompt,
       messages: input.messages,
       temperature: input.temperature ?? TEMPERATURE_CHAT,
+      abortSignal,
       ...(input.tools ? { tools: input.tools, maxSteps: input.maxSteps ?? 1 } : {}),
       onStepFinish(step) {
         for (const toolName of collectMcpToolNamesFromSteps([step])) {
@@ -383,7 +592,15 @@ export async function requestAiChatCompletionStream(input: {
           }
           controller.close()
         } catch (error) {
-          controller.error(error)
+          controller.error(
+            new AiCompletionError(
+              formatAiProviderErrorMessage(error, {
+                operation: 'AI chat request',
+                service: 'AI chat service',
+              }),
+              502,
+            ),
+          )
         }
       },
     })
@@ -396,7 +613,13 @@ export async function requestAiChatCompletionStream(input: {
   } catch (error) {
     if (error instanceof AiCompletionError) throw error
     console.error('AI chat provider error:', error)
-    throw new AiCompletionError('AI service temporarily unavailable', 502)
+    throw new AiCompletionError(
+      formatAiProviderErrorMessage(error, {
+        operation: 'AI chat request',
+        service: 'AI chat service',
+      }),
+      502,
+    )
   }
 }
 
