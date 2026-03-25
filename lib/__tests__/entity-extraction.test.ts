@@ -8,6 +8,11 @@ vi.mock('@/lib/server-errors', () => ({
   logServerError: vi.fn(),
 }))
 
+vi.mock('@/lib/ai-config', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/ai-config')>('@/lib/ai-config')
+  return { ...actual, AI_IDEMPOTENT_RETRY_DELAY_MS: 0 }
+})
+
 vi.mock('@/lib/chunker', () => ({
   estimateTokens: (text: string) => Math.ceil(text.length / 4),
 }))

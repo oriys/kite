@@ -63,10 +63,14 @@ async function requestEmbeddingBatch(input: {
   abortSignal?: AbortSignal
   providerOptions?: ReturnType<typeof getEmbeddingProviderOptions>
 }) {
+  const abortSignal = createTimeoutAbortSignal(
+    AI_PROVIDER_REQUEST_TIMEOUT_MS,
+    input.abortSignal,
+  )
   const { embeddings } = await embedMany({
     model: input.model,
     values: input.texts,
-    abortSignal: input.abortSignal,
+    abortSignal,
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
   })
 
@@ -80,7 +84,13 @@ async function requestEmbeddingBatchWithAdaptiveSplitting(input: {
   providerOptions?: ReturnType<typeof getEmbeddingProviderOptions>
 }): Promise<number[][]> {
   try {
-    return await requestEmbeddingBatch(input)
+    return await retryOnRetryableAiError(
+      () => requestEmbeddingBatch(input),
+      {
+        maxAttempts: AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS,
+        delayMs: AI_IDEMPOTENT_RETRY_DELAY_MS,
+      },
+    )
   } catch (error) {
     if (input.texts.length <= 1 || !isRetryableAiProviderError(error)) {
       throw error
@@ -113,6 +123,10 @@ async function requestRerankBatch(input: {
   candidates: RerankCandidate[]
   abortSignal?: AbortSignal
 }) {
+  const abortSignal = createTimeoutAbortSignal(
+    AI_RERANK_REQUEST_TIMEOUT_MS,
+    input.abortSignal,
+  )
   const response = await fetch(input.endpoint, {
     method: 'POST',
     headers: {
@@ -126,7 +140,7 @@ async function requestRerankBatch(input: {
       top_n: input.candidates.length,
       return_documents: false,
     }),
-    signal: input.abortSignal,
+    signal: abortSignal,
   })
 
   const payload = (await response.json().catch(() => null)) as OpenAiCompatibleRerankResponse | null
@@ -393,10 +407,6 @@ export async function requestAiEmbedding(input: {
     const model = createEmbeddingModel(input.provider, input.model)
     const providerOptions = getEmbeddingProviderOptions(input.provider)
     const requestBatchSize = Math.max(1, EMBEDDING_REQUEST_BATCH_SIZE)
-    const abortSignal = createTimeoutAbortSignal(
-      AI_PROVIDER_REQUEST_TIMEOUT_MS,
-      input.abortSignal,
-    )
     const embeddings: number[][] = []
 
     for (let i = 0; i < input.texts.length; i += requestBatchSize) {
@@ -404,7 +414,7 @@ export async function requestAiEmbedding(input: {
       const batchEmbeddings = await requestEmbeddingBatchWithAdaptiveSplitting({
         model,
         texts: batchTexts,
-        abortSignal,
+        abortSignal: input.abortSignal,
         providerOptions,
       })
 
@@ -455,10 +465,6 @@ export async function requestAiRerank(input: {
   }
 
   const endpoint = `${input.provider.baseUrl.replace(/\/$/, '')}/rerank`
-  const abortSignal = createTimeoutAbortSignal(
-    AI_RERANK_REQUEST_TIMEOUT_MS,
-    input.abortSignal,
-  )
 
   try {
     const requestBatchSize = Math.max(1, AI_RERANK_REQUEST_BATCH_SIZE)
@@ -476,7 +482,7 @@ export async function requestAiRerank(input: {
         model: input.model,
         query: input.query,
         candidates: batchCandidates,
-        abortSignal,
+        abortSignal: input.abortSignal,
       })
       results.push(...batchResults)
     }

@@ -49,15 +49,15 @@ export const OVERLAP_TOKENS = envInt('AI_OVERLAP_TOKENS', 50)
 export const EMBEDDING_BATCH_SIZE = envInt('AI_EMBEDDING_BATCH_SIZE', 20)
 export const EMBEDDING_REQUEST_BATCH_SIZE = envInt(
   'AI_EMBEDDING_REQUEST_BATCH_SIZE',
-  5,
+  2,
 )
 export const AI_PROVIDER_REQUEST_TIMEOUT_MS = envInt(
   'AI_PROVIDER_REQUEST_TIMEOUT_MS',
-  60_000,
+  300_000,
 )
 export const AI_RERANK_REQUEST_TIMEOUT_MS = envInt(
   'AI_RERANK_REQUEST_TIMEOUT_MS',
-  30_000,
+  120_000,
 )
 export const AI_RERANK_REQUEST_BATCH_SIZE = envInt(
   'AI_RERANK_REQUEST_BATCH_SIZE',
@@ -65,11 +65,11 @@ export const AI_RERANK_REQUEST_BATCH_SIZE = envInt(
 )
 export const AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS = envInt(
   'AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS',
-  2,
+  4,
 )
 export const AI_IDEMPOTENT_RETRY_DELAY_MS = envInt(
   'AI_IDEMPOTENT_RETRY_DELAY_MS',
-  250,
+  2_000,
 )
 
 // ---------------------------------------------------------------------------

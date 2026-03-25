@@ -28,6 +28,11 @@ vi.mock('@/lib/server-errors', () => ({
   logServerError: logServerErrorMock,
 }))
 
+vi.mock('@/lib/ai-config', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/ai-config')>('@/lib/ai-config')
+  return { ...actual, AI_IDEMPOTENT_RETRY_DELAY_MS: 0 }
+})
+
 import { generateDocumentMetadata } from '../document-summary'
 
 const provider = {

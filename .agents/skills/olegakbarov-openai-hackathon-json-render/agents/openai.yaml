@@ -1,0 +1,4 @@
+interface:
+  display_name: "JSON Render"
+  short_description: "Design json-render catalogs, registries, and streaming UIs"
+  default_prompt: "Help me build or debug a json-render integration."

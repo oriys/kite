@@ -24,6 +24,15 @@ vi.mock('ai', () => ({
   streamText: streamTextMock,
 }))
 
+vi.mock('@/lib/ai-config', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/ai-config')>('@/lib/ai-config')
+  return {
+    ...actual,
+    AI_IDEMPOTENT_RETRY_DELAY_MS: 0,
+    EMBEDDING_REQUEST_BATCH_SIZE: 5,
+  }
+})
+
 describe('ai-server-sdk embedding behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -135,18 +144,25 @@ describe('ai-server-sdk embedding behavior', () => {
         values: secondBatchTexts,
       }),
     )
+    expect(embedManyMock.mock.calls[0]?.[0]?.abortSignal).not.toBe(
+      embedManyMock.mock.calls[1]?.[0]?.abortSignal
+    )
   })
 
   it('splits retryable embedding batches into smaller requests', async () => {
     const { requestAiEmbedding, resolveEmbeddingProvider } = await import(
       '@/lib/ai-server-sdk'
     )
+    const { AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS } = await import('@/lib/ai-config')
     const config = await resolveEmbeddingProvider('ws-1')
 
+    const retryableError = new Error(
+      'Failed after 3 attempts. Last error: Cannot connect to API: Headers Timeout Error'
+    )
+    for (let i = 0; i < AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS; i++) {
+      embedManyMock.mockRejectedValueOnce(retryableError)
+    }
     embedManyMock
-      .mockRejectedValueOnce(
-        new Error('Failed after 3 attempts. Last error: Cannot connect to API: Headers Timeout Error')
-      )
       .mockResolvedValueOnce({
         embeddings: [
           [0.1, 0.2, 0.3],
@@ -174,20 +190,24 @@ describe('ai-server-sdk embedding behavior', () => {
         [1.0, 1.1, 1.2],
       ],
     })
+    // First MAX_ATTEMPTS calls are retries of the full batch
+    for (let i = 1; i <= AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS; i++) {
+      expect(embedManyMock).toHaveBeenNthCalledWith(
+        i,
+        expect.objectContaining({
+          values: ['a', 'b', 'c', 'd'],
+        }),
+      )
+    }
+    // After exhausting retries, adaptive split into two halves
     expect(embedManyMock).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        values: ['a', 'b', 'c', 'd'],
-      }),
-    )
-    expect(embedManyMock).toHaveBeenNthCalledWith(
-      2,
+      AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS + 1,
       expect.objectContaining({
         values: ['a', 'b'],
       }),
     )
     expect(embedManyMock).toHaveBeenNthCalledWith(
-      3,
+      AI_IDEMPOTENT_REQUEST_MAX_ATTEMPTS + 2,
       expect.objectContaining({
         values: ['c', 'd'],
       }),
@@ -200,7 +220,7 @@ describe('ai-server-sdk embedding behavior', () => {
     )
     const config = await resolveEmbeddingProvider('ws-1')
 
-    embedManyMock.mockRejectedValueOnce(
+    embedManyMock.mockRejectedValue(
       new Error('Failed after 3 attempts. Last error: Cannot connect to API: Headers Timeout Error')
     )
 
@@ -314,5 +334,40 @@ describe('ai-server-sdk embedding behavior', () => {
       message: 'AI rerank request timed out while contacting the provider.',
       status: 502,
     })
+  })
+
+  it('uses a fresh timeout signal for each rerank retry attempt', async () => {
+    const { requestAiRerank, resolveEmbeddingProvider } = await import(
+      '@/lib/ai-server-sdk'
+    )
+    const config = await resolveEmbeddingProvider('ws-1')
+    const requestSignals: AbortSignal[] = []
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async (_input, init) => {
+        requestSignals.push(init?.signal as AbortSignal)
+        throw new DOMException('Timed out', 'TimeoutError')
+      })
+      .mockImplementationOnce(async (_input, init) => {
+        requestSignals.push(init?.signal as AbortSignal)
+        return {
+          ok: true,
+          json: async () => ({
+            results: [{ index: 0, relevance_score: 0.91 }],
+          }),
+        }
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestAiRerank({
+      provider: config.provider,
+      model: 'rerank-model',
+      query: 'find the best docs',
+      documents: ['one'],
+    })
+
+    expect(result.results).toEqual([{ index: 0, relevanceScore: 0.91 }])
+    expect(requestSignals).toHaveLength(2)
+    expect(requestSignals[0]).not.toBe(requestSignals[1])
   })
 })
